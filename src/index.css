@@ -34,3 +34,12 @@ body { margin: 0; background: var(--bg); }
 select, input, textarea { font-family: inherit; color: var(--ink); background: #fff; }
 select:focus, input:focus, textarea:focus { border-color: var(--brass) !important; }
 button { cursor: pointer; }
+
+/* ---- Impression des fiches (devis / sorties) ---- */
+@media print {
+  body { background: #fff; }
+  header, nav, .print\:hidden { display: none !important; }
+  main { padding: 0 !important; max-width: 100% !important; }
+  #print-area { border: none !important; box-shadow: none !important; padding: 0 !important; max-width: 100% !important; }
+  @page { margin: 14mm; }
+}
