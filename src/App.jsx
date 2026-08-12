@@ -4,7 +4,7 @@ import {
   Play, Square, Plus, Search, ChevronLeft, ChevronRight, X, Check,
   LogOut, Timer, Pencil, Trash2, CheckCircle2, BarChart3, MessageSquare,
   AlertTriangle, RotateCcw, Send, ArrowLeft, UserPlus, ShieldCheck,
-  Eye, EyeOff, AtSign,
+  Eye, EyeOff, AtSign, Building2, FileText, SprayCan, Wallet, UserRound,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, CartesianGrid,
@@ -14,109 +14,16 @@ import { useStore } from "./store";
 import Login from "./Login.jsx";
 import {
   LOGO, GENERAL_CHANNEL_ID, URGENCY, URGENCY_ORDER, STATUS, STATUS_ORDER, ROLES, DAYS,
-  DEPT_PALETTE, isAdmin, canSupervise,
+  DEPT_PALETTE, NATURE, isAdmin, canSupervise,
 } from "./constants";
-import { getMonday, isoDate, addDays, mondayIso, fr, weekLabel, fmtDur, fmtEst, fmtTime } from "./helpers";
-
-const inputCls = "w-full px-3 py-2 rounded-lg border text-sm outline-none";
-const inputStyle = { borderColor: "var(--line)" };
-
-/* ====================== Présentation ====================== */
-const Avatar = ({ member, size = 34 }) => {
-  const initials = (member?.name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
-  return <div style={{ width: size, height: size, background: member?.color || "#94A3B8", fontSize: size * 0.38 }}
-    className="rounded-full flex items-center justify-center text-white font-semibold shrink-0">{initials}</div>;
-};
-const Chip = ({ color, bg, children, dot }) => (
-  <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
-    style={{ color, background: bg || "transparent", border: bg ? "none" : `1px solid ${color}33` }}>
-    {dot && <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />}{children}
-  </span>
-);
-function Modal({ title, onClose, children, wide }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" style={{ background: "rgba(15,23,42,.55)" }} onClick={onClose}>
-      <div className={`bg-white w-full ${wide ? "sm:max-w-2xl" : "sm:max-w-lg"} sm:rounded-2xl rounded-t-2xl shadow-2xl max-h-[92vh] overflow-y-auto`} onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--line)" }}>
-          <h3 className="font-semibold" style={{ color: "var(--ink)" }}>{title}</h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100"><X size={18} /></button>
-        </div>
-        <div className="p-5">{children}</div>
-      </div>
-    </div>
-  );
-}
-const Field = ({ label, children }) => (
-  <label className="block mb-3"><span className="block text-xs font-medium mb-1.5" style={{ color: "var(--muted)" }}>{label}</span>{children}</label>
-);
-const StatCard = ({ icon: Icon, label, value, sub, tint = "var(--brass)" }) => (
-  <div className="bg-white rounded-xl border p-4" style={{ borderColor: "var(--line)" }}>
-    <div className="flex items-center gap-2 mb-2"><span className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: tint + "1A", color: tint }}><Icon size={15} /></span><span className="text-xs font-medium" style={{ color: "var(--muted)" }}>{label}</span></div>
-    <p className="text-2xl font-bold" style={{ color: "var(--ink)" }}>{value}</p>
-    {sub && <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>{sub}</p>}
-  </div>
-);
-function TaskCard({ task, dept, assignee, actualSec, isRunning, canEdit, canTrack, onEdit, onToggleTimer, onAdvance, onShare, compact }) {
-  const u = URGENCY[task.urgency];
-  const overEst = task.estMin && actualSec > task.estMin * 60;
-  return (
-    <div className="bg-white rounded-xl border p-3 hover:shadow-md transition-shadow" style={{ borderColor: isRunning ? "var(--live)" : "var(--line)", boxShadow: isRunning ? "0 0 0 1px var(--live)" : undefined }}>
-      <div className="flex items-start gap-2">
-        <span className="w-1 self-stretch rounded-full shrink-0" style={{ background: dept?.color || "#cbd5e1" }} />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-1">
-            <p className="text-sm font-medium leading-snug" style={{ color: "var(--ink)" }}>{task.title}</p>
-            <div className="flex shrink-0">
-              {onShare && <button onClick={() => onShare(task)} className="p-1 rounded hover:bg-slate-100 text-slate-400" title="Envoyer à un membre"><Send size={13} /></button>}
-              {canEdit && <button onClick={() => onEdit(task)} className="p-1 rounded hover:bg-slate-100 text-slate-400" title="Modifier"><Pencil size={13} /></button>}
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5 mt-2">
-            <Chip color={u.color} bg={u.bg} dot>{u.label}</Chip>
-            {!compact && dept && <Chip color={dept.color}>{dept.name.split(" ")[0]}</Chip>}
-            <Chip color={STATUS[task.status].color}>{STATUS[task.status].label}</Chip>
-          </div>
-          <div className="flex items-center justify-between mt-2.5">
-            <div className="flex items-center gap-2 min-w-0">
-              {assignee && <Avatar member={assignee} size={22} />}
-              <span className="text-xs truncate" style={{ color: "var(--muted)" }}>
-                <Timer size={11} className="inline mb-0.5" /> {fmtEst(task.estMin)} · <span style={{ color: overEst ? "#D81F26" : "var(--muted)", fontWeight: overEst ? 600 : 400 }}>réel {fmtDur(actualSec)}</span>
-              </span>
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-              {task.status !== "termine" && <button onClick={() => onAdvance(task)} title="Avancer le statut" className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"><CheckCircle2 size={15} /></button>}
-              {canTrack && task.status !== "termine" && <button onClick={() => onToggleTimer(task)} title={isRunning ? "Arrêter" : "Démarrer le chrono"} className="p-1.5 rounded-lg text-white" style={{ background: isRunning ? "#D81F26" : "var(--live)" }}>{isRunning ? <Square size={14} /> : <Play size={14} />}</button>}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+import { getMonday, isoDate, addDays, mondayIso, fr, weekLabel, fmtDur, fmtEst, fmtTime, fcfa } from "./helpers";
+import { Avatar, Chip, Modal, Field, StatCard, inputCls, inputStyle } from "./ui";
+import Patrimoine from "./views/Patrimoine.jsx";
+import Produits from "./views/Produits.jsx";
+import DevisView from "./views/Devis.jsx";
+import Taches, { TaskModal, TaskRow } from "./views/Taches.jsx";
 
 /* ====================== Modales ====================== */
-function TaskModal({ initial, departments, members, onSave, onClose, onDelete }) {
-  const [f, setF] = useState(() => ({ title: "", description: "", deptId: departments[0]?.id, assigneeId: members[0]?.id, urgency: "normale", status: "a_faire", estMin: 60, day: null, weekStart: mondayIso(new Date()), ...initial }));
-  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
-  return (
-    <Modal title={initial?.id ? "Modifier la tâche" : "Nouvelle tâche"} onClose={onClose} wide>
-      <Field label="Intitulé de la tâche"><input className={inputCls} style={inputStyle} value={f.title} autoFocus onChange={(e) => set("title", e.target.value)} placeholder="Ex. Rédiger un bail d'habitation" /></Field>
-      <Field label="Description / consignes"><textarea className={inputCls} style={inputStyle} rows={2} value={f.description} onChange={(e) => set("description", e.target.value)} placeholder="Détails, bien concerné, client…" /></Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Département"><select className={inputCls} style={inputStyle} value={f.deptId} onChange={(e) => set("deptId", e.target.value)}>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
-        <Field label="Assignée à"><select className={inputCls} style={inputStyle} value={f.assigneeId} onChange={(e) => set("assigneeId", e.target.value)}>{members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></Field>
-        <Field label="Urgence"><select className={inputCls} style={inputStyle} value={f.urgency} onChange={(e) => set("urgency", e.target.value)}>{URGENCY_ORDER.map((x) => <option key={x} value={x}>{URGENCY[x].label}</option>)}</select></Field>
-        <Field label="Statut"><select className={inputCls} style={inputStyle} value={f.status} onChange={(e) => set("status", e.target.value)}>{STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS[s].label}</option>)}</select></Field>
-        <Field label="Durée estimée (minutes)"><input type="number" min={0} step={5} className={inputCls} style={inputStyle} value={f.estMin} onChange={(e) => set("estMin", Number(e.target.value))} /></Field>
-        <Field label="Jour planifié"><select className={inputCls} style={inputStyle} value={f.day ?? ""} onChange={(e) => set("day", e.target.value === "" ? null : Number(e.target.value))}><option value="">Non planifié</option>{DAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}</select></Field>
-      </div>
-      <div className="flex items-center justify-between gap-2 mt-2">
-        {initial?.id ? <button onClick={() => onDelete(initial.id)} className="kb-btn text-red-600 hover:bg-red-50"><Trash2 size={15} /> Supprimer</button> : <span />}
-        <div className="flex gap-2"><button onClick={onClose} className="kb-btn kb-btn-ghost">Annuler</button><button disabled={!f.title.trim()} onClick={() => onSave(f)} className="kb-btn kb-btn-primary disabled:opacity-40"><Check size={16} /> Enregistrer</button></div>
-      </div>
-    </Modal>
-  );
-}
 function ShareTaskModal({ task, members, currentUserId, onSend, onClose }) {
   const others = members.filter((m) => m.id !== currentUserId && m.active);
   const [dest, setDest] = useState("group");
@@ -193,17 +100,14 @@ export default function Root() {
 /* ====================== WORKSPACE ====================== */
 function Workspace({ userId }) {
   const store = useStore(userId);
-  const { loading, departments, members, tasks, timeEntries, activeTimers, channels, channelMembers, messages, actions } = store;
+  const { loading, departments, members, tasks, timeEntries, activeTimers, channels, channelMembers, messages,
+    owners, properties, products, releases, releaseLines, quotes, actions } = store;
 
   const [view, setView] = useState("dashboard");
   const [viewWeek, setViewWeek] = useState(mondayIso(new Date()));
   const [now, setNow] = useState(Date.now());
   const [taskModal, setTaskModal] = useState(null);
   const [shareTask, setShareTask] = useState(null);
-  const [search, setSearch] = useState("");
-  const [filterDept, setFilterDept] = useState("all");
-  const [filterUrg, setFilterUrg] = useState("all");
-  const [boardScope, setBoardScope] = useState("all");
   const [superMember, setSuperMember] = useState("all");
   const [manualTask, setManualTask] = useState("");
   const [manualMin, setManualMin] = useState(30);
@@ -220,6 +124,7 @@ function Workspace({ userId }) {
   const me = members.find((m) => m.id === userId);
   const deptById = useMemo(() => Object.fromEntries(departments.map((d) => [d.id, d])), [departments]);
   const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
+  const propById = useMemo(() => Object.fromEntries(properties.map((p) => [p.id, p])), [properties]);
   const baseSecByTask = useMemo(() => { const m = {}; timeEntries.forEach((e) => { m[e.taskId] = (m[e.taskId] || 0) + e.durationSeconds; }); return m; }, [timeEntries]);
 
   const myTimer = activeTimers.find((t) => t.userId === userId) || null;
@@ -264,8 +169,11 @@ function Workspace({ userId }) {
 
   const NAV = [
     { id: "dashboard", label: "Tableau de bord", icon: LayoutDashboard },
-    { id: "planner", label: "Planning", icon: CalendarDays },
     { id: "board", label: "Tâches", icon: ListChecks },
+    { id: "planner", label: "Planning", icon: CalendarDays },
+    { id: "patrimoine", label: "Patrimoine", icon: Building2 },
+    { id: "devis", label: "Devis artisans", icon: FileText },
+    { id: "produits", label: "Produits", icon: SprayCan },
     { id: "messages", label: "Messages", icon: MessageSquare, badge: unreadTotal },
     { id: "time", label: "Suivi du temps", icon: Clock },
     ...(canSupervise(me.role) ? [{ id: "team", label: "Supervision", icon: Users }] : []),
@@ -319,14 +227,23 @@ function Workspace({ userId }) {
       <main className="max-w-6xl mx-auto px-4 py-5">
         {view === "dashboard" && Dashboard()}
         {view === "planner" && Planner()}
-        {view === "board" && Board()}
+        {view === "board" && (
+          <Taches store={store} me={me} userId={userId}
+            liveSecForTask={liveSecForTask} isRunning={isRunning}
+            toggleTimer={toggleTimer} advanceStatus={advanceStatus}
+            onShare={setShareTask} onEdit={setTaskModal}
+            onNew={() => setTaskModal({ prefill: { assigneeId: userId, weekStart: viewWeek } })} />
+        )}
+        {view === "patrimoine" && <Patrimoine store={store} me={me} />}
+        {view === "devis" && <DevisView store={store} me={me} />}
+        {view === "produits" && <Produits store={store} me={me} />}
         {view === "messages" && Messages()}
         {view === "time" && TimeView()}
         {view === "team" && canSupervise(me.role) && Team()}
         {view === "settings" && isAdmin(me.role) && SettingsView()}
       </main>
 
-      {taskModal && <TaskModal initial={taskModal.id ? taskModal : taskModal.prefill || {}} departments={departments} members={members} onSave={saveTask} onClose={() => setTaskModal(null)} onDelete={removeTask} />}
+      {taskModal && <TaskModal initial={taskModal.id ? taskModal : taskModal.prefill || {}} departments={departments} members={members} properties={properties} owners={owners} onSave={saveTask} onClose={() => setTaskModal(null)} onDelete={removeTask} />}
       {shareTask && <ShareTaskModal task={shareTask} members={members} currentUserId={userId} onSend={doShare} onClose={() => setShareTask(null)} />}
       {memberModal && <MemberModal initial={memberModal} departments={departments} members={members} onClose={() => setMemberModal(null)}
         onSubmit={async (f, isNew) => {
@@ -355,16 +272,22 @@ function Workspace({ userId }) {
       <div>
         <div className="flex items-center justify-between mb-4"><div><h1 className="text-xl font-bold">Bonjour {me.name.split(" ")[0]} 👋</h1><p className="text-sm" style={{ color: "var(--muted)" }}>{fr(new Date(), { weekday: "long", day: "numeric", month: "long" })}</p></div><FloatingAdd /></div>
         {runningTask && <div className="rounded-xl p-4 mb-4 text-white flex items-center justify-between" style={{ background: "linear-gradient(100deg,#3d7d20,#4F9E2A)" }}><div className="min-w-0"><p className="text-xs opacity-90 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-white animate-pulse" /> Chrono en cours</p><p className="font-medium truncate">{runningTask.title}</p></div><div className="flex items-center gap-3"><span className="text-2xl font-bold tabular-nums">{fmtDur((now - myTimer.startedAt) / 1000)}</span><button onClick={actions.stopTimer} className="bg-white/20 hover:bg-white/30 rounded-lg p-2"><Square size={18} /></button></div></div>}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
           <StatCard icon={ListChecks} label="Mes tâches ouvertes" value={myOpen.length} sub={`${myTasks.length} au total`} tint="#2E78A8" />
           <StatCard icon={Clock} label="Temps suivi aujourd'hui" value={fmtDur(todaySec)} tint="#4F9E2A" />
           <StatCard icon={BarChart3} label="Temps suivi cette semaine" value={fmtDur(weekSec)} tint="var(--brass)" />
           <StatCard icon={AlertTriangle} label="Tâches urgentes" value={myOpen.filter((t) => t.urgency === "urgente" || t.urgency === "haute").length} tint="#D81F26" />
         </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+          <StatCard icon={Building2} label="Biens gérés" value={properties.length} sub={`${owners.length} propriétaire(s)`} tint="#2E78A8" />
+          <StatCard icon={FileText} label="Devis en attente" value={quotes.filter((q) => ["recu", "en_validation"].includes(q.status)).length} sub={fcfa(quotes.filter((q) => ["recu", "en_validation"].includes(q.status)).reduce((a, q) => a + q.total, 0))} tint="#EA580C" />
+          <StatCard icon={Wallet} label="Dépenses engagées" value={fcfa(quotes.filter((q) => ["valide", "execute", "paye"].includes(q.status)).reduce((a, q) => a + q.total, 0))} tint="#4F9E2A" />
+          <StatCard icon={SprayCan} label="Alertes de stock" value={products.filter((p) => p.active && p.stock <= p.minQty).length} sub={`${products.length} produits`} tint="#7C3AED" />
+        </div>
         <div className="grid lg:grid-cols-2 gap-4">
           <section className="bg-white rounded-xl border p-4" style={{ borderColor: "var(--line)" }}>
             <h2 className="font-semibold mb-3 flex items-center gap-2"><CalendarDays size={16} style={{ color: "var(--brass)" }} /> Mes prochaines tâches</h2>
-            <div className="space-y-2">{myOpen.slice(0, 5).map((t) => <TaskCard key={t.id} task={t} dept={deptById[t.deptId]} assignee={memberById[t.assigneeId]} actualSec={liveSecForTask(t.id)} isRunning={isRunning(t.id)} canEdit canTrack compact onEdit={setTaskModal} onToggleTimer={toggleTimer} onAdvance={advanceStatus} onShare={setShareTask} />)}{myOpen.length === 0 && <p className="text-sm py-6 text-center" style={{ color: "var(--muted)" }}>Aucune tâche en attente.</p>}</div>
+            <div className="space-y-2">{myOpen.slice(0, 5).map((t) => <TaskRow key={t.id} task={t} property={propById[t.propertyId]} assignee={memberById[t.assigneeId]} actualSec={liveSecForTask(t.id)} isRunning={isRunning(t.id)} canTrack onEdit={setTaskModal} onToggleTimer={toggleTimer} onAdvance={advanceStatus} onShare={setShareTask} />)}{myOpen.length === 0 && <p className="text-sm py-6 text-center" style={{ color: "var(--muted)" }}>Aucune tâche en attente.</p>}</div>
           </section>
           {sup ? (
             <section className="bg-white rounded-xl border p-4" style={{ borderColor: "var(--line)" }}>
@@ -405,35 +328,12 @@ function Workspace({ userId }) {
             return (
               <div key={i} className="bg-white rounded-xl border" style={{ borderColor: isToday ? "var(--brass)" : "var(--line)" }}>
                 <div className="flex items-center justify-between px-3 py-2 border-b" style={{ borderColor: "var(--line)" }}><div><p className="text-sm font-semibold">{day}</p><p className="text-[11px]" style={{ color: "var(--muted)" }}>{fr(addDays(viewWeek + "T00:00:00", i), { day: "numeric", month: "short" })} · {fmtDur(secForUserDay(who, dayIso))}</p></div><button onClick={() => setTaskModal({ prefill: { assigneeId: who, weekStart: viewWeek, day: i } })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><Plus size={15} /></button></div>
-                <div className="p-2 space-y-2 min-h-[60px]">{dts.map((t) => <TaskCard key={t.id} task={t} dept={deptById[t.deptId]} assignee={memberById[t.assigneeId]} actualSec={liveSecForTask(t.id)} isRunning={isRunning(t.id)} canEdit canTrack={who === userId} compact onEdit={setTaskModal} onToggleTimer={toggleTimer} onAdvance={advanceStatus} onShare={setShareTask} />)}{dts.length === 0 && <p className="text-xs text-center py-3" style={{ color: "#B6BEC9" }}>—</p>}</div>
+                <div className="p-2 space-y-2 min-h-[60px]">{dts.map((t) => <TaskRow key={t.id} task={t} property={propById[t.propertyId]} assignee={memberById[t.assigneeId]} actualSec={liveSecForTask(t.id)} isRunning={isRunning(t.id)} canTrack={who === userId} onEdit={setTaskModal} onToggleTimer={toggleTimer} onAdvance={advanceStatus} onShare={setShareTask} />)}{dts.length === 0 && <p className="text-xs text-center py-3" style={{ color: "#B6BEC9" }}>—</p>}</div>
               </div>
             );
           })}
         </div>
-        {unplanned.length > 0 && <div className="mt-4 bg-white rounded-xl border p-3" style={{ borderColor: "var(--line)" }}><p className="text-sm font-semibold mb-2 flex items-center gap-1.5"><AlertTriangle size={14} style={{ color: "#EA580C" }} /> À planifier cette semaine</p><div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">{unplanned.map((t) => <TaskCard key={t.id} task={t} dept={deptById[t.deptId]} assignee={memberById[t.assigneeId]} actualSec={liveSecForTask(t.id)} isRunning={isRunning(t.id)} canEdit canTrack={who === userId} compact onEdit={setTaskModal} onToggleTimer={toggleTimer} onAdvance={advanceStatus} onShare={setShareTask} />)}</div></div>}
-      </div>
-    );
-  }
-
-  function Board() {
-    const list = tasks.filter((t) => (boardScope === "all" || t.assigneeId === userId) && (filterDept === "all" || t.deptId === filterDept) && (filterUrg === "all" || t.urgency === filterUrg) && (!search || t.title.toLowerCase().includes(search.toLowerCase())));
-    return (
-      <div>
-        <div className="flex items-center justify-between mb-3 gap-2 flex-wrap"><h1 className="text-xl font-bold">Tâches de l'agence</h1><FloatingAdd /></div>
-        <div className="flex flex-wrap items-center gap-2 mb-4">
-          <div className="relative flex-1 min-w-[160px]"><Search size={15} className="absolute left-2.5 top-2.5 text-slate-400" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher une tâche…" className="w-full pl-8 pr-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle} /></div>
-          <select value={filterDept} onChange={(e) => setFilterDept(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}><option value="all">Tous départements</option>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>
-          <select value={filterUrg} onChange={(e) => setFilterUrg(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}><option value="all">Toutes urgences</option>{URGENCY_ORDER.map((u) => <option key={u} value={u}>{URGENCY[u].label}</option>)}</select>
-          <div className="flex rounded-lg border overflow-hidden" style={inputStyle}>{[["all", "Toute l'équipe"], ["mine", "Mes tâches"]].map(([v, l]) => <button key={v} onClick={() => setBoardScope(v)} className="px-3 py-2 text-sm" style={{ background: boardScope === v ? "var(--ink)" : "#fff", color: boardScope === v ? "#fff" : "var(--muted)" }}>{l}</button>)}</div>
-        </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {STATUS_ORDER.map((s) => { const col = list.filter((t) => t.status === s); return (
-            <div key={s} className="bg-slate-50 rounded-xl p-2.5 border" style={{ borderColor: "var(--line)" }}>
-              <div className="flex items-center justify-between px-1 mb-2"><span className="text-sm font-semibold flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: STATUS[s].color }} />{STATUS[s].label}</span><span className="text-xs px-1.5 rounded-full bg-white border" style={{ color: "var(--muted)", borderColor: "var(--line)" }}>{col.length}</span></div>
-              <div className="space-y-2">{col.map((t) => <TaskCard key={t.id} task={t} dept={deptById[t.deptId]} assignee={memberById[t.assigneeId]} actualSec={liveSecForTask(t.id)} isRunning={isRunning(t.id)} canEdit={canSupervise(me.role) || t.assigneeId === userId} canTrack={t.assigneeId === userId} onEdit={setTaskModal} onToggleTimer={toggleTimer} onAdvance={advanceStatus} onShare={setShareTask} />)}{col.length === 0 && <p className="text-xs text-center py-4" style={{ color: "#B6BEC9" }}>Aucune tâche</p>}</div>
-            </div>
-          ); })}
-        </div>
+        {unplanned.length > 0 && <div className="mt-4 bg-white rounded-xl border p-3" style={{ borderColor: "var(--line)" }}><p className="text-sm font-semibold mb-2 flex items-center gap-1.5"><AlertTriangle size={14} style={{ color: "#EA580C" }} /> À planifier cette semaine</p><div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">{unplanned.map((t) => <TaskRow key={t.id} task={t} property={propById[t.propertyId]} assignee={memberById[t.assigneeId]} actualSec={liveSecForTask(t.id)} isRunning={isRunning(t.id)} canTrack={who === userId} onEdit={setTaskModal} onToggleTimer={toggleTimer} onAdvance={advanceStatus} onShare={setShareTask} />)}</div></div>}
       </div>
     );
   }
