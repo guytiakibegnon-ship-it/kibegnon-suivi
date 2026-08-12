@@ -29,3 +29,23 @@ export const fmtEst = (min) => {
   return `${min}min`;
 };
 export const fmtTime = (ts) => new Date(ts).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+
+/* ---- Formatage monétaire FCFA ---- */
+export const fcfa = (n) => {
+  const v = Number(n || 0);
+  return v.toLocaleString("fr-FR", { maximumFractionDigits: 0 }) + " F";
+};
+export const fcfaLong = (n) => {
+  const v = Number(n || 0);
+  return v.toLocaleString("fr-FR", { maximumFractionDigits: 0 }) + " FCFA";
+};
+export const qty = (n) => {
+  const v = Number(n || 0);
+  return Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/\.?0+$/, "");
+};
+export const monthIso = (d) => {
+  const x = new Date(d);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}`;
+};
+export const monthLabel = (iso) =>
+  new Date(iso + "-01T00:00:00").toLocaleDateString("fr-FR", { month: "short", year: "2-digit" });
