@@ -19,6 +19,7 @@ const mRelease = (r) => ({ id: r.id, ref: r.ref, propertyId: r.property_id, rele
 const mRelLine = (r) => ({ id: r.id, releaseId: r.release_id, productId: r.product_id, qty: Number(r.qty), price: Number(r.unit_price) });
 const mQuote   = (r) => ({ id: r.id, ref: r.ref, artisanName: r.artisan_name, trade: r.artisan_trade, phone: r.artisan_phone, propertyId: r.property_id, ownerId: r.owner_id, date: r.quote_date, source: r.source, object: r.object, total: Number(r.total_amount), status: r.status, notes: r.notes, recordedBy: r.recorded_by, createdAt: Date.parse(r.created_at) });
 const mQLine   = (r) => ({ id: r.id, quoteId: r.quote_id, label: r.label, qty: Number(r.qty), unit: r.unit, price: Number(r.unit_price), position: r.position });
+const mDoc     = (r) => ({ id: r.id, ref: r.ref, docType: r.doc_type, date: r.doc_date, propertyId: r.property_id, ownerId: r.owner_id, clientName: r.client_name, clientPhone: r.client_phone, clientEmail: r.client_email, clientAddr: r.client_addr, object: r.object, body: r.body, lines: r.lines || [], fields: r.fields || {}, total: Number(r.total_amount), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
 const mTpl     = (r) => ({ id: r.id, label: r.label, nature: r.nature, deptId: r.dept_id, urgency: r.urgency, estMin: r.est_min, sortOrder: r.sort_order, active: r.active });
 
 const upsertBy = (key, map) => (setter) => (row) =>
@@ -44,9 +45,10 @@ export function useStore(userId) {
   const [quotes, setQuotes] = useState([]);
   const [quoteLines, setQuoteLines] = useState([]);
   const [templates, setTemplates] = useState([]);
+  const [documents, setDocuments] = useState([]);
 
   const load = useCallback(async () => {
-    const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl] = await Promise.all([
+    const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc] = await Promise.all([
       supabase.from("departments").select("*").order("created_at"),
       supabase.from("profiles").select("*").order("created_at"),
       supabase.from("tasks").select("*"),
@@ -64,6 +66,7 @@ export function useStore(userId) {
       supabase.from("quotes").select("*").order("quote_date", { ascending: false }),
       supabase.from("quote_lines").select("*").order("position"),
       supabase.from("task_templates").select("*").order("sort_order"),
+      supabase.from("documents").select("*").order("doc_date", { ascending: false }),
     ]);
     setDepartments((dep.data || []).map(mDept));
     setMembers((prof.data || []).map(mProfile));
@@ -82,6 +85,7 @@ export function useStore(userId) {
     setQuotes((qt.data || []).map(mQuote));
     setQuoteLines((ql.data || []).map(mQLine));
     setTemplates((tpl.data || []).map(mTpl));
+    setDocuments((doc.data || []).map(mDoc));
     setLoading(false);
   }, []);
 
@@ -104,6 +108,7 @@ export function useStore(userId) {
     const upQ = upsertBy("id", mQuote)(setQuotes), rmQ = removeBy("id")(setQuotes);
     const upQL = upsertBy("id", mQLine)(setQuoteLines), rmQL = removeBy("id")(setQuoteLines);
     const upTpl = upsertBy("id", mTpl)(setTemplates), rmTpl = removeBy("id")(setTemplates);
+    const upDoc = upsertBy("id", mDoc)(setDocuments), rmDoc = removeBy("id")(setDocuments);
     const h = (up, rm, key = "id") => (p) => p.eventType === "DELETE" ? rm(p.old[key]) : up(p.new);
 
     const ch = supabase.channel("kibegnon-rt")
@@ -130,6 +135,7 @@ export function useStore(userId) {
       .on("postgres_changes", { event: "*", schema: "public", table: "quotes" }, h(upQ, rmQ))
       .on("postgres_changes", { event: "*", schema: "public", table: "quote_lines" }, h(upQL, rmQL))
       .on("postgres_changes", { event: "*", schema: "public", table: "task_templates" }, h(upTpl, rmTpl))
+      .on("postgres_changes", { event: "*", schema: "public", table: "documents" }, h(upDoc, rmDoc))
       .subscribe();
 
     return () => { supabase.removeChannel(ch); };
@@ -340,15 +346,45 @@ export function useStore(userId) {
     return { error: error?.message };
   };
 
+  /* ================= ACTIONS : DOCUMENTS ================= */
+  const saveDocument = async (f) => {
+    const total = (f.lines || []).reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.price) || 0), 0);
+    const row = {
+      doc_type: f.docType, doc_date: f.date, property_id: f.propertyId || null, owner_id: f.ownerId || null,
+      client_name: f.clientName || "", client_phone: f.clientPhone || "", client_email: f.clientEmail || "",
+      client_addr: f.clientAddr || "", object: f.object || "", body: f.body || "",
+      lines: f.lines || [], fields: f.fields || {}, total_amount: total,
+      status: f.status || "brouillon", notes: f.notes || "",
+    };
+    if (f.id) {
+      const { error } = await supabase.from("documents").update(row).eq("id", f.id);
+      if (!error) setDocuments((p) => p.map((d) => (d.id === f.id ? { ...d, ...f, total } : d)));
+      return { error: error?.message, id: f.id };
+    }
+    const { data, error } = await supabase.from("documents").insert({ ...row, created_by: userId }).select().single();
+    if (data) setDocuments((p) => p.some((x) => x.id === data.id) ? p : [mDoc(data), ...p]);
+    return { error: error?.message, id: data?.id };
+  };
+  const setDocumentStatus = async (id, status) => {
+    setDocuments((p) => p.map((d) => (d.id === id ? { ...d, status } : d)));
+    await supabase.from("documents").update({ status }).eq("id", id);
+  };
+  const deleteDocument = async (id) => {
+    const { error } = await supabase.from("documents").delete().eq("id", id);
+    if (!error) setDocuments((p) => p.filter((d) => d.id !== id));
+    return { error: error?.message };
+  };
+
   return {
     loading, departments, members, tasks, timeEntries, activeTimers, channels, channelMembers, messages,
-    owners, properties, products, stockEntries, releases, releaseLines, quotes, quoteLines, templates,
+    owners, properties, products, stockEntries, releases, releaseLines, quotes, quoteLines, templates, documents,
     actions: {
       createTask, updateTask, deleteTask, startTimer, stopTimer, addManualTime, deleteEntry,
       ensureDm, sendMessage, markRead, saveDept, deleteDept, updateProfile, adminUsers,
       saveOwner, deleteOwner, saveProperty, deleteProperty,
       saveProduct, deleteProduct, addStockEntry, saveRelease, deleteRelease,
-      saveQuote, setQuoteStatus, deleteQuote, reload: load,
+      saveQuote, setQuoteStatus, deleteQuote,
+      saveDocument, setDocumentStatus, deleteDocument, reload: load,
     },
   };
 }
