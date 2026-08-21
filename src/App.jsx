@@ -4,7 +4,7 @@ import {
   Play, Square, Plus, Search, ChevronLeft, ChevronRight, X, Check,
   LogOut, Timer, Pencil, Trash2, CheckCircle2, BarChart3, MessageSquare,
   AlertTriangle, RotateCcw, Send, ArrowLeft, UserPlus, ShieldCheck,
-  Eye, EyeOff, AtSign, Building2, FileText, SprayCan, Wallet, UserRound,
+  Eye, EyeOff, AtSign, Building2, FileText, SprayCan, Wallet, UserRound, FileSignature,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, CartesianGrid,
@@ -22,6 +22,7 @@ import Patrimoine from "./views/Patrimoine.jsx";
 import Produits from "./views/Produits.jsx";
 import DevisView from "./views/Devis.jsx";
 import Taches, { TaskModal, TaskRow } from "./views/Taches.jsx";
+import Documents from "./views/Documents.jsx";
 
 /* ====================== Modales ====================== */
 function ShareTaskModal({ task, members, currentUserId, onSend, onClose }) {
@@ -173,6 +174,7 @@ function Workspace({ userId }) {
     { id: "planner", label: "Planning", icon: CalendarDays },
     { id: "patrimoine", label: "Patrimoine", icon: Building2 },
     { id: "devis", label: "Devis artisans", icon: FileText },
+    { id: "documents", label: "Documents", icon: FileSignature },
     { id: "produits", label: "Produits", icon: SprayCan },
     { id: "messages", label: "Messages", icon: MessageSquare, badge: unreadTotal },
     { id: "time", label: "Suivi du temps", icon: Clock },
@@ -236,6 +238,7 @@ function Workspace({ userId }) {
         )}
         {view === "patrimoine" && <Patrimoine store={store} me={me} />}
         {view === "devis" && <DevisView store={store} me={me} />}
+        {view === "documents" && <Documents store={store} me={me} />}
         {view === "produits" && <Produits store={store} me={me} />}
         {view === "messages" && Messages()}
         {view === "time" && TimeView()}
