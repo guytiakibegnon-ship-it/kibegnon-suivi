@@ -4,8 +4,9 @@ import {
   UserRound, AlertTriangle, Wallet, MessageCircle, ArrowLeft, BadgeCheck,
 } from "lucide-react";
 import { QUOTE_SOURCE, QUOTE_STATUS, QUOTE_STATUS_ORDER, TRADES, canSupervise } from "../constants";
-import { fcfa, fcfaLong, fr, qty, isoDate } from "../helpers";
+import { fcfa, fcfaLong, fr, qty, isoDate, amountInWords } from "../helpers";
 import { Modal, Field, Chip, StatCard, EmptyState, inputCls, inputStyle } from "../ui";
+import { LineEditor } from "./Documents.jsx";
 import { LOGO } from "../constants";
 
 /* ---------------- Modale de saisie ---------------- */
@@ -68,23 +69,8 @@ function QuoteModal({ initial, initialLines, properties, owners, onSave, onClose
       <Field label="Objet des travaux"><input className={inputCls} style={inputStyle} value={f.object} onChange={(e) => set("object", e.target.value)} placeholder="Ex. Réfection plomberie salle de bain 2e étage" /></Field>
 
       <p className="text-xs font-semibold mb-2 mt-1" style={{ color: "var(--ink)" }}>Détail du devis</p>
-      <div className="space-y-2 mb-2">
-        {lines.map((l, i) => (
-          <div key={i} className="flex gap-2 items-center">
-            <input className={inputCls + " flex-1"} style={inputStyle} value={l.label} onChange={(e) => setLine(i, "label", e.target.value)} placeholder="Désignation de la prestation" />
-            <input type="number" min={0} step="any" className={inputCls + " w-16 shrink-0"} style={inputStyle} value={l.qty} onChange={(e) => setLine(i, "qty", e.target.value)} title="Quantité" />
-            <input className={inputCls + " w-16 shrink-0"} style={inputStyle} value={l.unit} onChange={(e) => setLine(i, "unit", e.target.value)} title="Unité" />
-            <input type="number" min={0} step={500} className={inputCls + " w-28 shrink-0"} style={inputStyle} value={l.price} onChange={(e) => setLine(i, "price", e.target.value)} title="Prix unitaire" />
-            <button onClick={() => setLines((p) => p.filter((_, j) => j !== i))} className="p-2 rounded-lg text-slate-300 hover:text-red-500 shrink-0"><X size={15} /></button>
-          </div>
-        ))}
-      </div>
-      <button onClick={() => setLines((p) => [...p, { label: "", qty: 1, unit: "u", price: 0 }])} className="kb-btn kb-btn-ghost text-sm mb-3"><Plus size={14} /> Ajouter une ligne</button>
-
-      <div className="flex items-center justify-between rounded-lg px-3 py-2.5 mb-3" style={{ background: "#F6F8FA" }}>
-        <span className="text-sm font-medium">Montant total du devis</span>
-        <span className="text-xl font-bold" style={{ color: "var(--brass)" }}>{fcfaLong(total)}</span>
-      </div>
+      <LineEditor lines={lines} setLines={setLines} labelPlaceholder="Ex. Fourniture et pose de robinetterie" />
+      <div className="mb-3" />
       <Field label="Observations"><textarea className={inputCls} style={inputStyle} rows={2} value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Conditions, délai annoncé, garantie…" /></Field>
       {err && <p className="text-xs text-red-600 mb-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
       <div className="flex justify-end gap-2">
@@ -165,6 +151,8 @@ function QuoteSheet({ quote, lines, property, owner, recorder, onBack }) {
             <td className="px-3 py-3 text-right text-lg font-bold" style={{ color: "var(--brass)" }}>{fcfa(quote.total)}</td>
           </tr></tfoot>
         </table>
+
+        {quote.total > 0 && <p className="text-sm italic mb-4">Arrêté le présent devis à la somme de <strong>{amountInWords(quote.total)}</strong>.</p>}
 
         {quote.notes && <div className="mb-4">
           <p className="text-[11px] font-semibold uppercase mb-1" style={{ color: "var(--muted)" }}>Observations</p>
