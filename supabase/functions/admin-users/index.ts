@@ -1,10 +1,10 @@
 // ============================================================================
 //  Edge Function : admin-users
 //  Création / suppression / réinitialisation de comptes, réservée aux admins.
-//  Déploiement :
-//    supabase functions deploy admin-users --no-verify-jwt
-//    supabase secrets set SERVICE_ROLE_KEY=<service_role_key>
-//  (SUPABASE_URL et SUPABASE_ANON_KEY sont fournis automatiquement.)
+//  Déploiement (au choix) :
+//    A. Dashboard : Edge Functions > Deploy a new function > Via Editor > coller ce code
+//    B. CLI : npx supabase functions deploy admin-users
+//  Aucun secret à configurer : SUPABASE_SERVICE_ROLE_KEY est injecté automatiquement.
 // ============================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -25,7 +25,9 @@ Deno.serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const SERVICE = Deno.env.get("SERVICE_ROLE_KEY")!;
+    // SUPABASE_SERVICE_ROLE_KEY est injecté automatiquement dans chaque Edge Function.
+    // (fallback sur un secret SERVICE_ROLE_KEY si jamais défini manuellement)
+    const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SERVICE_ROLE_KEY")!;
 
     // 1. Vérifier l'appelant (JWT) et son rôle admin
     const authHeader = req.headers.get("Authorization") ?? "";
