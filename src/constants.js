@@ -119,3 +119,92 @@ export const COMMUNES = ["Cocody", "Plateau", "Yopougon", "Marcory", "Treichvill
 
 export const isAdmin = (role) => role === "admin";
 export const canSupervise = (role) => role === "admin" || role === "gerante" || role === "responsable_admin";
+
+/* ---- Documents par département ---- */
+export const DOC_TYPES = {
+  decompte_entree: {
+    label: "Décompte d'entrée",
+    short: "Décompte",
+    prefix: "DE",
+    dept: "Gestion locative",
+    layout: "facture",
+    title: "DÉCOMPTE D'ENTRÉE",
+    color: "#2E78A8",
+    desc: "Somme à régler par le locataire à l'entrée dans les lieux (avance, caution, agence, frais).",
+    clientLabel: "Locataire entrant",
+    preset: [
+      { label: "2 MOIS D'AVANCE", qty: 1, unit: "u", price: 0 },
+      { label: "CAUTION : 2 MOIS", qty: 1, unit: "u", price: 0 },
+      { label: "AGENCE : 1 MOIS", qty: 1, unit: "u", price: 0 },
+      { label: "ACHAT ET ENREGISTREMENT DE CONTRATS", qty: 1, unit: "u", price: 50000 },
+      { label: "FRAIS DE DOSSIER", qty: 1, unit: "u", price: 0 },
+    ],
+  },
+  prestation: {
+    label: "Fiche de prestation de services",
+    short: "Prestation",
+    prefix: "PS",
+    dept: "Direction & Gérance",
+    layout: "facture",
+    title: "FICHE DE PRESTATION DE SERVICES",
+    color: "#4F9E2A",
+    desc: "Détail des prestations réalisées par l'agence pour un client ou un propriétaire.",
+    clientLabel: "Client",
+    preset: [{ label: "", qty: 1, unit: "u", price: 0 }],
+  },
+  facture_impayes: {
+    label: "Facture d'impayés",
+    short: "Impayés",
+    prefix: "FI",
+    dept: "Comptabilité & Recouvrement",
+    layout: "facture",
+    title: "FACTURE D'IMPAYÉS",
+    color: "#D81F26",
+    desc: "Récapitulatif des loyers et charges impayés à recouvrer auprès d'un locataire.",
+    clientLabel: "Locataire débiteur",
+    preset: [{ label: "Loyer impayé", qty: 1, unit: "mois", price: 0 }],
+  },
+  quittance: {
+    label: "Quittance de loyer",
+    short: "Quittance",
+    prefix: "QL",
+    dept: "Gestion locative",
+    layout: "facture",
+    title: "QUITTANCE DE LOYER",
+    color: "#7C3AED",
+    desc: "Reçu attestant du paiement intégral du loyer et des charges pour une période donnée.",
+    clientLabel: "Locataire",
+    preset: [
+      { label: "Loyer", qty: 1, unit: "mois", price: 0 },
+      { label: "Charges", qty: 1, unit: "mois", price: 0 },
+    ],
+  },
+  relance: {
+    label: "Relance locataire",
+    short: "Relance",
+    prefix: "RL",
+    dept: "Comptabilité & Recouvrement",
+    layout: "lettre",
+    title: "LETTRE DE RELANCE",
+    color: "#EA580C",
+    desc: "Courrier de rappel amiable ou de mise en demeure adressé à un locataire en retard.",
+    clientLabel: "Locataire",
+    preset: [{ label: "Loyer impayé", qty: 1, unit: "mois", price: 0 }],
+  },
+};
+export const DOC_TYPE_ORDER = ["decompte_entree", "prestation", "facture_impayes", "quittance", "relance"];
+
+export const DOC_STATUS = {
+  brouillon: { label: "Brouillon", color: "#94A3B8" },
+  emis:      { label: "Émis",      color: "#2E78A8" },
+  envoye:    { label: "Envoyé",    color: "#C58A1B" },
+  regle:     { label: "Réglé",     color: "#4F9E2A" },
+  annule:    { label: "Annulé",    color: "#D81F26" },
+};
+export const DOC_STATUS_ORDER = ["brouillon", "emis", "envoye", "regle", "annule"];
+
+export const RELANCE_TONE = {
+  rappel:  "Rappel amiable",
+  relance: "Relance ferme",
+  mise_en_demeure: "Mise en demeure",
+};
