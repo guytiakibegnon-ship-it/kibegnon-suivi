@@ -1,12 +1,12 @@
 /* ============================================================================
  *  ENTREPRISE KIBEGNON · SUIVI D'ÉQUIPE — application complète (fichier unique)
  *  Modules : Tableau de bord · Tâches · Planning · Patrimoine · Devis artisans
- *            Documents · Produits & entretien · Messages · Temps · Administration
+ *            Documents · Recouvrement · Transport · Produits · Messages · Temps
  *  Dépendances externes uniquement : react, lucide-react, recharts, ./supabaseClient
  * ==========================================================================*/
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
-  AlertTriangle, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, BarChart3, Building2, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, Eye, EyeOff, FileSignature, FileText, Filter, Hammer, Home, Inbox, KeyRound, LayoutDashboard, ListChecks, Lock, LogOut, Mail, MapPin, MessageCircle, MessageSquare, Package, Pencil, Phone, Play, Plus, Printer, Receipt, RotateCcw, Search, Send, Settings, ShieldCheck, SprayCan, Square, Timer, Trash2, TrendingDown, UserPlus, UserRound, Users, Wallet, X, Zap,
+  AlertTriangle, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, BarChart3, Briefcase, Building2, CalendarDays, CalendarOff, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, DoorOpen, Download, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, Filter, Hammer, Home, Inbox, KeyRound, Layers, LayoutDashboard, ListChecks, Lock, LogOut, Mail, MapPin, MessageCircle, MessageSquare, Package, Pause, Pencil, Phone, Play, Plus, Printer, Receipt, RotateCcw, Search, Send, Settings, ShieldCheck, SprayCan, Square, Store, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, UserPlus, UserRound, Users, Wallet, X, Zap,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, CartesianGrid,
@@ -228,8 +228,84 @@ const RELANCE_TONE = {
   mise_en_demeure: "Mise en demeure",
 };
 
+/* ---- Lots (appartements, magasins d'un immeuble) ---- */
+const UNIT_KIND = {
+  appartement: "Appartement",
+  studio:      "Studio",
+  magasin:     "Magasin",
+  bureau:      "Bureau",
+  villa:       "Villa",
+  entrepot:    "Entrepôt",
+  parking:     "Parking",
+};
+const UNIT_STATUS = {
+  occupe:  { label: "Occupé",     color: "#4F9E2A" },
+  vacant:  { label: "Vacant",     color: "#EA580C" },
+  travaux: { label: "En travaux", color: "#C58A1B" },
+  reserve: { label: "Réservé",    color: "#2E78A8" },
+};
+const AVAILABLE_FOR = {
+  aucun:          "Non disponible",
+  location:       "À louer",
+  vente:          "À vendre",
+  location_vente: "À louer ou à vendre",
+};
+
+/* ---- Recouvrement ---- */
+const RENT_SCOPE = {
+  commercial: { label: "Suivi commercial", color: "#2E78A8", desc: "Saisie des commerciaux sur le terrain" },
+  comptable:  { label: "État comptable",   color: "#4F9E2A", desc: "Version définitive établie par la comptabilité" },
+};
+const RENT_STATUS = {
+  brouillon: { label: "Brouillon", color: "#94A3B8" },
+  soumis:    { label: "Soumis",    color: "#C58A1B" },
+  valide:    { label: "Validé",    color: "#4F9E2A" },
+};
+const PAY_STATUS = {
+  paye:    { label: "PAYÉ",    color: "#4F9E2A", bg: "#EAF6E3" },
+  partiel: { label: "PARTIEL", color: "#EA580C", bg: "#FFF0E6" },
+  impaye:  { label: "IMPAYÉ",  color: "#D81F26", bg: "#FDEAEA" },
+};
+const payStatusOf = (expected, collected) => {
+  const e = Number(expected) || 0, c = Number(collected) || 0;
+  if (c <= 0) return "impaye";
+  if (c >= e) return "paye";
+  return "partiel";
+};
+const DEFAULT_CHARGES = ["Électricité", "Eau", "Réparation", "Entretien", "Autres charges"];
+const MONTHS_FR = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+
+/* ---- Transport & permissions ---- */
+const REQ_TYPE = {
+  transport: { label: "Frais de transport", color: "#2E78A8" },
+  absence:   { label: "Permission d'absence", color: "#7C3AED" },
+};
+const TRANSPORT_MODE = {
+  taxi:           "Taxi",
+  woro_woro:      "Woro-woro",
+  gbaka:          "Gbaka",
+  bus:            "Bus (SOTRA)",
+  vehicule_perso: "Véhicule personnel",
+  moto:           "Moto",
+  autre:          "Autre",
+};
+const ABSENCE_TYPE = {
+  personnelle:    "Personnelle",
+  maladie:        "Maladie",
+  familiale:      "Familiale",
+  administrative: "Démarche administrative",
+  autre:          "Autre",
+};
+const REQ_STATUS = {
+  en_attente: { label: "En attente", color: "#C58A1B" },
+  approuve:   { label: "Approuvé",   color: "#4F9E2A" },
+  refuse:     { label: "Refusé",     color: "#D81F26" },
+};
+const canValidate = (role) => role === "admin" || role === "gerante" || role === "responsable_admin";
+const isAccountant = (role) => role === "comptable" || role === "admin";
+
 /* ══════════════════════════════════════════════════════════════════════
-   HELPERS (dates, montants, nombres en lettres)
+   HELPERS (dates, montants, durées, nombres en lettres)
    ══════════════════════════════════════════════════════════════════════ */
 const getMonday = (d) => {
   const x = new Date(d);
@@ -249,13 +325,23 @@ const weekLabel = (iso) => {
   const m = new Date(iso + "T00:00:00");
   return `${fr(m, { day: "numeric", month: "short" })} – ${fr(addDays(m, 5), { day: "numeric", month: "short", year: "numeric" })}`;
 };
+/* Durées exprimées en heures et minutes (jamais en secondes) */
 const fmtDur = (sec) => {
   sec = Math.max(0, Math.round(sec));
-  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
-  if (h > 0) return `${h}h${String(m).padStart(2, "0")}`;
-  if (m > 0) return `${m}m${String(s).padStart(2, "0")}`;
-  return `${s}s`;
+  const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
+  if (h > 0 && m > 0) return `${h}h ${String(m).padStart(2, "0")}min`;
+  if (h > 0) return `${h}h`;
+  return `${m}min`;
 };
+/* Chronomètre en cours : hh:mm:ss */
+const fmtClock = (sec) => {
+  sec = Math.max(0, Math.round(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  const two = (n) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${two(m)}:${two(s)}` : `${two(m)}:${two(s)}`;
+};
+/* Heures décimales pour les graphiques et exports */
+const hoursOf = (sec) => +(Math.max(0, sec) / 3600).toFixed(2);
 const fmtEst = (min) => {
   if (!min) return "—";
   if (min >= 60) { const h = Math.floor(min / 60), m = min % 60; return m ? `${h}h${m}` : `${h}h`; }
@@ -414,13 +500,18 @@ const mCM      = (r) => ({ channelId: r.channel_id, userId: r.user_id, lastReadA
 const mMsg     = (r) => ({ id: r.id, channelId: r.channel_id, fromId: r.from_id, text: r.body, taskId: r.task_id, createdAt: Date.parse(r.created_at) });
 
 const mOwner   = (r) => ({ id: r.id, name: r.full_name, kind: r.kind, phone: r.phone, email: r.email, address: r.address, idNumber: r.id_number, notes: r.notes, active: r.active });
-const mProp    = (r) => ({ id: r.id, ref: r.ref, name: r.name, kind: r.kind, address: r.address, commune: r.commune, quartier: r.quartier, ownerId: r.owner_id, lotsCount: r.lots_count, surface: r.surface_m2, rent: r.rent_amount, mandate: r.mandate_type, status: r.status, notes: r.notes });
+const mProp    = (r) => ({ id: r.id, ref: r.ref, name: r.name, kind: r.kind, address: r.address, commune: r.commune, quartier: r.quartier, ownerId: r.owner_id, lotsCount: r.lots_count, surface: r.surface_m2, rent: r.rent_amount, mandate: r.mandate_type, status: r.status, notes: r.notes, agentId: r.agent_id, salePrice: r.sale_price, availableFor: r.available_for || 'aucun' });
 const mProduct = (r) => ({ id: r.id, name: r.name, category: r.category, unit: r.unit, stock: Number(r.stock_qty), minQty: Number(r.min_qty), price: Number(r.unit_price), supplier: r.supplier, active: r.active });
 const mStockIn = (r) => ({ id: r.id, productId: r.product_id, qty: Number(r.qty), price: Number(r.unit_price), supplier: r.supplier, date: r.entry_date, notes: r.notes, createdBy: r.created_by });
 const mRelease = (r) => ({ id: r.id, ref: r.ref, propertyId: r.property_id, releasedTo: r.released_to, releasedBy: r.released_by, purpose: r.purpose, date: r.release_date, zone: r.zone, notes: r.notes, createdAt: Date.parse(r.created_at) });
 const mRelLine = (r) => ({ id: r.id, releaseId: r.release_id, productId: r.product_id, qty: Number(r.qty), price: Number(r.unit_price) });
 const mQuote   = (r) => ({ id: r.id, ref: r.ref, artisanName: r.artisan_name, trade: r.artisan_trade, phone: r.artisan_phone, propertyId: r.property_id, ownerId: r.owner_id, date: r.quote_date, source: r.source, object: r.object, total: Number(r.total_amount), status: r.status, notes: r.notes, recordedBy: r.recorded_by, createdAt: Date.parse(r.created_at) });
 const mQLine   = (r) => ({ id: r.id, quoteId: r.quote_id, label: r.label, qty: Number(r.qty), unit: r.unit, price: Number(r.unit_price), position: r.position });
+const mUnit    = (r) => ({ id: r.id, propertyId: r.property_id, label: r.label, kind: r.kind, floor: r.floor, rooms: r.rooms, surface: r.surface_m2, rent: Number(r.rent_amount), charges: Number(r.charges_amount), status: r.status, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, leaseStart: r.lease_start, notes: r.notes });
+const mPeriod  = (r) => ({ id: r.id, propertyId: r.property_id, period: r.period, scope: r.scope, rate: Number(r.agency_rate), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
+const mRLine   = (r) => ({ id: r.id, periodId: r.period_id, unitId: r.unit_id, unitLabel: r.unit_label, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, expected: Number(r.expected), collected: Number(r.collected), paidAt: r.paid_at, charges: Number(r.charges), comment: r.comment, position: r.position });
+const mRCharge = (r) => ({ id: r.id, periodId: r.period_id, label: r.label, amount: Number(r.amount), observation: r.observation, position: r.position });
+const mReq     = (r) => ({ id: r.id, reqType: r.req_type, userId: r.user_id, date: r.req_date, amount: Number(r.amount), destination: r.destination, mode: r.transport_mode, propertyId: r.property_id, startDate: r.start_date, endDate: r.end_date, absenceType: r.absence_type, motif: r.motif, status: r.status, decidedBy: r.decided_by, decidedAt: r.decided_at, decisionNote: r.decision_note, createdAt: Date.parse(r.created_at) });
 const mDoc     = (r) => ({ id: r.id, ref: r.ref, docType: r.doc_type, date: r.doc_date, propertyId: r.property_id, ownerId: r.owner_id, clientName: r.client_name, clientPhone: r.client_phone, clientEmail: r.client_email, clientAddr: r.client_addr, object: r.object, body: r.body, lines: r.lines || [], fields: r.fields || {}, total: Number(r.total_amount), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
 const mTpl     = (r) => ({ id: r.id, label: r.label, nature: r.nature, deptId: r.dept_id, urgency: r.urgency, estMin: r.est_min, sortOrder: r.sort_order, active: r.active });
 
@@ -448,9 +539,14 @@ function useStore(userId) {
   const [quoteLines, setQuoteLines] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [documents, setDocuments] = useState([]);
+  const [units, setUnits] = useState([]);
+  const [rentPeriods, setRentPeriods] = useState([]);
+  const [rentLines, setRentLines] = useState([]);
+  const [rentCharges, setRentCharges] = useState([]);
+  const [requests, setRequests] = useState([]);
 
   const load = useCallback(async () => {
-    const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc] = await Promise.all([
+    const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc, un, rp, rlin, rch, rq] = await Promise.all([
       supabase.from("departments").select("*").order("created_at"),
       supabase.from("profiles").select("*").order("created_at"),
       supabase.from("tasks").select("*"),
@@ -469,6 +565,11 @@ function useStore(userId) {
       supabase.from("quote_lines").select("*").order("position"),
       supabase.from("task_templates").select("*").order("sort_order"),
       supabase.from("documents").select("*").order("doc_date", { ascending: false }),
+      supabase.from("units").select("*").order("label"),
+      supabase.from("rent_periods").select("*").order("period", { ascending: false }),
+      supabase.from("rent_lines").select("*").order("position"),
+      supabase.from("rent_charges").select("*").order("position"),
+      supabase.from("requests").select("*").order("req_date", { ascending: false }),
     ]);
     setDepartments((dep.data || []).map(mDept));
     setMembers((prof.data || []).map(mProfile));
@@ -488,6 +589,11 @@ function useStore(userId) {
     setQuoteLines((ql.data || []).map(mQLine));
     setTemplates((tpl.data || []).map(mTpl));
     setDocuments((doc.data || []).map(mDoc));
+    setUnits((un.data || []).map(mUnit));
+    setRentPeriods((rp.data || []).map(mPeriod));
+    setRentLines((rlin.data || []).map(mRLine));
+    setRentCharges((rch.data || []).map(mRCharge));
+    setRequests((rq.data || []).map(mReq));
     setLoading(false);
   }, []);
 
@@ -511,6 +617,11 @@ function useStore(userId) {
     const upQL = upsertBy("id", mQLine)(setQuoteLines), rmQL = removeBy("id")(setQuoteLines);
     const upTpl = upsertBy("id", mTpl)(setTemplates), rmTpl = removeBy("id")(setTemplates);
     const upDoc = upsertBy("id", mDoc)(setDocuments), rmDoc = removeBy("id")(setDocuments);
+    const upUnit = upsertBy("id", mUnit)(setUnits), rmUnit = removeBy("id")(setUnits);
+    const upRP = upsertBy("id", mPeriod)(setRentPeriods), rmRP = removeBy("id")(setRentPeriods);
+    const upRL2 = upsertBy("id", mRLine)(setRentLines), rmRL2 = removeBy("id")(setRentLines);
+    const upRC = upsertBy("id", mRCharge)(setRentCharges), rmRC = removeBy("id")(setRentCharges);
+    const upReq = upsertBy("id", mReq)(setRequests), rmReq = removeBy("id")(setRequests);
     const h = (up, rm, key = "id") => (p) => p.eventType === "DELETE" ? rm(p.old[key]) : up(p.new);
 
     const ch = supabase.channel("kibegnon-rt")
@@ -538,6 +649,11 @@ function useStore(userId) {
       .on("postgres_changes", { event: "*", schema: "public", table: "quote_lines" }, h(upQL, rmQL))
       .on("postgres_changes", { event: "*", schema: "public", table: "task_templates" }, h(upTpl, rmTpl))
       .on("postgres_changes", { event: "*", schema: "public", table: "documents" }, h(upDoc, rmDoc))
+      .on("postgres_changes", { event: "*", schema: "public", table: "units" }, h(upUnit, rmUnit))
+      .on("postgres_changes", { event: "*", schema: "public", table: "rent_periods" }, h(upRP, rmRP))
+      .on("postgres_changes", { event: "*", schema: "public", table: "rent_lines" }, h(upRL2, rmRL2))
+      .on("postgres_changes", { event: "*", schema: "public", table: "rent_charges" }, h(upRC, rmRC))
+      .on("postgres_changes", { event: "*", schema: "public", table: "requests" }, h(upReq, rmReq))
       .subscribe();
 
     return () => { supabase.removeChannel(ch); };
@@ -545,12 +661,15 @@ function useStore(userId) {
 
   /* ================= ACTIONS : TÂCHES ================= */
   const createTask = async (f) => {
-    await supabase.from("tasks").insert({
+    const { data, error } = await supabase.from("tasks").insert({
       title: f.title, description: f.description || "", dept_id: f.deptId || null, assignee_id: f.assigneeId,
       urgency: f.urgency, status: f.status || "a_faire", est_min: f.estMin, week_start: f.weekStart,
       day: f.day ?? null, due_date: f.dueDate || null, created_by: userId,
       property_id: f.propertyId || null, owner_id: f.ownerId || null, nature: f.nature || "autre",
-    });
+    }).select().single();
+    // Affichage immédiat sans attendre l'écho temps réel
+    if (data) setTasks((p) => (p.some((t) => t.id === data.id) ? p : [...p, mTask(data)]));
+    return { error: error?.message };
   };
   const updateTask = async (id, patch) => {
     const map = { title: "title", description: "description", deptId: "dept_id", assigneeId: "assignee_id",
@@ -558,29 +677,54 @@ function useStore(userId) {
       dueDate: "due_date", propertyId: "property_id", ownerId: "owner_id", nature: "nature" };
     const row = {};
     Object.entries(map).forEach(([k, col]) => { if (k in patch) row[col] = patch[k] === "" ? null : patch[k]; });
-    await supabase.from("tasks").update(row).eq("id", id);
+    setTasks((p) => p.map((t) => (t.id === id ? { ...t, ...patch } : t)));  // immédiat
+    const { data } = await supabase.from("tasks").update(row).eq("id", id).select().single();
+    if (data) setTasks((p) => p.map((t) => (t.id === id ? mTask(data) : t)));
   };
-  const deleteTask = async (id) => { await supabase.from("tasks").delete().eq("id", id); };
+  const deleteTask = async (id) => {
+    setTasks((p) => p.filter((t) => t.id !== id));  // immédiat
+    await supabase.from("tasks").delete().eq("id", id);
+  };
 
   /* ================= ACTIONS : TEMPS ================= */
   const startTimer = async (taskId) => {
     setActiveTimers((p) => [...p.filter((t) => t.userId !== userId), { userId, taskId, startedAt: Date.now() }]);
     await supabase.from("active_timers").upsert({ user_id: userId, task_id: taskId, started_at: new Date().toISOString() });
   };
-  const stopTimer = async () => {
+  /* Arrête le chrono et enregistre la session (= mise en pause) */
+  const stopTimer = async (note = "") => {
     const mine = activeTimers.find((t) => t.userId === userId);
-    if (!mine) return;
+    if (!mine) return null;
     const sec = Math.round((Date.now() - mine.startedAt) / 1000);
     setActiveTimers((p) => p.filter((t) => t.userId !== userId));
     if (sec > 1) {
-      await supabase.from("time_entries").insert({ task_id: mine.taskId, user_id: userId, start_at: new Date(mine.startedAt).toISOString(), end_at: new Date().toISOString(), duration_seconds: sec, note: "" });
+      const { data } = await supabase.from("time_entries").insert({ task_id: mine.taskId, user_id: userId,
+        start_at: new Date(mine.startedAt).toISOString(), end_at: new Date().toISOString(),
+        duration_seconds: sec, note }).select().single();
+      if (data) setTimeEntries((p) => (p.some((e) => e.id === data.id) ? p : [...p, mEntry(data)]));
     }
     await supabase.from("active_timers").delete().eq("user_id", userId);
+    return mine.taskId;
+  };
+  /* Met la tâche en pause : le chrono s'arrête, le statut repasse à "en cours" */
+  const pauseTask = async () => {
+    const taskId = await stopTimer("pause");
+    if (taskId) await updateTask(taskId, { status: "en_cours" });
+  };
+  /* Termine la tâche : arrête le chrono et bascule le statut sur "terminé" */
+  const finishTask = async (taskId) => {
+    const mine = activeTimers.find((t) => t.userId === userId);
+    if (mine && (!taskId || mine.taskId === taskId)) await stopTimer("");
+    if (taskId) await updateTask(taskId, { status: "termine" });
   };
   const addManualTime = async (taskId, min) => {
-    await supabase.from("time_entries").insert({ task_id: taskId, user_id: userId, start_at: new Date(Date.now() - min * 60000).toISOString(), end_at: new Date().toISOString(), duration_seconds: min * 60, note: "saisie manuelle" });
+    const { data } = await supabase.from("time_entries").insert({ task_id: taskId, user_id: userId, start_at: new Date(Date.now() - min * 60000).toISOString(), end_at: new Date().toISOString(), duration_seconds: min * 60, note: "saisie manuelle" }).select().single();
+    if (data) setTimeEntries((p) => (p.some((e) => e.id === data.id) ? p : [...p, mEntry(data)]));
   };
-  const deleteEntry = async (id) => { await supabase.from("time_entries").delete().eq("id", id); };
+  const deleteEntry = async (id) => {
+    setTimeEntries((p) => p.filter((e) => e.id !== id));
+    await supabase.from("time_entries").delete().eq("id", id);
+  };
 
   /* ================= ACTIONS : MESSAGERIE ================= */
   const ensureDm = async (otherId) => {
@@ -640,7 +784,7 @@ function useStore(userId) {
     const row = { ref: f.ref || "", name: f.name, kind: f.kind, address: f.address || "", commune: f.commune || "",
       quartier: f.quartier || "", owner_id: f.ownerId || null, lots_count: Number(f.lotsCount) || 1,
       surface_m2: f.surface ? Number(f.surface) : null, rent_amount: f.rent ? Number(f.rent) : null,
-      mandate_type: f.mandate, status: f.status, notes: f.notes || "" };
+      mandate_type: f.mandate, status: f.status, notes: f.notes || "", agent_id: f.agentId || null, sale_price: f.salePrice ? Number(f.salePrice) : null, available_for: f.availableFor || 'aucun' };
     if (f.id) { const { error } = await supabase.from("properties").update(row).eq("id", f.id); return { error: error?.message }; }
     const { data, error } = await supabase.from("properties").insert({ ...row, created_by: userId }).select().single();
     if (data) setProperties((p) => p.some((x) => x.id === data.id) ? p : [...p, mProp(data)]);
@@ -748,6 +892,115 @@ function useStore(userId) {
     return { error: error?.message };
   };
 
+  /* ================= ACTIONS : LOTS ================= */
+  const saveUnit = async (f) => {
+    const row = { property_id: f.propertyId, label: f.label, kind: f.kind, floor: f.floor || "",
+      rooms: f.rooms ? Number(f.rooms) : null, surface_m2: f.surface ? Number(f.surface) : null,
+      rent_amount: Number(f.rent) || 0, charges_amount: Number(f.charges) || 0, status: f.status,
+      tenant_name: f.tenantName || "", tenant_phone: f.tenantPhone || "",
+      lease_start: f.leaseStart || null, notes: f.notes || "" };
+    if (f.id) {
+      setUnits((p) => p.map((u) => (u.id === f.id ? { ...u, ...f } : u)));
+      const { error } = await supabase.from("units").update(row).eq("id", f.id);
+      return { error: error?.message };
+    }
+    const { data, error } = await supabase.from("units").insert(row).select().single();
+    if (data) setUnits((p) => (p.some((u) => u.id === data.id) ? p : [...p, mUnit(data)]));
+    return { error: error?.message, id: data?.id };
+  };
+  const deleteUnit = async (id) => {
+    setUnits((p) => p.filter((u) => u.id !== id));
+    const { error } = await supabase.from("units").delete().eq("id", id);
+    return { error: error?.message };
+  };
+  /* Création de plusieurs lots d'un coup (ex. Appt A1 → A8) */
+  const bulkCreateUnits = async (propertyId, rows) => {
+    const payload = rows.filter((r) => (r.label || "").trim()).map((r) => ({
+      property_id: propertyId, label: r.label, kind: r.kind || "appartement",
+      rent_amount: Number(r.rent) || 0, status: r.status || "vacant",
+    }));
+    if (!payload.length) return {};
+    const { data, error } = await supabase.from("units").insert(payload).select();
+    if (data) setUnits((p) => [...p, ...data.map(mUnit).filter((u) => !p.some((x) => x.id === u.id))]);
+    return { error: error?.message };
+  };
+
+  /* ================= ACTIONS : RECOUVREMENT ================= */
+  const savePeriod = async (f) => {
+    const row = { property_id: f.propertyId, period: f.period, scope: f.scope,
+      agency_rate: Number(f.rate) || 0, status: f.status || "brouillon", notes: f.notes || "" };
+    if (f.id) {
+      setRentPeriods((p) => p.map((x) => (x.id === f.id ? { ...x, ...f } : x)));
+      const { error } = await supabase.from("rent_periods").update(row).eq("id", f.id);
+      return { error: error?.message, id: f.id };
+    }
+    const { data, error } = await supabase.from("rent_periods")
+      .insert({ ...row, created_by: userId }).select().single();
+    if (data) setRentPeriods((p) => (p.some((x) => x.id === data.id) ? p : [mPeriod(data), ...p]));
+    return { error: error?.message, id: data?.id };
+  };
+  const deletePeriod = async (id) => {
+    setRentPeriods((p) => p.filter((x) => x.id !== id));
+    const { error } = await supabase.from("rent_periods").delete().eq("id", id);
+    return { error: error?.message };
+  };
+  /* Remplace en bloc les lignes et charges d'une période */
+  const savePeriodContent = async (periodId, lines, charges) => {
+    await supabase.from("rent_lines").delete().eq("period_id", periodId);
+    await supabase.from("rent_charges").delete().eq("period_id", periodId);
+    const lPayload = lines.filter((l) => (l.tenantName || l.unitLabel || "").trim()).map((l, i) => ({
+      period_id: periodId, unit_id: l.unitId || null, unit_label: l.unitLabel || "",
+      tenant_name: l.tenantName || "", tenant_phone: l.tenantPhone || "",
+      expected: Number(l.expected) || 0, collected: Number(l.collected) || 0,
+      paid_at: l.paidAt || null, charges: Number(l.charges) || 0, comment: l.comment || "", position: i }));
+    const cPayload = charges.filter((c) => (c.label || "").trim()).map((c, i) => ({
+      period_id: periodId, label: c.label, amount: Number(c.amount) || 0,
+      observation: c.observation || "", position: i }));
+    let err = null;
+    if (lPayload.length) { const { error } = await supabase.from("rent_lines").insert(lPayload); err = err || error; }
+    if (cPayload.length) { const { error } = await supabase.from("rent_charges").insert(cPayload); err = err || error; }
+    const [l, c] = await Promise.all([
+      supabase.from("rent_lines").select("*").order("position"),
+      supabase.from("rent_charges").select("*").order("position"),
+    ]);
+    if (l.data) setRentLines(l.data.map(mRLine));
+    if (c.data) setRentCharges(c.data.map(mRCharge));
+    return { error: err?.message };
+  };
+  const setPeriodStatus = async (id, status) => {
+    setRentPeriods((p) => p.map((x) => (x.id === id ? { ...x, status } : x)));
+    await supabase.from("rent_periods").update({ status }).eq("id", id);
+  };
+
+  /* ================= ACTIONS : TRANSPORT & PERMISSIONS ================= */
+  const saveRequest = async (f) => {
+    const row = { req_type: f.reqType, req_date: f.date, amount: Number(f.amount) || 0,
+      destination: f.destination || "", transport_mode: f.mode || "taxi",
+      property_id: f.propertyId || null, start_date: f.startDate || null, end_date: f.endDate || null,
+      absence_type: f.absenceType || "personnelle", motif: f.motif || "" };
+    if (f.id) {
+      setRequests((p) => p.map((x) => (x.id === f.id ? { ...x, ...f } : x)));
+      const { error } = await supabase.from("requests").update(row).eq("id", f.id);
+      return { error: error?.message };
+    }
+    const { data, error } = await supabase.from("requests")
+      .insert({ ...row, user_id: userId, status: "en_attente" }).select().single();
+    if (data) setRequests((p) => (p.some((x) => x.id === data.id) ? p : [mReq(data), ...p]));
+    return { error: error?.message, id: data?.id };
+  };
+  const decideRequest = async (id, status, note = "") => {
+    setRequests((p) => p.map((x) => (x.id === id ? { ...x, status, decisionNote: note, decidedBy: userId } : x)));
+    const { error } = await supabase.from("requests")
+      .update({ status, decision_note: note, decided_by: userId, decided_at: new Date().toISOString() })
+      .eq("id", id);
+    return { error: error?.message };
+  };
+  const deleteRequest = async (id) => {
+    setRequests((p) => p.filter((x) => x.id !== id));
+    const { error } = await supabase.from("requests").delete().eq("id", id);
+    return { error: error?.message };
+  };
+
   /* ================= ACTIONS : DOCUMENTS ================= */
   const saveDocument = async (f) => {
     const total = (f.lines || []).reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.price) || 0), 0);
@@ -780,13 +1033,17 @@ function useStore(userId) {
   return {
     loading, departments, members, tasks, timeEntries, activeTimers, channels, channelMembers, messages,
     owners, properties, products, stockEntries, releases, releaseLines, quotes, quoteLines, templates, documents,
+    units, rentPeriods, rentLines, rentCharges, requests,
     actions: {
-      createTask, updateTask, deleteTask, startTimer, stopTimer, addManualTime, deleteEntry,
+      createTask, updateTask, deleteTask, startTimer, stopTimer, pauseTask, finishTask, addManualTime, deleteEntry,
       ensureDm, sendMessage, markRead, saveDept, deleteDept, updateProfile, adminUsers,
       saveOwner, deleteOwner, saveProperty, deleteProperty,
       saveProduct, deleteProduct, addStockEntry, saveRelease, deleteRelease,
       saveQuote, setQuoteStatus, deleteQuote,
-      saveDocument, setDocumentStatus, deleteDocument, reload: load,
+      saveDocument, setDocumentStatus, deleteDocument,
+      saveUnit, deleteUnit, bulkCreateUnits,
+      savePeriod, deletePeriod, savePeriodContent, setPeriodStatus,
+      saveRequest, decideRequest, deleteRequest, reload: load,
     },
   };
 }
@@ -1634,17 +1891,14 @@ function Devis({ store, me }) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════
-   MODULE PATRIMOINE (biens & propriétaires)
+   MODULE PATRIMOINE (biens, lots, vacants)
    ══════════════════════════════════════════════════════════════════════ */
-/* ---------------- Modales ---------------- */
+/* ---------------- Modale propriétaire ---------------- */
 function OwnerModal({ initial, onSave, onClose }) {
   const [f, setF] = useState(() => ({ name: "", kind: "particulier", phone: "", email: "", address: "", idNumber: "", notes: "", active: true, ...initial }));
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
-  const submit = async () => {
-    setBusy(true); const r = await onSave(f); setBusy(false);
-    if (r?.error) setErr(r.error); else onClose();
-  };
+  const submit = async () => { setBusy(true); const r = await onSave(f); setBusy(false); if (r?.error) setErr(r.error); else onClose(); };
   return (
     <Modal title={f.id ? "Modifier le propriétaire" : "Nouveau propriétaire"} onClose={onClose}>
       <Field label="Nom / Raison sociale"><input className={inputCls} style={inputStyle} value={f.name} autoFocus onChange={(e) => set("name", e.target.value)} placeholder="Ex. M. KOUAMÉ Yao" /></Field>
@@ -1665,52 +1919,181 @@ function OwnerModal({ initial, onSave, onClose }) {
   );
 }
 
-function PropertyModal({ initial, owners, onSave, onClose, onNewOwner }) {
-  const [f, setF] = useState(() => ({ ref: "", name: "", kind: "immeuble", address: "", commune: "Cocody", quartier: "", ownerId: "", lotsCount: 1, surface: "", rent: "", mandate: "gestion", status: "actif", notes: "", ...initial }));
+/* ---------------- Modale bien (avec lots) ---------------- */
+function PropertyModal({ initial, owners, members, units, onSave, onSaveUnits, onClose, onNewOwner }) {
+  const [f, setF] = useState(() => ({
+    ref: "", name: "", kind: "immeuble", address: "", commune: "Cocody", quartier: "", ownerId: "",
+    lotsCount: 1, surface: "", rent: "", mandate: "gestion", status: "actif", notes: "",
+    agentId: "", salePrice: "", availableFor: "aucun", ...initial,
+  }));
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
-  const submit = async () => {
-    setBusy(true); const r = await onSave(f); setBusy(false);
-    if (r?.error) setErr(r.error); else onClose();
+
+  const isMulti = f.kind === "immeuble";
+  const [lots, setLots] = useState(() => (initial?.id ? units.filter((u) => u.propertyId === initial.id).map((u) => ({ ...u })) : []));
+  const [gen, setGen] = useState({ prefix: "Appt A", count: 4, kind: "appartement", rent: "" });
+
+  const setLot = (i, k, v) => setLots((p) => p.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
+  const addLot = () => setLots((p) => [...p, { label: "", kind: isMulti ? "appartement" : (f.kind === "villa" ? "villa" : "appartement"), rent: f.rent || 0, status: "vacant", tenantName: "" }]);
+  const generate = () => {
+    const n = Math.max(1, Math.min(60, Number(gen.count) || 1));
+    setLots((p) => [...p, ...Array.from({ length: n }, (_, i) => ({
+      label: `${gen.prefix}${i + 1}`, kind: gen.kind, rent: Number(gen.rent) || Number(f.rent) || 0,
+      status: "vacant", tenantName: "",
+    }))]);
   };
+
+  const submit = async () => {
+    setBusy(true);
+    const r = await onSave({ ...f, lotsCount: isMulti ? Math.max(lots.length, 1) : 1 });
+    if (r?.error) { setBusy(false); setErr(r.error); return; }
+    const pid = f.id || r.id;
+    if (pid) await onSaveUnits(pid, lots);
+    setBusy(false); onClose();
+  };
+
   return (
     <Modal title={f.id ? "Modifier le bien" : "Nouveau bien"} onClose={onClose} wide>
       <div className="grid sm:grid-cols-3 gap-3">
-        <Field label="Désignation du bien"><input className={inputCls} style={inputStyle} value={f.name} autoFocus onChange={(e) => set("name", e.target.value)} placeholder="Ex. Immeuble Les Rosiers" /></Field>
+        <Field label="Désignation du bien"><input className={inputCls} style={inputStyle} value={f.name} autoFocus onChange={(e) => set("name", e.target.value)} placeholder="Ex. Résidence TIA" /></Field>
         <Field label="Référence interne"><input className={inputCls} style={inputStyle} value={f.ref} onChange={(e) => set("ref", e.target.value)} placeholder="KB-001" /></Field>
-        <Field label="Type"><select className={inputCls} style={inputStyle} value={f.kind} onChange={(e) => set("kind", e.target.value)}>{Object.entries(PROPERTY_KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+        <Field label="Type de bien" hint="Immeuble = plusieurs lots">
+          <select className={inputCls} style={inputStyle} value={f.kind} onChange={(e) => set("kind", e.target.value)}>
+            {Object.entries(PROPERTY_KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </Field>
       </div>
       <div className="grid sm:grid-cols-3 gap-3">
         <Field label="Commune"><select className={inputCls} style={inputStyle} value={f.commune} onChange={(e) => set("commune", e.target.value)}>{COMMUNES.map((c) => <option key={c} value={c}>{c}</option>)}</select></Field>
-        <Field label="Quartier"><input className={inputCls} style={inputStyle} value={f.quartier} onChange={(e) => set("quartier", e.target.value)} placeholder="Ex. Angré 8e tranche" /></Field>
+        <Field label="Quartier"><input className={inputCls} style={inputStyle} value={f.quartier} onChange={(e) => set("quartier", e.target.value)} placeholder="Ex. Danga" /></Field>
         <Field label="Adresse / repère"><input className={inputCls} style={inputStyle} value={f.address} onChange={(e) => set("address", e.target.value)} /></Field>
       </div>
-      <Field label="Propriétaire">
-        <div className="flex gap-2">
-          <select className={inputCls} style={inputStyle} value={f.ownerId || ""} onChange={(e) => set("ownerId", e.target.value)}>
-            <option value="">— Non renseigné —</option>
-            {owners.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Propriétaire">
+          <div className="flex gap-2">
+            <select className={inputCls} style={inputStyle} value={f.ownerId || ""} onChange={(e) => set("ownerId", e.target.value)}>
+              <option value="">— Non renseigné —</option>
+              {owners.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+            <button onClick={onNewOwner} className="kb-btn kb-btn-ghost shrink-0" title="Créer un propriétaire"><Plus size={15} /></button>
+          </div>
+        </Field>
+        <Field label="Agent / commercial en charge">
+          <select className={inputCls} style={inputStyle} value={f.agentId || ""} onChange={(e) => set("agentId", e.target.value)}>
+            <option value="">— Non attribué —</option>
+            {members.filter((m) => m.active).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
-          <button onClick={onNewOwner} className="kb-btn kb-btn-ghost shrink-0" title="Créer un propriétaire"><Plus size={15} /></button>
-        </div>
-      </Field>
+        </Field>
+      </div>
       <div className="grid sm:grid-cols-4 gap-3">
-        <Field label="Nombre de lots"><input type="number" min={1} className={inputCls} style={inputStyle} value={f.lotsCount} onChange={(e) => set("lotsCount", e.target.value)} /></Field>
         <Field label="Surface (m²)"><input type="number" min={0} className={inputCls} style={inputStyle} value={f.surface} onChange={(e) => set("surface", e.target.value)} /></Field>
-        <Field label="Loyer mensuel (FCFA)"><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.rent} onChange={(e) => set("rent", e.target.value)} /></Field>
+        <Field label={isMulti ? "Loyer type d'un lot" : "Loyer mensuel (FCFA)"}><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.rent} onChange={(e) => set("rent", e.target.value)} /></Field>
+        <Field label="Prix de vente (FCFA)"><input type="number" min={0} step={100000} className={inputCls} style={inputStyle} value={f.salePrice} onChange={(e) => set("salePrice", e.target.value)} /></Field>
         <Field label="Statut"><select className={inputCls} style={inputStyle} value={f.status} onChange={(e) => set("status", e.target.value)}>{Object.entries(PROPERTY_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></Field>
       </div>
-      <Field label="Type de mandat"><select className={inputCls} style={inputStyle} value={f.mandate} onChange={(e) => set("mandate", e.target.value)}>{Object.entries(MANDATE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Type de mandat"><select className={inputCls} style={inputStyle} value={f.mandate} onChange={(e) => set("mandate", e.target.value)}>{Object.entries(MANDATE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+        <Field label="Disponibilité commerciale" hint="Alimente le tableau des biens vacants">
+          <select className={inputCls} style={inputStyle} value={f.availableFor} onChange={(e) => set("availableFor", e.target.value)}>
+            {Object.entries(AVAILABLE_FOR).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      <div className="rounded-xl border p-3 mb-3" style={{ borderColor: "var(--line)", background: "#FAFBFC" }}>
+        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+          <p className="text-xs font-semibold flex items-center gap-1.5"><Layers size={13} style={{ color: "var(--brass)" }} />
+            {isMulti ? "Lots de l'immeuble (appartements, magasins…)" : "Lot unique (facultatif)"}
+          </p>
+          <button onClick={addLot} className="kb-btn kb-btn-ghost text-xs"><Plus size={12} /> Ajouter un lot</button>
+        </div>
+
+        {isMulti && (
+          <div className="flex flex-wrap items-end gap-2 mb-3 pb-3 border-b" style={{ borderColor: "var(--line)" }}>
+            <div><span className="block text-[11px] mb-1" style={{ color: "var(--muted)" }}>Préfixe</span>
+              <input className="px-2 py-1.5 rounded border text-xs w-28" style={inputStyle} value={gen.prefix} onChange={(e) => setGen((p) => ({ ...p, prefix: e.target.value }))} /></div>
+            <div><span className="block text-[11px] mb-1" style={{ color: "var(--muted)" }}>Nombre</span>
+              <input type="number" min={1} max={60} className="px-2 py-1.5 rounded border text-xs w-16" style={inputStyle} value={gen.count} onChange={(e) => setGen((p) => ({ ...p, count: e.target.value }))} /></div>
+            <div><span className="block text-[11px] mb-1" style={{ color: "var(--muted)" }}>Type</span>
+              <select className="px-2 py-1.5 rounded border text-xs" style={inputStyle} value={gen.kind} onChange={(e) => setGen((p) => ({ ...p, kind: e.target.value }))}>
+                {Object.entries(UNIT_KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select></div>
+            <div><span className="block text-[11px] mb-1" style={{ color: "var(--muted)" }}>Loyer</span>
+              <input type="number" min={0} step={5000} className="px-2 py-1.5 rounded border text-xs w-24" style={inputStyle} value={gen.rent} onChange={(e) => setGen((p) => ({ ...p, rent: e.target.value }))} placeholder={f.rent || "0"} /></div>
+            <button onClick={generate} className="kb-btn kb-btn-ghost text-xs">Générer la série</button>
+          </div>
+        )}
+
+        <div className="space-y-1.5 max-h-64 overflow-y-auto">
+          {lots.map((l, i) => (
+            <div key={i} className="flex flex-wrap gap-1.5 items-center">
+              <input className="px-2 py-1.5 rounded border text-xs w-24" style={inputStyle} value={l.label} onChange={(e) => setLot(i, "label", e.target.value)} placeholder="Appt A1" />
+              <select className="px-2 py-1.5 rounded border text-xs w-28" style={inputStyle} value={l.kind} onChange={(e) => setLot(i, "kind", e.target.value)}>
+                {Object.entries(UNIT_KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+              <input type="number" min={0} step={5000} className="px-2 py-1.5 rounded border text-xs w-24 text-right" style={inputStyle} value={l.rent} onChange={(e) => setLot(i, "rent", e.target.value)} title="Loyer" />
+              <select className="px-2 py-1.5 rounded border text-xs w-24" style={inputStyle} value={l.status} onChange={(e) => setLot(i, "status", e.target.value)}>
+                {Object.entries(UNIT_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              </select>
+              <input className="px-2 py-1.5 rounded border text-xs flex-1 min-w-[110px]" style={inputStyle} value={l.tenantName || ""} onChange={(e) => setLot(i, "tenantName", e.target.value)} placeholder="Locataire (si occupé)" />
+              <button onClick={() => setLots((p) => p.filter((_, j) => j !== i))} className="text-slate-300 hover:text-red-500 px-1"><X size={14} /></button>
+            </div>
+          ))}
+          {lots.length === 0 && <p className="text-xs text-center py-3" style={{ color: "#B6BEC9" }}>Aucun lot. {isMulti ? "Générez la série ou ajoutez-les un par un." : "Facultatif pour une villa ou un appartement indépendant."}</p>}
+        </div>
+        {lots.length > 0 && <p className="text-[11px] mt-2" style={{ color: "var(--muted)" }}>
+          {lots.length} lot(s) · {lots.filter((l) => l.status === "vacant").length} vacant(s) · loyer cumulé {fcfa(lots.reduce((a, l) => a + (Number(l.rent) || 0), 0))}
+        </p>}
+      </div>
+
       <Field label="Notes"><textarea className={inputCls} style={inputStyle} rows={2} value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
       {err && <p className="text-xs text-red-600 mb-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
       <div className="flex justify-end gap-2"><button onClick={onClose} className="kb-btn kb-btn-ghost">Annuler</button>
-        <button disabled={!f.name.trim() || busy} onClick={submit} className="kb-btn kb-btn-primary disabled:opacity-40"><Check size={16} /> Enregistrer</button></div>
+        <button disabled={!f.name.trim() || busy} onClick={submit} className="kb-btn kb-btn-primary disabled:opacity-40"><Check size={16} /> {busy ? "…" : "Enregistrer"}</button></div>
     </Modal>
   );
 }
 
-/* ---------------- Fiche détaillée d'un bien ---------------- */
-function PropertyDetail({ property, owner, tasks, quotes, releases, releaseLines, products, members, onBack, onEdit }) {
+/* ---------------- Registre imprimable ---------------- */
+function Register({ title, subtitle, columns, rows, onBack, footer }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
+        <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
+        <button onClick={() => window.print()} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+      </div>
+      <div id="print-area" className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
+        <div className="flex items-start justify-between gap-4 pb-3 border-b" style={{ borderColor: "var(--line)" }}>
+          <div className="flex items-center gap-3">
+            <img src={LOGO} alt="Entreprise Kibegnon" className="h-12 w-auto" />
+            <div><p className="font-bold text-sm">ENTREPRISE KIBEGNON</p><p className="text-[11px]" style={{ color: "var(--muted)" }}>Agence immobilière · Cocody, Abidjan</p></div>
+          </div>
+          <div className="text-right">
+            <p className="text-base font-bold" style={{ color: "var(--brass)" }}>{title}</p>
+            <p className="text-[11px]" style={{ color: "var(--muted)" }}>{subtitle}</p>
+            <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
+          </div>
+        </div>
+        <table className="w-full text-[11px] mt-4">
+          <thead><tr style={{ background: "#F1F3F5" }}>
+            {columns.map((c, i) => <th key={i} className={`px-2 py-1.5 font-semibold ${c.right ? "text-right" : "text-left"}`}>{c.label}</th>)}
+          </tr></thead>
+          <tbody>{rows.map((r, i) => (
+            <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
+              {columns.map((c, j) => <td key={j} className={`px-2 py-1.5 ${c.right ? "text-right tabular-nums" : ""}`}>{c.render(r)}</td>)}
+            </tr>
+          ))}</tbody>
+        </table>
+        {rows.length === 0 && <p className="text-sm text-center py-8" style={{ color: "var(--muted)" }}>Aucune ligne.</p>}
+        {footer && <div className="mt-4 pt-3 border-t text-xs" style={{ borderColor: "var(--line)" }}>{footer}</div>}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Fiche d'un bien ---------------- */
+function PropertyDetail({ property, owner, agent, units, tasks, quotes, releases, releaseLines, products, members, onBack, onEdit }) {
+  const pUnits = units.filter((u) => u.propertyId === property.id);
   const pTasks = tasks.filter((t) => t.propertyId === property.id);
   const pQuotes = quotes.filter((q) => q.propertyId === property.id);
   const pReleases = releases.filter((r) => r.propertyId === property.id);
@@ -1719,6 +2102,8 @@ function PropertyDetail({ property, owner, tasks, quotes, releases, releaseLines
 
   const depQuotes = pQuotes.filter((q) => ["valide", "execute", "paye"].includes(q.status)).reduce((a, q) => a + q.total, 0);
   const consoValue = pReleases.reduce((a, r) => a + releaseLines.filter((l) => l.releaseId === r.id).reduce((s, l) => s + l.qty * l.price, 0), 0);
+  const rentTotal = pUnits.length ? pUnits.reduce((a, u) => a + u.rent, 0) : (property.rent || 0);
+  const occupied = pUnits.filter((u) => u.status === "occupe").length;
   const st = PROPERTY_STATUS[property.status];
 
   return (
@@ -1731,36 +2116,58 @@ function PropertyDetail({ property, owner, tasks, quotes, releases, releaseLines
               <h1 className="text-xl font-bold">{property.name}</h1>
               <Chip color={st.color} dot>{st.label}</Chip>
               {property.ref && <Chip color="#64748B">{property.ref}</Chip>}
+              {property.availableFor !== "aucun" && <Chip color="#EA580C">{AVAILABLE_FOR[property.availableFor]}</Chip>}
             </div>
             <p className="text-sm mt-1 flex items-center gap-1" style={{ color: "var(--muted)" }}>
-              <MapPin size={13} /> {[property.quartier, property.commune].filter(Boolean).join(", ") || "Localisation non renseignée"} · {PROPERTY_KIND[property.kind]} · {property.lotsCount} lot(s)
+              <MapPin size={13} /> {[property.quartier, property.commune].filter(Boolean).join(", ") || "Localisation non renseignée"} · {PROPERTY_KIND[property.kind]}
+              {pUnits.length > 0 && ` · ${pUnits.length} lot(s)`}
             </p>
-            {owner && <p className="text-sm mt-1 flex items-center gap-1"><UserRound size={13} style={{ color: "var(--brass)" }} /> {owner.name}{owner.phone && <span style={{ color: "var(--muted)" }}> · {owner.phone}</span>}</p>}
+            <div className="flex flex-wrap gap-3 mt-1.5 text-sm">
+              {owner && <span className="flex items-center gap-1"><UserRound size={13} style={{ color: "var(--brass)" }} /> {owner.name}</span>}
+              {agent && <span className="flex items-center gap-1"><BadgeCheck size={13} style={{ color: "#2E78A8" }} /> {agent.name}</span>}
+            </div>
           </div>
           <button onClick={() => onEdit(property)} className="kb-btn kb-btn-ghost"><Pencil size={15} /> Modifier</button>
         </div>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-        <StatCard icon={Wallet} label="Loyer de référence" value={property.rent ? fcfa(property.rent) : "—"} tint="#4F9E2A" />
+        <StatCard icon={Wallet} label="Loyer mensuel cumulé" value={rentTotal ? fcfa(rentTotal) : "—"} sub={pUnits.length ? `${occupied}/${pUnits.length} occupé(s)` : undefined} tint="#4F9E2A" />
         <StatCard icon={FileText} label="Dépenses artisans" value={fcfa(depQuotes)} sub={`${pQuotes.length} devis`} tint="var(--brass)" />
         <StatCard icon={SprayCan} label="Produits consommés" value={fcfa(consoValue)} sub={`${pReleases.length} sorties`} tint="#7C3AED" />
-        <StatCard icon={ListChecks} label="Tâches ouvertes" value={pTasks.filter((t) => t.status !== "termine").length} sub={`${pTasks.length} au total`} tint="#2E78A8" />
+        <StatCard icon={ListChecks} label="Tâches ouvertes" value={pTasks.filter((t) => t.status !== "termine").length} tint="#2E78A8" />
       </div>
+
+      {pUnits.length > 0 && (
+        <SectionCard title={`Lots (${pUnits.length})`} icon={Layers} pad={false}>
+          <div className="overflow-x-auto"><table className="w-full text-sm">
+            <thead><tr className="text-left" style={{ color: "var(--muted)" }}>
+              <th className="px-4 py-2.5 font-medium">Lot</th><th className="px-3 py-2.5 font-medium">Type</th>
+              <th className="px-3 py-2.5 font-medium">Locataire</th><th className="px-3 py-2.5 font-medium">Loyer</th>
+              <th className="px-3 py-2.5 font-medium">Statut</th></tr></thead>
+            <tbody>{pUnits.map((u) => {
+              const us = UNIT_STATUS[u.status];
+              return <tr key={u.id} className="border-t" style={{ borderColor: "var(--line)" }}>
+                <td className="px-4 py-2.5 font-medium">{u.label}</td>
+                <td className="px-3 py-2.5">{UNIT_KIND[u.kind]}</td>
+                <td className="px-3 py-2.5" style={{ color: u.tenantName ? "var(--ink)" : "var(--muted)" }}>{u.tenantName || "—"}</td>
+                <td className="px-3 py-2.5 tabular-nums">{fcfa(u.rent)}</td>
+                <td className="px-3 py-2.5"><Chip color={us.color} dot>{us.label}</Chip></td>
+              </tr>;
+            })}</tbody>
+          </table></div>
+        </SectionCard>
+      )}
 
       <SectionCard title="Devis artisans rattachés" icon={FileText} pad={false}>
         {pQuotes.length ? <div className="divide-y" style={{ borderColor: "var(--line)" }}>
           {pQuotes.map((q) => <div key={q.id} className="flex items-center justify-between px-4 py-2.5 gap-2">
-            <div className="min-w-0">
-              <p className="text-sm font-medium truncate">{q.object || q.artisanName}</p>
-              <p className="text-[11px]" style={{ color: "var(--muted)" }}>{q.ref} · {q.artisanName}{q.trade ? ` (${q.trade})` : ""} · {fr(q.date + "T00:00:00", { day: "numeric", month: "short", year: "numeric" })}</p>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-sm font-semibold">{fcfa(q.total)}</span>
-              <Chip color={QUOTE_STATUS[q.status].color}>{QUOTE_STATUS[q.status].label}</Chip>
-            </div>
+            <div className="min-w-0"><p className="text-sm font-medium truncate">{q.object || q.artisanName}</p>
+              <p className="text-[11px]" style={{ color: "var(--muted)" }}>{q.ref} · {q.artisanName} · {fr(q.date + "T00:00:00", { day: "numeric", month: "short", year: "numeric" })}</p></div>
+            <div className="flex items-center gap-2 shrink-0"><span className="text-sm font-semibold">{fcfa(q.total)}</span>
+              <Chip color={QUOTE_STATUS[q.status].color}>{QUOTE_STATUS[q.status].label}</Chip></div>
           </div>)}
-        </div> : <p className="text-sm text-center py-6" style={{ color: "var(--muted)" }}>Aucun devis rattaché à ce bien.</p>}
+        </div> : <p className="text-sm text-center py-6" style={{ color: "var(--muted)" }}>Aucun devis rattaché.</p>}
       </SectionCard>
 
       <SectionCard title="Sorties de matériel" icon={SprayCan} pad={false}>
@@ -1772,27 +2179,21 @@ function PropertyDetail({ property, owner, tasks, quotes, releases, releaseLines
                 <p className="text-sm font-medium">{r.ref} · {r.zone || "Zone non précisée"}</p>
                 <span className="text-xs" style={{ color: "var(--muted)" }}>{fr(r.date + "T00:00:00", { day: "numeric", month: "short" })}</span>
               </div>
-              <p className="text-[11px] mt-0.5" style={{ color: "var(--muted)" }}>
-                {lines.map((l) => `${productById[l.productId]?.name || "?"} ×${qty(l.qty)}`).join(" · ") || "Aucun produit"}
-              </p>
+              <p className="text-[11px] mt-0.5" style={{ color: "var(--muted)" }}>{lines.map((l) => `${productById[l.productId]?.name || "?"} ×${qty(l.qty)}`).join(" · ") || "Aucun produit"}</p>
             </div>;
           })}
-        </div> : <p className="text-sm text-center py-6" style={{ color: "var(--muted)" }}>Aucune sortie enregistrée pour ce bien.</p>}
+        </div> : <p className="text-sm text-center py-6" style={{ color: "var(--muted)" }}>Aucune sortie enregistrée.</p>}
       </SectionCard>
 
       <SectionCard title="Tâches liées" icon={ListChecks} pad={false}>
         {pTasks.length ? <div className="divide-y" style={{ borderColor: "var(--line)" }}>
           {pTasks.map((t) => <div key={t.id} className="flex items-center justify-between px-4 py-2.5 gap-2">
-            <div className="min-w-0">
-              <p className="text-sm truncate">{t.title}</p>
-              <p className="text-[11px]" style={{ color: "var(--muted)" }}>{memberById[t.assigneeId]?.name || "—"} · {NATURE[t.nature]?.label || "Autre"}</p>
-            </div>
-            <div className="flex gap-1.5 shrink-0">
-              <Chip color={URGENCY[t.urgency].color} bg={URGENCY[t.urgency].bg}>{URGENCY[t.urgency].label}</Chip>
-              <Chip color={STATUS[t.status].color}>{STATUS[t.status].label}</Chip>
-            </div>
+            <div className="min-w-0"><p className="text-sm truncate">{t.title}</p>
+              <p className="text-[11px]" style={{ color: "var(--muted)" }}>{memberById[t.assigneeId]?.name || "—"} · {NATURE[t.nature]?.label || "Autre"}</p></div>
+            <div className="flex gap-1.5 shrink-0"><Chip color={URGENCY[t.urgency].color} bg={URGENCY[t.urgency].bg}>{URGENCY[t.urgency].label}</Chip>
+              <Chip color={STATUS[t.status].color}>{STATUS[t.status].label}</Chip></div>
           </div>)}
-        </div> : <p className="text-sm text-center py-6" style={{ color: "var(--muted)" }}>Aucune tâche liée à ce bien.</p>}
+        </div> : <p className="text-sm text-center py-6" style={{ color: "var(--muted)" }}>Aucune tâche liée.</p>}
       </SectionCard>
     </div>
   );
@@ -1800,25 +2201,91 @@ function PropertyDetail({ property, owner, tasks, quotes, releases, releaseLines
 
 /* ---------------- Vue principale ---------------- */
 function Patrimoine({ store, me }) {
-  const { owners, properties, tasks, quotes, releases, releaseLines, products, members, actions } = store;
+  const { owners, properties, units, tasks, quotes, releases, releaseLines, products, members, actions } = store;
   const [tab, setTab] = useState("biens");
   const [search, setSearch] = useState("");
   const [filterCommune, setFilterCommune] = useState("all");
   const [propModal, setPropModal] = useState(null);
   const [ownerModal, setOwnerModal] = useState(null);
   const [detailId, setDetailId] = useState(null);
+  const [register, setRegister] = useState(null);
 
   const ownerById = useMemo(() => Object.fromEntries(owners.map((o) => [o.id, o])), [owners]);
+  const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
   const detail = properties.find((p) => p.id === detailId);
   const sup = canSupervise(me.role);
 
+  const saveUnitsFor = async (propertyId, lots) => {
+    const existing = units.filter((u) => u.propertyId === propertyId);
+    const keptIds = lots.filter((l) => l.id).map((l) => l.id);
+    for (const u of existing) if (!keptIds.includes(u.id)) await actions.deleteUnit(u.id);
+    for (const l of lots) {
+      if (!(l.label || "").trim()) continue;
+      await actions.saveUnit({ ...l, propertyId });
+    }
+  };
+
+  const vacantRows = useMemo(() => {
+    const rows = [];
+    units.filter((u) => u.status === "vacant").forEach((u) => {
+      const p = properties.find((x) => x.id === u.propertyId);
+      if (!p) return;
+      rows.push({ key: u.id, property: p, label: u.label, kind: UNIT_KIND[u.kind], rent: u.rent,
+        commune: p.commune, quartier: p.quartier, agent: memberById[p.agentId],
+        forWhat: p.availableFor !== "aucun" ? AVAILABLE_FOR[p.availableFor] : "À louer" });
+    });
+    properties.filter((p) => p.availableFor !== "aucun" && !units.some((u) => u.propertyId === p.id)).forEach((p) => {
+      rows.push({ key: p.id, property: p, label: "Bien entier", kind: PROPERTY_KIND[p.kind],
+        rent: p.availableFor === "vente" ? (p.salePrice || 0) : (p.rent || 0),
+        commune: p.commune, quartier: p.quartier, agent: memberById[p.agentId], forWhat: AVAILABLE_FOR[p.availableFor] });
+    });
+    return rows;
+  }, [units, properties, memberById]);
+
+  if (register === "biens") {
+    return <Register title="REGISTRE DES BIENS" subtitle={`${properties.length} bien(s) en gestion`} onBack={() => setRegister(null)}
+      columns={[
+        { label: "Réf.", render: (p) => p.ref || "—" },
+        { label: "Désignation", render: (p) => p.name },
+        { label: "Type", render: (p) => PROPERTY_KIND[p.kind] },
+        { label: "Localisation", render: (p) => [p.quartier, p.commune].filter(Boolean).join(", ") || "—" },
+        { label: "Propriétaire", render: (p) => ownerById[p.ownerId]?.name || "—" },
+        { label: "Agent en charge", render: (p) => memberById[p.agentId]?.name || "— non attribué —" },
+        { label: "Lots", right: true, render: (p) => units.filter((u) => u.propertyId === p.id).length || "—" },
+        { label: "Mandat", render: (p) => MANDATE[p.mandate] },
+        { label: "Loyer", right: true, render: (p) => {
+          const us = units.filter((u) => u.propertyId === p.id);
+          return fcfa(us.length ? us.reduce((a, u) => a + u.rent, 0) : (p.rent || 0));
+        } },
+        { label: "Statut", render: (p) => PROPERTY_STATUS[p.status].label },
+      ]}
+      rows={properties}
+      footer={<span>Total lots : <strong>{units.length}</strong> · Biens sans agent attribué : <strong>{properties.filter((p) => !p.agentId).length}</strong></span>} />;
+  }
+
+  if (register === "vacants") {
+    return <Register title="BIENS DISPONIBLES" subtitle={`${vacantRows.length} lot(s) / bien(s) libre(s)`} onBack={() => setRegister(null)}
+      columns={[
+        { label: "Bâtiment / bien", render: (r) => r.property.name },
+        { label: "Lot", render: (r) => r.label },
+        { label: "Type", render: (r) => r.kind },
+        { label: "Commune", render: (r) => r.commune || "—" },
+        { label: "Quartier", render: (r) => r.quartier || "—" },
+        { label: "Disponible pour", render: (r) => r.forWhat },
+        { label: "Loyer / prix", right: true, render: (r) => fcfa(r.rent) },
+        { label: "Agent en charge", render: (r) => r.agent?.name || "— non attribué —" },
+      ]}
+      rows={vacantRows}
+      footer={<span>Loyer potentiel mensuel : <strong>{fcfa(vacantRows.reduce((a, r) => a + (r.rent || 0), 0))}</strong></span>} />;
+  }
+
   if (detail) {
     return <>
-      <PropertyDetail property={detail} owner={ownerById[detail.ownerId]} tasks={tasks} quotes={quotes}
-        releases={releases} releaseLines={releaseLines} products={products} members={members}
-        onBack={() => setDetailId(null)} onEdit={setPropModal} />
-      {propModal && <PropertyModal initial={propModal} owners={owners} onSave={actions.saveProperty}
-        onClose={() => setPropModal(null)} onNewOwner={() => setOwnerModal({})} />}
+      <PropertyDetail property={detail} owner={ownerById[detail.ownerId]} agent={memberById[detail.agentId]}
+        units={units} tasks={tasks} quotes={quotes} releases={releases} releaseLines={releaseLines}
+        products={products} members={members} onBack={() => setDetailId(null)} onEdit={setPropModal} />
+      {propModal && <PropertyModal initial={propModal} owners={owners} members={members} units={units}
+        onSave={actions.saveProperty} onSaveUnits={saveUnitsFor} onClose={() => setPropModal(null)} onNewOwner={() => setOwnerModal({})} />}
       {ownerModal && <OwnerModal initial={ownerModal} onSave={actions.saveOwner} onClose={() => setOwnerModal(null)} />}
     </>;
   }
@@ -1828,92 +2295,131 @@ function Patrimoine({ store, me }) {
     (!search || p.name.toLowerCase().includes(search.toLowerCase()) || (p.ref || "").toLowerCase().includes(search.toLowerCase()) ||
       (ownerById[p.ownerId]?.name || "").toLowerCase().includes(search.toLowerCase())));
   const filteredOwners = owners.filter((o) => !search || o.name.toLowerCase().includes(search.toLowerCase()) || (o.phone || "").includes(search));
+  const filteredVacants = vacantRows.filter((r) => (filterCommune === "all" || r.commune === filterCommune) &&
+    (!search || r.property.name.toLowerCase().includes(search.toLowerCase()) || r.label.toLowerCase().includes(search.toLowerCase())));
 
   return (
     <div>
       <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
         <h1 className="text-xl font-bold">Patrimoine</h1>
-        <button onClick={() => (tab === "biens" ? setPropModal({}) : setOwnerModal({}))} className="kb-btn kb-btn-primary">
-          <Plus size={16} /> {tab === "biens" ? "Nouveau bien" : "Nouveau propriétaire"}
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => setRegister(tab === "vacants" ? "vacants" : "biens")} className="kb-btn kb-btn-ghost"><Printer size={15} /> {tab === "vacants" ? "Imprimer les vacants" : "Registre des biens"}</button>
+          <button onClick={() => (tab === "proprietaires" ? setOwnerModal({}) : setPropModal({}))} className="kb-btn kb-btn-primary">
+            <Plus size={16} /> {tab === "proprietaires" ? "Propriétaire" : "Bien"}
+          </button>
+        </div>
       </div>
-      <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>Les biens et propriétaires servent de dossier central : tâches, devis et consommables s'y rattachent.</p>
+      <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>Immeubles et leurs lots, villas et appartements indépendants — avec l'agent en charge de chaque bien.</p>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <StatCard icon={Building2} label="Biens en gestion" value={properties.length} sub={`${owners.length} propriétaire(s)`} tint="#2E78A8" />
+        <StatCard icon={Layers} label="Lots au total" value={units.length} sub={`${units.filter((u) => u.status === "occupe").length} occupé(s)`} tint="#4F9E2A" />
+        <StatCard icon={DoorOpen} label="Disponibles" value={vacantRows.length} sub="à louer ou à vendre" tint="#EA580C" />
+        <StatCard icon={Wallet} label="Loyer potentiel" value={fcfa(units.reduce((a, u) => a + u.rent, 0) || properties.reduce((a, p) => a + (p.rent || 0), 0))} sub="tous lots confondus" tint="var(--brass)" />
+      </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="flex rounded-lg border overflow-hidden" style={inputStyle}>
-          {[["biens", `Biens (${properties.length})`], ["proprietaires", `Propriétaires (${owners.length})`]].map(([v, l]) =>
-            <button key={v} onClick={() => setTab(v)} className="px-3 py-2 text-sm" style={{ background: tab === v ? "var(--ink)" : "#fff", color: tab === v ? "#fff" : "var(--muted)" }}>{l}</button>)}
+          {[["biens", `Biens (${properties.length})`], ["vacants", `Vacants (${vacantRows.length})`], ["proprietaires", `Propriétaires (${owners.length})`]].map(([v, l]) =>
+            <button key={v} onClick={() => setTab(v)} className="px-3 py-2 text-sm whitespace-nowrap" style={{ background: tab === v ? "var(--ink)" : "#fff", color: tab === v ? "#fff" : "var(--muted)" }}>{l}</button>)}
         </div>
-        <div className="relative flex-1 min-w-[160px]">
+        <div className="relative flex-1 min-w-[150px]">
           <Search size={15} className="absolute left-2.5 top-2.5 text-slate-400" />
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher…" className="w-full pl-8 pr-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle} />
         </div>
-        {tab === "biens" && <select value={filterCommune} onChange={(e) => setFilterCommune(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+        {tab !== "proprietaires" && <select value={filterCommune} onChange={(e) => setFilterCommune(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
           <option value="all">Toutes communes</option>
           {[...new Set(properties.map((p) => p.commune).filter(Boolean))].map((c) => <option key={c} value={c}>{c}</option>)}
         </select>}
       </div>
 
-      {tab === "biens" ? (
-        filteredProps.length ? <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filteredProps.map((p) => {
-            const st = PROPERTY_STATUS[p.status]; const o = ownerById[p.ownerId];
-            const nQuotes = quotes.filter((q) => q.propertyId === p.id).length;
-            const nOpen = tasks.filter((t) => t.propertyId === p.id && t.status !== "termine").length;
-            return (
-              <button key={p.id} onClick={() => setDetailId(p.id)} className="bg-white rounded-xl border p-3 text-left hover:shadow-md transition-shadow" style={{ borderColor: "var(--line)" }}>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: st.color + "1A", color: st.color }}><Building2 size={17} /></span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold truncate">{p.name}</p>
-                      <p className="text-[11px] truncate" style={{ color: "var(--muted)" }}>{PROPERTY_KIND[p.kind]} · {p.commune || "—"}</p>
-                    </div>
-                  </div>
-                  <Chip color={st.color} dot>{st.label}</Chip>
-                </div>
-                <p className="text-xs mt-2.5 truncate" style={{ color: "var(--muted)" }}><UserRound size={11} className="inline mb-0.5" /> {o?.name || "Propriétaire non renseigné"}</p>
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {p.rent ? <Chip color="#4F9E2A">{fcfa(p.rent)}/mois</Chip> : null}
-                  {nQuotes > 0 && <Chip color="var(--brass)">{nQuotes} devis</Chip>}
-                  {nOpen > 0 && <Chip color="#2E78A8">{nOpen} tâche(s)</Chip>}
-                </div>
-              </button>
-            );
-          })}
-        </div> : <EmptyState icon={Building2} title="Aucun bien enregistré" sub="Commencez par ajouter un immeuble, une villa ou un local."
-          action={<button onClick={() => setPropModal({})} className="kb-btn kb-btn-primary"><Plus size={15} /> Nouveau bien</button>} />
-      ) : (
-        filteredOwners.length ? <div className="bg-white rounded-xl border" style={{ borderColor: "var(--line)" }}>
-          <div className="divide-y" style={{ borderColor: "var(--line)" }}>
-            {filteredOwners.map((o) => {
-              const nProps = properties.filter((p) => p.ownerId === o.id).length;
-              return <div key={o.id} className="flex items-center justify-between px-4 py-3 gap-2">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="w-9 h-9 rounded-full flex items-center justify-center text-white shrink-0" style={{ background: "#2E78A8" }}><UserRound size={16} /></span>
+      {tab === "biens" && (filteredProps.length ? <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {filteredProps.map((p) => {
+          const st = PROPERTY_STATUS[p.status]; const o = ownerById[p.ownerId]; const ag = memberById[p.agentId];
+          const pu = units.filter((u) => u.propertyId === p.id);
+          const vac = pu.filter((u) => u.status === "vacant").length;
+          return (
+            <button key={p.id} onClick={() => setDetailId(p.id)} className="bg-white rounded-xl border p-3 text-left hover:shadow-md transition-shadow" style={{ borderColor: "var(--line)" }}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: st.color + "1A", color: st.color }}>
+                    {p.kind === "immeuble" ? <Building2 size={17} /> : (p.kind === "magasin" || p.kind === "local_commercial") ? <Store size={17} /> : p.kind === "bureau" ? <Briefcase size={17} /> : <Home size={17} />}
+                  </span>
                   <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{o.name}</p>
-                    <p className="text-[11px] flex items-center gap-2 flex-wrap" style={{ color: "var(--muted)" }}>
-                      <span>{OWNER_KIND[o.kind]}</span>
-                      {o.phone && <span className="flex items-center gap-0.5"><Phone size={10} />{o.phone}</span>}
-                      {o.email && <span className="flex items-center gap-0.5"><Mail size={10} />{o.email}</span>}
-                      <span className="flex items-center gap-0.5"><Home size={10} />{nProps} bien(s)</span>
-                    </p>
+                    <p className="text-sm font-semibold truncate">{p.name}</p>
+                    <p className="text-[11px] truncate" style={{ color: "var(--muted)" }}>{PROPERTY_KIND[p.kind]} · {p.commune || "—"}</p>
                   </div>
                 </div>
-                <div className="flex gap-1 shrink-0">
-                  <button onClick={() => setOwnerModal(o)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><Pencil size={14} /></button>
-                  {sup && <button onClick={async () => { if (confirm(`Supprimer ${o.name} ?`)) await actions.deleteOwner(o.id); }} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>}
-                </div>
-              </div>;
-            })}
-          </div>
-        </div> : <EmptyState icon={UserRound} title="Aucun propriétaire enregistré" sub="Ajoutez les propriétaires dont vous gérez les biens."
-          action={<button onClick={() => setOwnerModal({})} className="kb-btn kb-btn-primary"><Plus size={15} /> Nouveau propriétaire</button>} />
-      )}
+                <Chip color={st.color} dot>{st.label}</Chip>
+              </div>
+              <p className="text-xs mt-2.5 truncate" style={{ color: "var(--muted)" }}><UserRound size={11} className="inline mb-0.5" /> {o?.name || "Propriétaire non renseigné"}</p>
+              <p className="text-xs mt-1 truncate" style={{ color: ag ? "#2E78A8" : "#B6BEC9" }}><BadgeCheck size={11} className="inline mb-0.5" /> {ag?.name || "Aucun agent attribué"}</p>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {pu.length > 0 && <Chip color="#64748B">{pu.length} lot(s)</Chip>}
+                {vac > 0 && <Chip color="#EA580C">{vac} vacant(s)</Chip>}
+                {p.availableFor !== "aucun" && <Chip color="#D81F26">{AVAILABLE_FOR[p.availableFor]}</Chip>}
+              </div>
+            </button>
+          );
+        })}
+      </div> : <EmptyState icon={Building2} title="Aucun bien enregistré" sub="Ajoutez un immeuble, une villa ou un appartement indépendant."
+        action={<button onClick={() => setPropModal({})} className="kb-btn kb-btn-primary"><Plus size={15} /> Nouveau bien</button>} />)}
 
-      {propModal && <PropertyModal initial={propModal} owners={owners} onSave={actions.saveProperty}
-        onClose={() => setPropModal(null)} onNewOwner={() => setOwnerModal({})} />}
+      {tab === "vacants" && (filteredVacants.length ? (
+        <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: "var(--line)" }}>
+          <div className="overflow-x-auto"><table className="w-full text-sm">
+            <thead><tr className="text-left" style={{ color: "var(--muted)" }}>
+              <th className="px-4 py-2.5 font-medium">Bâtiment / bien</th><th className="px-3 py-2.5 font-medium">Lot</th>
+              <th className="px-3 py-2.5 font-medium">Type</th><th className="px-3 py-2.5 font-medium">Localisation</th>
+              <th className="px-3 py-2.5 font-medium">Disponible pour</th><th className="px-3 py-2.5 font-medium">Loyer / prix</th>
+              <th className="px-3 py-2.5 font-medium">Agent</th></tr></thead>
+            <tbody>{filteredVacants.map((r) => (
+              <tr key={r.key} className="border-t hover:bg-slate-50 cursor-pointer" style={{ borderColor: "var(--line)" }} onClick={() => setDetailId(r.property.id)}>
+                <td className="px-4 py-2.5 font-medium">{r.property.name}</td>
+                <td className="px-3 py-2.5">{r.label}</td>
+                <td className="px-3 py-2.5">{r.kind}</td>
+                <td className="px-3 py-2.5" style={{ color: "var(--muted)" }}>{[r.quartier, r.commune].filter(Boolean).join(", ") || "—"}</td>
+                <td className="px-3 py-2.5"><Chip color="#EA580C">{r.forWhat}</Chip></td>
+                <td className="px-3 py-2.5 font-medium tabular-nums">{fcfa(r.rent)}</td>
+                <td className="px-3 py-2.5" style={{ color: r.agent ? "var(--ink)" : "#B6BEC9" }}>{r.agent?.name || "non attribué"}</td>
+              </tr>
+            ))}</tbody>
+          </table></div>
+          <div className="px-4 py-2.5 border-t text-xs" style={{ borderColor: "var(--line)", color: "var(--muted)" }}>
+            Loyer potentiel mensuel : <strong style={{ color: "var(--ink)" }}>{fcfa(filteredVacants.reduce((a, r) => a + (r.rent || 0), 0))}</strong>
+          </div>
+        </div>
+      ) : <EmptyState icon={DoorOpen} title="Aucun bien disponible" sub="Les lots marqués « vacant » et les biens disponibles apparaissent ici." />)}
+
+      {tab === "proprietaires" && (filteredOwners.length ? <div className="bg-white rounded-xl border" style={{ borderColor: "var(--line)" }}>
+        <div className="divide-y" style={{ borderColor: "var(--line)" }}>
+          {filteredOwners.map((o) => {
+            const nProps = properties.filter((p) => p.ownerId === o.id).length;
+            return <div key={o.id} className="flex items-center justify-between px-4 py-3 gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="w-9 h-9 rounded-full flex items-center justify-center text-white shrink-0" style={{ background: "#2E78A8" }}><UserRound size={16} /></span>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{o.name}</p>
+                  <p className="text-[11px] flex items-center gap-2 flex-wrap" style={{ color: "var(--muted)" }}>
+                    <span>{OWNER_KIND[o.kind]}</span>
+                    {o.phone && <span className="flex items-center gap-0.5"><Phone size={10} />{o.phone}</span>}
+                    {o.email && <span className="flex items-center gap-0.5"><Mail size={10} />{o.email}</span>}
+                    <span className="flex items-center gap-0.5"><Home size={10} />{nProps} bien(s)</span>
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-1 shrink-0">
+                <button onClick={() => setOwnerModal(o)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><Pencil size={14} /></button>
+                {sup && <button onClick={async () => { if (confirm(`Supprimer ${o.name} ?`)) await actions.deleteOwner(o.id); }} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>}
+              </div>
+            </div>;
+          })}
+        </div>
+      </div> : <EmptyState icon={UserRound} title="Aucun propriétaire enregistré" sub="Ajoutez les propriétaires dont vous gérez les biens."
+        action={<button onClick={() => setOwnerModal({})} className="kb-btn kb-btn-primary"><Plus size={15} /> Nouveau propriétaire</button>} />)}
+
+      {propModal && <PropertyModal initial={propModal} owners={owners} members={members} units={units}
+        onSave={actions.saveProperty} onSaveUnits={saveUnitsFor} onClose={() => setPropModal(null)} onNewOwner={() => setOwnerModal({})} />}
       {ownerModal && <OwnerModal initial={ownerModal} onSave={actions.saveOwner} onClose={() => setOwnerModal(null)} />}
     </div>
   );
@@ -1975,12 +2481,22 @@ function StockEntryModal({ products, onSave, onClose }) {
 }
 
 /* ---------------- Modale fiche de sortie ---------------- */
-function ReleaseModal({ initial, initialLines, products, properties, onSave, onClose }) {
+function ReleaseModal({ initial, initialLines, products, properties, onSave, onClose, onQuickProduct }) {
   const [f, setF] = useState(() => ({ propertyId: "", releasedTo: "", purpose: "nettoyage", date: isoDate(new Date()), zone: "", notes: "", ...initial }));
   const [lines, setLines] = useState(() => initialLines?.length ? initialLines : [{ productId: "", qty: 1, price: 0 }]);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const [newProd, setNewProd] = useState("");
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const setLine = (i, k, v) => setLines((p) => p.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
+  /* Ajoute un produit inexistant au catalogue, puis le place sur une ligne */
+  const quickAdd = async () => {
+    const name = newProd.trim();
+    if (!name) return;
+    const r = await onQuickProduct(name);
+    if (r?.error) { setErr(r.error); return; }
+    if (r?.id) setLines((p) => [...p, { productId: r.id, qty: 1, price: 0 }]);
+    setNewProd("");
+  };
   const pickProduct = (i, id) => {
     const p = products.find((x) => x.id === id);
     setLines((prev) => prev.map((l, j) => (j === i ? { ...l, productId: id, price: p?.price || 0 } : l)));
@@ -2027,7 +2543,14 @@ function ReleaseModal({ initial, initialLines, products, properties, onSave, onC
           );
         })}
       </div>
-      <button onClick={() => setLines((p) => [...p, { productId: "", qty: 1, price: 0 }])} className="kb-btn kb-btn-ghost text-sm mb-3"><Plus size={14} /> Ajouter un produit</button>
+      <div className="flex flex-wrap gap-2 items-center mb-3">
+        <button onClick={() => setLines((p) => [...p, { productId: "", qty: 1, price: 0 }])} className="kb-btn kb-btn-ghost text-sm"><Plus size={14} /> Ajouter un produit</button>
+        <span className="text-xs" style={{ color: "var(--muted)" }}>ou</span>
+        <input className="px-2 py-2 rounded-lg border text-sm flex-1 min-w-[150px]" style={inputStyle} value={newProd}
+          onChange={(e) => setNewProd(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); quickAdd(); } }}
+          placeholder="Nouveau produit non catalogué…" />
+        <button onClick={quickAdd} disabled={!newProd.trim()} className="kb-btn kb-btn-ghost text-sm disabled:opacity-40"><Package size={14} /> Créer et ajouter</button>
+      </div>
 
       <div className="flex items-center justify-between rounded-lg px-3 py-2 mb-3" style={{ background: "#F6F8FA" }}>
         <span className="text-sm font-medium">Valeur totale sortie</span>
@@ -2269,8 +2792,817 @@ function Produits({ store, me }) {
       {prodModal && <ProductModal initial={prodModal} onSave={actions.saveProduct} onClose={() => setProdModal(null)} />}
       {entryModal && <StockEntryModal products={products.filter((p) => p.active)} onSave={actions.addStockEntry} onClose={() => setEntryModal(false)} />}
       {relModal && <ReleaseModal initial={relModal} initialLines={relModal._lines} products={products} properties={properties}
-        onSave={actions.saveRelease} onClose={() => setRelModal(null)} />}
+        onSave={actions.saveRelease} onClose={() => setRelModal(null)}
+        onQuickProduct={(name) => actions.saveProduct({ name, category: "entretien", unit: "unité", minQty: 0, price: 0, supplier: "", active: true })} />}
     </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   MODULE RECOUVREMENT
+   ══════════════════════════════════════════════════════════════════════ */
+const periodLabel = (p) => {
+  const [y, m] = (p || "").split("-");
+  return `${MONTHS_FR[Number(m) - 1] || ""} ${y || ""}`;
+};
+const currentPeriod = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+
+/* Totaux d'une période, à l'identique du fichier Excel */
+function periodTotals(lines, charges, rate) {
+  const expected = lines.reduce((a, l) => a + (Number(l.expected) || 0), 0);
+  const collected = lines.reduce((a, l) => a + (Number(l.collected) || 0), 0);
+  const arrears = lines.reduce((a, l) => a + Math.max(0, (Number(l.expected) || 0) - (Number(l.collected) || 0)), 0);
+  const deducted = lines.reduce((a, l) => a + (Number(l.charges) || 0), 0);
+  const netAfter = collected - deducted;
+  const chargesTotal = charges.reduce((a, c) => a + (Number(c.amount) || 0), 0);
+  const fee = Math.round(collected * (Number(rate) || 0));
+  const netOwner = collected - deducted - fee;
+  const nPaid = lines.filter((l) => payStatusOf(l.expected, l.collected) === "paye" && Number(l.expected) > 0).length;
+  const nPartial = lines.filter((l) => payStatusOf(l.expected, l.collected) === "partiel").length;
+  const nUnpaid = lines.filter((l) => payStatusOf(l.expected, l.collected) === "impaye" && Number(l.expected) > 0).length;
+  const rateCollected = expected > 0 ? collected / expected : 0;
+  return { expected, collected, arrears, deducted, netAfter, chargesTotal, fee, netOwner, nPaid, nPartial, nUnpaid, rateCollected };
+}
+
+/* ================= Éditeur d'une période ================= */
+function PeriodEditor({ period, property, owner, units, lines0, charges0, readOnly, onSave, onClose }) {
+  const [lines, setLines] = useState(() => lines0.length ? lines0.map((l) => ({ ...l })) : []);
+  const [charges, setCharges] = useState(() => charges0.length ? charges0.map((c) => ({ ...c }))
+    : DEFAULT_CHARGES.map((label) => ({ label, amount: 0, observation: "" })));
+  const [rate, setRate] = useState(period.rate);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+
+  /* Pré-remplissage depuis les lots du bâtiment */
+  const loadFromUnits = () => {
+    const us = units.filter((u) => u.propertyId === period.propertyId);
+    if (!us.length) { setErr("Aucun lot enregistré pour ce bâtiment. Ajoutez-les dans Patrimoine."); return; }
+    setLines(us.map((u) => ({
+      unitId: u.id, unitLabel: u.label, tenantName: u.tenantName || "", tenantPhone: u.tenantPhone || "",
+      expected: u.rent || 0, collected: 0, paidAt: "", charges: 0, comment: "",
+    })));
+    setErr("");
+  };
+
+  const setLine = (i, k, v) => setLines((p) => p.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
+  const setCharge = (i, k, v) => setCharges((p) => p.map((c, j) => (j === i ? { ...c, [k]: v } : c)));
+  const t = periodTotals(lines, charges, rate);
+
+  const submit = async () => {
+    setBusy(true);
+    const r = await onSave({ ...period, rate }, lines, charges);
+    setBusy(false);
+    if (r?.error) setErr(r.error); else onClose();
+  };
+
+  return (
+    <Modal title={`${RENT_SCOPE[period.scope].label} — ${property?.name || ""} · ${periodLabel(period.period)}`} onClose={onClose} wide>
+      {readOnly && (
+        <div className="rounded-lg p-3 mb-4 text-xs flex items-center gap-2" style={{ background: "#F1F3F5", color: "var(--muted)" }}>
+          <Eye size={14} /> Lecture seule — ce tableau appartient à son auteur. Seuls celui-ci et l'administrateur peuvent le modifier.
+        </div>
+      )}
+
+      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <span className="text-xs" style={{ color: "var(--muted)" }}>Taux de prestation agence</span>
+          <input type="number" min={0} max={1} step={0.01} disabled={readOnly} className="w-20 px-2 py-1 rounded-lg border text-sm"
+            style={inputStyle} value={rate} onChange={(e) => setRate(e.target.value)} />
+          <span className="text-xs font-medium">{(Number(rate) * 100).toFixed(0)} %</span>
+        </div>
+        {!readOnly && <button onClick={loadFromUnits} className="kb-btn kb-btn-ghost text-sm"><Users size={14} /> Charger les lots du bâtiment</button>}
+      </div>
+
+      {/* Tableau des locataires */}
+      <div className="overflow-x-auto -mx-1 mb-2">
+        <table className="w-full text-xs" style={{ minWidth: 860 }}>
+          <thead><tr style={{ background: "#F1F3F5" }}>
+            <th className="text-left px-2 py-2 font-semibold">Locataire</th>
+            <th className="text-left px-2 py-2 font-semibold w-24">Lot</th>
+            <th className="text-right px-2 py-2 font-semibold w-28">Loyer prévu</th>
+            <th className="text-right px-2 py-2 font-semibold w-28">Encaissé</th>
+            <th className="text-left px-2 py-2 font-semibold w-32">Date paiement</th>
+            <th className="text-center px-2 py-2 font-semibold w-20">Statut</th>
+            <th className="text-right px-2 py-2 font-semibold w-24">Arriéré</th>
+            <th className="text-right px-2 py-2 font-semibold w-24">Charges</th>
+            <th className="text-left px-2 py-2 font-semibold w-32">Commentaire</th>
+            {!readOnly && <th className="w-8" />}
+          </tr></thead>
+          <tbody>{lines.map((l, i) => {
+            const st = PAY_STATUS[payStatusOf(l.expected, l.collected)];
+            const arr = Math.max(0, (Number(l.expected) || 0) - (Number(l.collected) || 0));
+            return (
+              <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
+                <td className="px-1 py-1"><input disabled={readOnly} className="w-full px-2 py-1.5 rounded border text-xs" style={inputStyle} value={l.tenantName} onChange={(e) => setLine(i, "tenantName", e.target.value)} placeholder="Nom du locataire" /></td>
+                <td className="px-1 py-1"><input disabled={readOnly} className="w-full px-2 py-1.5 rounded border text-xs" style={inputStyle} value={l.unitLabel} onChange={(e) => setLine(i, "unitLabel", e.target.value)} placeholder="Appt A1" /></td>
+                <td className="px-1 py-1"><input disabled={readOnly} type="number" min={0} step={5000} className="w-full px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={l.expected} onChange={(e) => setLine(i, "expected", e.target.value)} /></td>
+                <td className="px-1 py-1"><input disabled={readOnly} type="number" min={0} step={5000} className="w-full px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={l.collected} onChange={(e) => setLine(i, "collected", e.target.value)} /></td>
+                <td className="px-1 py-1"><input disabled={readOnly} type="date" className="w-full px-2 py-1.5 rounded border text-xs" style={inputStyle} value={l.paidAt || ""} onChange={(e) => setLine(i, "paidAt", e.target.value)} /></td>
+                <td className="px-1 py-1 text-center"><span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: st.bg, color: st.color }}>{st.label}</span></td>
+                <td className="px-2 py-1 text-right font-medium tabular-nums" style={{ color: arr > 0 ? "#D81F26" : "var(--muted)" }}>{fcfa(arr)}</td>
+                <td className="px-1 py-1"><input disabled={readOnly} type="number" min={0} step={1000} className="w-full px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={l.charges} onChange={(e) => setLine(i, "charges", e.target.value)} /></td>
+                <td className="px-1 py-1"><input disabled={readOnly} className="w-full px-2 py-1.5 rounded border text-xs" style={inputStyle} value={l.comment} onChange={(e) => setLine(i, "comment", e.target.value)} /></td>
+                {!readOnly && <td className="px-1"><button onClick={() => setLines((p) => p.filter((_, j) => j !== i))} className="text-slate-300 hover:text-red-500"><X size={13} /></button></td>}
+              </tr>
+            );
+          })}</tbody>
+        </table>
+      </div>
+      {!readOnly && <button onClick={() => setLines((p) => [...p, { unitLabel: "", tenantName: "", expected: 0, collected: 0, charges: 0, comment: "" }])} className="kb-btn kb-btn-ghost text-sm mb-4"><Plus size={14} /> Ajouter un locataire</button>}
+
+      {/* Bilan + charges + règlement */}
+      <div className="grid lg:grid-cols-2 gap-4 mb-3">
+        <div className="rounded-xl border p-3" style={{ borderColor: "var(--line)" }}>
+          <p className="text-xs font-bold mb-2">BILAN DU MOIS</p>
+          {[["Locataires", lines.length], ["Ayant payé intégralement", t.nPaid], ["Paiements partiels", t.nPartial],
+            ["Impayés", t.nUnpaid]].map(([k, v]) => (
+            <div key={k} className="flex justify-between text-xs py-1"><span style={{ color: "var(--muted)" }}>{k}</span><span className="font-semibold">{v}</span></div>
+          ))}
+          <div className="border-t my-1.5" style={{ borderColor: "var(--line)" }} />
+          {[["Total loyers prévus", t.expected], ["Total encaissé", t.collected], ["Total arriérés", t.arrears],
+            ["Charges prélevées", t.deducted], ["Net après charges", t.netAfter]].map(([k, v]) => (
+            <div key={k} className="flex justify-between text-xs py-1"><span style={{ color: "var(--muted)" }}>{k}</span><span className="font-semibold tabular-nums">{fcfa(v)}</span></div>
+          ))}
+        </div>
+
+        <div className="rounded-xl border p-3" style={{ borderColor: "var(--line)" }}>
+          <p className="text-xs font-bold mb-2">CHARGES DU MOIS</p>
+          <div className="space-y-1.5">
+            {charges.map((c, i) => (
+              <div key={i} className="flex gap-1.5">
+                <input disabled={readOnly} className="flex-1 px-2 py-1.5 rounded border text-xs" style={inputStyle} value={c.label} onChange={(e) => setCharge(i, "label", e.target.value)} placeholder="Désignation" />
+                <input disabled={readOnly} type="number" min={0} step={1000} className="w-24 px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={c.amount} onChange={(e) => setCharge(i, "amount", e.target.value)} />
+                {!readOnly && <button onClick={() => setCharges((p) => p.filter((_, j) => j !== i))} className="text-slate-300 hover:text-red-500 px-1"><X size={13} /></button>}
+              </div>
+            ))}
+          </div>
+          {!readOnly && <button onClick={() => setCharges((p) => [...p, { label: "", amount: 0, observation: "" }])} className="kb-btn kb-btn-ghost text-xs mt-2"><Plus size={12} /> Ligne</button>}
+          <div className="flex justify-between text-xs pt-2 mt-2 border-t font-bold" style={{ borderColor: "var(--line)" }}>
+            <span>TOTAL CHARGES</span><span className="tabular-nums">{fcfa(t.chargesTotal)}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl p-3 mb-3" style={{ background: "#F6F8FA" }}>
+        <p className="text-xs font-bold mb-2">RÈGLEMENT PROPRIÉTAIRE</p>
+        {[["Loyers encaissés (base)", t.collected], ["Charges à prélever", t.deducted],
+          [`Prestation agence (${(Number(rate) * 100).toFixed(0)} %)`, t.fee]].map(([k, v]) => (
+          <div key={k} className="flex justify-between text-xs py-1"><span style={{ color: "var(--muted)" }}>{k}</span><span className="font-semibold tabular-nums">{fcfa(v)}</span></div>
+        ))}
+        <div className="flex justify-between items-center pt-2 mt-1 border-t" style={{ borderColor: "var(--line)" }}>
+          <span className="text-sm font-bold">NET À PAYER AU PROPRIÉTAIRE</span>
+          <span className="text-lg font-bold tabular-nums" style={{ color: "var(--brass)" }}>{fcfa(t.netOwner)}</span>
+        </div>
+      </div>
+
+      {err && <p className="text-xs text-red-600 mb-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} className="kb-btn kb-btn-ghost">{readOnly ? "Fermer" : "Annuler"}</button>
+        {!readOnly && <button disabled={busy} onClick={submit} className="kb-btn kb-btn-primary disabled:opacity-40"><Check size={16} /> {busy ? "…" : "Enregistrer"}</button>}
+      </div>
+    </Modal>
+  );
+}
+
+/* ================= État imprimable ================= */
+function PeriodSheet({ period, property, owner, lines, charges, author, onBack }) {
+  const t = periodTotals(lines, charges, period.rate);
+  const sc = RENT_SCOPE[period.scope];
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
+        <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
+        <button onClick={() => window.print()} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+      </div>
+
+      <div id="print-area" className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
+        <div className="flex items-start justify-between gap-4 pb-3 border-b" style={{ borderColor: "var(--line)" }}>
+          <div className="flex items-center gap-3">
+            <img src={LOGO} alt="Entreprise Kibegnon" className="h-12 w-auto" />
+            <div>
+              <p className="font-bold text-sm">ENTREPRISE KIBEGNON</p>
+              <p className="text-[11px]" style={{ color: "var(--muted)" }}>Gestion locative · Cocody, Abidjan</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-base font-bold" style={{ color: sc.color }}>{sc.label}</p>
+            <p className="text-sm font-semibold">{periodLabel(period.period)}</p>
+            <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
+          </div>
+        </div>
+
+        <div className="grid sm:grid-cols-4 gap-3 py-3 text-xs">
+          <div><p style={{ color: "var(--muted)" }}>Propriétaire</p><p className="font-semibold">{owner?.name || "—"}</p></div>
+          <div><p style={{ color: "var(--muted)" }}>Immeuble</p><p className="font-semibold">{property?.name || "—"}</p></div>
+          <div><p style={{ color: "var(--muted)" }}>Adresse</p><p className="font-semibold">{[property?.quartier, property?.commune].filter(Boolean).join(", ") || "—"}</p></div>
+          <div><p style={{ color: "var(--muted)" }}>Locataires</p><p className="font-semibold">{lines.length}</p></div>
+        </div>
+
+        <table className="w-full text-[11px] mb-4">
+          <thead><tr style={{ background: "#F1F3F5" }}>
+            <th className="text-left px-2 py-1.5 font-semibold">N°</th>
+            <th className="text-left px-2 py-1.5 font-semibold">Locataire</th>
+            <th className="text-left px-2 py-1.5 font-semibold">Lot</th>
+            <th className="text-right px-2 py-1.5 font-semibold">Loyer prévu</th>
+            <th className="text-right px-2 py-1.5 font-semibold">Encaissé</th>
+            <th className="text-left px-2 py-1.5 font-semibold">Date</th>
+            <th className="text-center px-2 py-1.5 font-semibold">Statut</th>
+            <th className="text-right px-2 py-1.5 font-semibold">Arriéré</th>
+            <th className="text-right px-2 py-1.5 font-semibold">Charges</th>
+            <th className="text-right px-2 py-1.5 font-semibold">Net</th>
+          </tr></thead>
+          <tbody>{lines.map((l, i) => {
+            const st = PAY_STATUS[payStatusOf(l.expected, l.collected)];
+            const arr = Math.max(0, (Number(l.expected) || 0) - (Number(l.collected) || 0));
+            return (
+              <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
+                <td className="px-2 py-1.5">{i + 1}</td>
+                <td className="px-2 py-1.5 font-medium">{l.tenantName || "—"}</td>
+                <td className="px-2 py-1.5">{l.unitLabel}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(l.expected)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(l.collected)}</td>
+                <td className="px-2 py-1.5">{l.paidAt ? fr(l.paidAt + "T00:00:00", { day: "2-digit", month: "2-digit" }) : "—"}</td>
+                <td className="px-2 py-1.5 text-center"><span className="font-bold" style={{ color: st.color }}>{st.label}</span></td>
+                <td className="px-2 py-1.5 text-right tabular-nums" style={{ color: arr > 0 ? "#D81F26" : "inherit" }}>{fcfa(arr)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(l.charges)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fcfa((Number(l.collected) || 0) - (Number(l.charges) || 0))}</td>
+              </tr>
+            );
+          })}</tbody>
+          <tfoot><tr style={{ background: "#F1F3F5" }}>
+            <td colSpan={3} className="px-2 py-2 font-bold">TOTAUX</td>
+            <td className="px-2 py-2 text-right font-bold tabular-nums">{fcfa(t.expected)}</td>
+            <td className="px-2 py-2 text-right font-bold tabular-nums">{fcfa(t.collected)}</td>
+            <td colSpan={2} />
+            <td className="px-2 py-2 text-right font-bold tabular-nums">{fcfa(t.arrears)}</td>
+            <td className="px-2 py-2 text-right font-bold tabular-nums">{fcfa(t.deducted)}</td>
+            <td className="px-2 py-2 text-right font-bold tabular-nums">{fcfa(t.netAfter)}</td>
+          </tr></tfoot>
+        </table>
+
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div>
+            <p className="text-xs font-bold mb-1.5">CHARGES DU MOIS</p>
+            <table className="w-full text-[11px]">
+              <tbody>{charges.filter((c) => c.label).map((c, i) => (
+                <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
+                  <td className="px-2 py-1">{c.label}</td>
+                  <td className="px-2 py-1 text-right tabular-nums">{fcfa(c.amount)}</td>
+                </tr>
+              ))}</tbody>
+              <tfoot><tr style={{ background: "#F1F3F5" }}>
+                <td className="px-2 py-1.5 font-bold">TOTAL CHARGES</td>
+                <td className="px-2 py-1.5 text-right font-bold tabular-nums">{fcfa(t.chargesTotal)}</td>
+              </tr></tfoot>
+            </table>
+          </div>
+          <div>
+            <p className="text-xs font-bold mb-1.5">RÈGLEMENT PROPRIÉTAIRE</p>
+            <table className="w-full text-[11px]">
+              <tbody>
+                <tr className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-2 py-1">Loyers encaissés</td><td className="px-2 py-1 text-right tabular-nums">{fcfa(t.collected)}</td></tr>
+                <tr className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-2 py-1">Charges à prélever</td><td className="px-2 py-1 text-right tabular-nums">{fcfa(t.deducted)}</td></tr>
+                <tr className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-2 py-1">Prestation agence ({(period.rate * 100).toFixed(0)} %)</td><td className="px-2 py-1 text-right tabular-nums">{fcfa(t.fee)}</td></tr>
+              </tbody>
+              <tfoot><tr style={{ background: "#F1F3F5" }}>
+                <td className="px-2 py-2 font-bold">NET À PAYER</td>
+                <td className="px-2 py-2 text-right font-bold tabular-nums" style={{ color: "var(--brass)" }}>{fcfa(t.netOwner)}</td>
+              </tr></tfoot>
+            </table>
+          </div>
+        </div>
+
+        {t.netOwner > 0 && <p className="text-[11px] italic mt-3">Arrêté le présent état à la somme de <strong>{amountInWords(t.netOwner)}</strong> à verser au propriétaire.</p>}
+
+        <div className="flex justify-between items-end pt-8 mt-4">
+          <div className="text-center" style={{ minWidth: 170 }}><p className="text-[11px] font-semibold pb-8">Le Propriétaire</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
+          <div className="text-center" style={{ minWidth: 170 }}><p className="text-[11px] font-semibold pb-8">Pour l'Agence</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
+        </div>
+        <p className="text-[10px] mt-3 pt-2 border-t" style={{ color: "var(--muted)", borderColor: "var(--line)" }}>
+          État établi par {author?.name || "—"} · Entreprise Kibegnon SARL · Taux de recouvrement du mois : {(t.rateCollected * 100).toFixed(1)} %
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ================= Vue principale ================= */
+function Recouvrement({ store, me, userId }) {
+  const { properties, owners, units, rentPeriods, rentLines, rentCharges, members, actions } = store;
+  const [scope, setScope] = useState("commercial");
+  const [filterProp, setFilterProp] = useState("all");
+  const [filterPeriod, setFilterPeriod] = useState(currentPeriod());
+  const [editor, setEditor] = useState(null);
+  const [sheetId, setSheetId] = useState(null);
+  const [creator, setCreator] = useState(false);
+
+  const propById = useMemo(() => Object.fromEntries(properties.map((p) => [p.id, p])), [properties]);
+  const ownerById = useMemo(() => Object.fromEntries(owners.map((o) => [o.id, o])), [owners]);
+  const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
+  const canEditPeriod = (p) => p.createdBy === userId || isAdmin(me.role);
+
+  const sheet = rentPeriods.find((p) => p.id === sheetId);
+  if (sheet) {
+    return <PeriodSheet period={sheet} property={propById[sheet.propertyId]} owner={ownerById[propById[sheet.propertyId]?.ownerId]}
+      lines={rentLines.filter((l) => l.periodId === sheet.id)} charges={rentCharges.filter((c) => c.periodId === sheet.id)}
+      author={memberById[sheet.createdBy]} onBack={() => setSheetId(null)} />;
+  }
+
+  const list = rentPeriods.filter((p) => p.scope === scope &&
+    (filterProp === "all" || p.propertyId === filterProp) &&
+    (filterPeriod === "all" || p.period === filterPeriod));
+
+  /* Consolidé du mois affiché */
+  const global = list.reduce((acc, p) => {
+    const t = periodTotals(rentLines.filter((l) => l.periodId === p.id), rentCharges.filter((c) => c.periodId === p.id), p.rate);
+    return { expected: acc.expected + t.expected, collected: acc.collected + t.collected,
+      arrears: acc.arrears + t.arrears, fee: acc.fee + t.fee };
+  }, { expected: 0, collected: 0, arrears: 0, fee: 0 });
+  const globalRate = global.expected > 0 ? (global.collected / global.expected) * 100 : 0;
+
+  const periodOptions = [...new Set(rentPeriods.map((p) => p.period))].sort().reverse();
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
+        <h1 className="text-xl font-bold">Recouvrement</h1>
+        <button onClick={() => setCreator(true)} className="kb-btn kb-btn-primary"><Plus size={16} /> Nouveau tableau</button>
+      </div>
+      <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>Un tableau par bâtiment et par mois. Chaque auteur modifie ses propres tableaux ; la direction consulte l'ensemble.</p>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <StatCard icon={Wallet} label="Loyers prévus" value={fcfa(global.expected)} sub={periodLabel(filterPeriod === "all" ? currentPeriod() : filterPeriod)} tint="#2E78A8" />
+        <StatCard icon={TrendingUp} label="Encaissé" value={fcfa(global.collected)} sub={`${globalRate.toFixed(1)} % de recouvrement`} tint="#4F9E2A" />
+        <StatCard icon={AlertTriangle} label="Arriérés" value={fcfa(global.arrears)} tint="#D81F26" />
+        <StatCard icon={BarChart3} label="Prestation agence" value={fcfa(global.fee)} tint="var(--brass)" />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="flex rounded-lg border overflow-hidden" style={inputStyle}>
+          {Object.entries(RENT_SCOPE).map(([k, v]) => (
+            <button key={k} onClick={() => setScope(k)} className="px-3 py-2 text-sm whitespace-nowrap"
+              style={{ background: scope === k ? v.color : "#fff", color: scope === k ? "#fff" : "var(--muted)" }}>{v.label}</button>
+          ))}
+        </div>
+        <select value={filterPeriod} onChange={(e) => setFilterPeriod(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+          <option value="all">Tous les mois</option>
+          {[...new Set([currentPeriod(), ...periodOptions])].sort().reverse().map((p) => <option key={p} value={p}>{periodLabel(p)}</option>)}
+        </select>
+        <select value={filterProp} onChange={(e) => setFilterProp(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+          <option value="all">Tous les bâtiments</option>
+          {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </div>
+
+      <p className="text-xs mb-3" style={{ color: "var(--muted)" }}>{RENT_SCOPE[scope].desc}</p>
+
+      {list.length ? <div className="space-y-2">
+        {list.map((p) => {
+          const lines = rentLines.filter((l) => l.periodId === p.id);
+          const charges = rentCharges.filter((c) => c.periodId === p.id);
+          const t = periodTotals(lines, charges, p.rate);
+          const prop = propById[p.propertyId];
+          const st = RENT_STATUS[p.status];
+          const mine = canEditPeriod(p);
+          return (
+            <div key={p.id} className="bg-white rounded-xl border p-3" style={{ borderColor: "var(--line)" }}>
+              <div className="flex items-start justify-between gap-2 flex-wrap">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-semibold">{prop?.name || "Bâtiment supprimé"}</p>
+                    <Chip color={RENT_SCOPE[p.scope].color}>{periodLabel(p.period)}</Chip>
+                    <Chip color={st.color} dot>{st.label}</Chip>
+                    {!mine && <Chip color="#94A3B8"><Lock size={10} /> lecture</Chip>}
+                  </div>
+                  <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>
+                    {lines.length} locataire(s) · {t.nPaid} payé(s), {t.nPartial} partiel(s), {t.nUnpaid} impayé(s)
+                    {" · "}établi par {memberById[p.createdBy]?.name || "—"}
+                  </p>
+                  <div className="flex flex-wrap gap-3 mt-2 text-xs">
+                    <span style={{ color: "var(--muted)" }}>Prévu <strong style={{ color: "var(--ink)" }}>{fcfa(t.expected)}</strong></span>
+                    <span style={{ color: "var(--muted)" }}>Encaissé <strong style={{ color: "#4F9E2A" }}>{fcfa(t.collected)}</strong></span>
+                    <span style={{ color: "var(--muted)" }}>Arriérés <strong style={{ color: t.arrears > 0 ? "#D81F26" : "var(--ink)" }}>{fcfa(t.arrears)}</strong></span>
+                    <span style={{ color: "var(--muted)" }}>Net propriétaire <strong style={{ color: "var(--brass)" }}>{fcfa(t.netOwner)}</strong></span>
+                  </div>
+                  <div className="mt-2 h-1.5 rounded-full bg-slate-100 overflow-hidden" style={{ maxWidth: 260 }}>
+                    <div className="h-full rounded-full" style={{ width: `${Math.min(100, t.rateCollected * 100)}%`, background: t.rateCollected >= 0.9 ? "#4F9E2A" : t.rateCollected >= 0.6 ? "#C58A1B" : "#D81F26" }} />
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  {mine && <select value={p.status} onChange={(e) => actions.setPeriodStatus(p.id, e.target.value)}
+                    className="text-xs px-2 py-1 rounded-lg border bg-white" style={{ borderColor: st.color + "55", color: st.color }}>
+                    {Object.entries(RENT_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>}
+                  <div className="flex gap-1">
+                    <button onClick={() => setSheetId(p.id)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Imprimer / PDF"><Printer size={14} /></button>
+                    <button onClick={() => setEditor({ period: p, readOnly: !mine })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title={mine ? "Modifier" : "Consulter"}>{mine ? <Pencil size={14} /> : <Eye size={14} />}</button>
+                    {isAdmin(me.role) && <button onClick={async () => { if (confirm("Supprimer ce tableau ?")) await actions.deletePeriod(p.id); }} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div> : <EmptyState icon={FileSpreadsheet} title="Aucun tableau pour ce filtre"
+        sub="Créez le tableau du mois pour un bâtiment."
+        action={<button onClick={() => setCreator(true)} className="kb-btn kb-btn-primary"><Plus size={15} /> Nouveau tableau</button>} />}
+
+      {creator && <CreatorModal properties={properties} scope={scope} existing={rentPeriods}
+        onCreate={async (f) => { const r = await actions.savePeriod(f); if (!r.error && r.id) { setCreator(false); const np = { ...f, id: r.id, createdBy: userId }; setEditor({ period: np, readOnly: false }); } return r; }}
+        onClose={() => setCreator(false)} />}
+
+      {editor && <PeriodEditor period={editor.period} property={propById[editor.period.propertyId]}
+        owner={ownerById[propById[editor.period.propertyId]?.ownerId]} units={units}
+        lines0={rentLines.filter((l) => l.periodId === editor.period.id)}
+        charges0={rentCharges.filter((c) => c.periodId === editor.period.id)}
+        readOnly={editor.readOnly}
+        onSave={async (p, lines, charges) => {
+          const r1 = await actions.savePeriod(p);
+          if (r1.error) return r1;
+          return await actions.savePeriodContent(p.id, lines, charges);
+        }}
+        onClose={() => setEditor(null)} />}
+    </div>
+  );
+}
+
+function CreatorModal({ properties, scope, existing, onCreate, onClose }) {
+  const [f, setF] = useState({ propertyId: properties[0]?.id || "", period: currentPeriod(), scope, rate: 0.07, status: "brouillon" });
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const dup = existing.some((p) => p.propertyId === f.propertyId && p.period === f.period && p.scope === f.scope);
+  const submit = async () => {
+    setBusy(true); const r = await onCreate(f); setBusy(false);
+    if (r?.error) setErr(r.error);
+  };
+  const [y, m] = f.period.split("-");
+  return (
+    <Modal title="Nouveau tableau de recouvrement" onClose={onClose}>
+      <Field label="Type de tableau">
+        <select className={inputCls} style={inputStyle} value={f.scope} onChange={(e) => setF((p) => ({ ...p, scope: e.target.value }))}>
+          {Object.entries(RENT_SCOPE).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+        </select>
+      </Field>
+      <Field label="Bâtiment">
+        <select className={inputCls} style={inputStyle} value={f.propertyId} onChange={(e) => setF((p) => ({ ...p, propertyId: e.target.value }))}>
+          {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </Field>
+      <div className="grid grid-cols-3 gap-3">
+        <Field label="Mois">
+          <select className={inputCls} style={inputStyle} value={Number(m)} onChange={(e) => setF((p) => ({ ...p, period: `${y}-${String(e.target.value).padStart(2, "0")}` }))}>
+            {MONTHS_FR.map((mo, i) => <option key={i} value={i + 1}>{mo}</option>)}
+          </select>
+        </Field>
+        <Field label="Année"><input type="number" className={inputCls} style={inputStyle} value={y} onChange={(e) => setF((p) => ({ ...p, period: `${e.target.value}-${m}` }))} /></Field>
+        <Field label="Taux agence"><input type="number" min={0} max={1} step={0.01} className={inputCls} style={inputStyle} value={f.rate} onChange={(e) => setF((p) => ({ ...p, rate: e.target.value }))} /></Field>
+      </div>
+      {dup && <p className="text-xs mb-2" style={{ color: "#EA580C" }}>Un tableau existe déjà pour ce bâtiment, ce mois et ce type.</p>}
+      {err && <p className="text-xs text-red-600 mb-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} className="kb-btn kb-btn-ghost">Annuler</button>
+        <button disabled={!f.propertyId || dup || busy} onClick={submit} className="kb-btn kb-btn-primary disabled:opacity-40"><Check size={16} /> Créer et remplir</button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   MODULE TRANSPORT & ABSENCES
+   ══════════════════════════════════════════════════════════════════════ */
+const trCurrentPeriod = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+const trPeriodLabel = (p) => { const [y, m] = (p || "").split("-"); return `${MONTHS_FR[Number(m) - 1] || ""} ${y || ""}`; };
+const daysBetween = (a, b) => {
+  if (!a || !b) return 1;
+  return Math.max(1, Math.round((new Date(b) - new Date(a)) / 86400000) + 1);
+};
+
+/* ================= Modale de demande ================= */
+function RequestModal({ initial, properties, onSave, onClose }) {
+  const [f, setF] = useState(() => ({
+    reqType: "transport", date: isoDate(new Date()), amount: "", destination: "", mode: "taxi",
+    propertyId: "", startDate: isoDate(new Date()), endDate: isoDate(new Date()),
+    absenceType: "personnelle", motif: "", ...initial,
+  }));
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const isTransport = f.reqType === "transport";
+  const valid = f.motif.trim() && (!isTransport || Number(f.amount) > 0);
+  const submit = async () => { setBusy(true); const r = await onSave(f); setBusy(false); if (r?.error) setErr(r.error); else onClose(); };
+
+  return (
+    <Modal title={f.id ? "Modifier la demande" : "Nouvelle demande"} onClose={onClose}>
+      <Field label="Type de demande">
+        <div className="flex gap-2">
+          {Object.entries(REQ_TYPE).map(([k, v]) => (
+            <button key={k} onClick={() => set("reqType", k)} className="flex-1 py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-1.5"
+              style={{ background: f.reqType === k ? v.color : "#fff", color: f.reqType === k ? "#fff" : v.color, border: `1px solid ${v.color}55` }}>
+              {k === "transport" ? <Car size={15} /> : <CalendarOff size={15} />} {v.label}
+            </button>
+          ))}
+        </div>
+      </Field>
+
+      {isTransport ? (
+        <>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Field label="Montant demandé (FCFA)"><input type="number" min={0} step={500} className={inputCls} style={inputStyle} value={f.amount} autoFocus onChange={(e) => set("amount", e.target.value)} placeholder="Ex. 3000" /></Field>
+            <Field label="Date du déplacement"><input type="date" className={inputCls} style={inputStyle} value={f.date} onChange={(e) => set("date", e.target.value)} /></Field>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Field label="Moyen de transport">
+              <select className={inputCls} style={inputStyle} value={f.mode} onChange={(e) => set("mode", e.target.value)}>
+                {Object.entries(TRANSPORT_MODE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </Field>
+            <Field label="Destination"><input className={inputCls} style={inputStyle} value={f.destination} onChange={(e) => set("destination", e.target.value)} placeholder="Ex. Yopougon Niangon" /></Field>
+          </div>
+          <Field label="Bien concerné (facultatif)">
+            <select className={inputCls} style={inputStyle} value={f.propertyId || ""} onChange={(e) => set("propertyId", e.target.value)}>
+              <option value="">— Aucun —</option>
+              {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </Field>
+        </>
+      ) : (
+        <>
+          <Field label="Nature de l'absence">
+            <select className={inputCls} style={inputStyle} value={f.absenceType} onChange={(e) => set("absenceType", e.target.value)}>
+              {Object.entries(ABSENCE_TYPE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </Field>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Field label="Du"><input type="date" className={inputCls} style={inputStyle} value={f.startDate} onChange={(e) => set("startDate", e.target.value)} /></Field>
+            <Field label="Au"><input type="date" className={inputCls} style={inputStyle} value={f.endDate} onChange={(e) => set("endDate", e.target.value)} /></Field>
+          </div>
+          <p className="text-xs mb-3" style={{ color: "var(--muted)" }}>Durée : <strong>{daysBetween(f.startDate, f.endDate)} jour(s)</strong></p>
+        </>
+      )}
+
+      <Field label="Motif" hint="Expliquez brièvement la raison de votre demande">
+        <textarea className={inputCls} style={inputStyle} rows={3} value={f.motif} onChange={(e) => set("motif", e.target.value)}
+          placeholder={isTransport ? "Ex. Visite de l'immeuble avec un client" : "Ex. Rendez-vous administratif à la mairie"} />
+      </Field>
+
+      <div className="rounded-lg p-3 mb-3 text-xs" style={{ background: "#F6F8FA", color: "var(--muted)" }}>
+        Votre demande sera transmise à la direction pour validation. Vous serez informé de la décision dans cette même page.
+      </div>
+
+      {err && <p className="text-xs text-red-600 mb-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} className="kb-btn kb-btn-ghost">Annuler</button>
+        <button disabled={!valid || busy} onClick={submit} className="kb-btn kb-btn-primary disabled:opacity-40"><Check size={16} /> Envoyer la demande</button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ================= Récapitulatif mensuel imprimable ================= */
+function RecapSheet({ period, requests, members, properties, onBack }) {
+  const memberById = Object.fromEntries(members.map((m) => [m.id, m]));
+  const propById = Object.fromEntries(properties.map((p) => [p.id, p]));
+  const list = requests.filter((r) => r.reqType === "transport" && monthIso(r.date + "T00:00:00") === period && r.status === "approuve");
+  const total = list.reduce((a, r) => a + r.amount, 0);
+
+  const byUser = {};
+  list.forEach((r) => {
+    const n = memberById[r.userId]?.name || "—";
+    byUser[n] = byUser[n] || { name: n, total: 0, count: 0 };
+    byUser[n].total += r.amount; byUser[n].count += 1;
+  });
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
+        <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
+        <button onClick={() => window.print()} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+      </div>
+
+      <div id="print-area" className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
+        <div className="flex items-start justify-between gap-4 pb-3 border-b" style={{ borderColor: "var(--line)" }}>
+          <div className="flex items-center gap-3">
+            <img src={LOGO} alt="Entreprise Kibegnon" className="h-12 w-auto" />
+            <div><p className="font-bold text-sm">ENTREPRISE KIBEGNON</p><p className="text-[11px]" style={{ color: "var(--muted)" }}>Cocody, Abidjan</p></div>
+          </div>
+          <div className="text-right">
+            <p className="text-base font-bold" style={{ color: "#2E78A8" }}>FRAIS DE TRANSPORT</p>
+            <p className="text-sm font-semibold">{trPeriodLabel(period)}</p>
+          </div>
+        </div>
+
+        <table className="w-full text-[11px] my-4">
+          <thead><tr style={{ background: "#F1F3F5" }}>
+            <th className="text-left px-2 py-1.5 font-semibold">Date</th>
+            <th className="text-left px-2 py-1.5 font-semibold">Collaborateur</th>
+            <th className="text-left px-2 py-1.5 font-semibold">Destination</th>
+            <th className="text-left px-2 py-1.5 font-semibold">Moyen</th>
+            <th className="text-left px-2 py-1.5 font-semibold">Motif</th>
+            <th className="text-right px-2 py-1.5 font-semibold">Montant</th>
+          </tr></thead>
+          <tbody>{list.map((r) => (
+            <tr key={r.id} className="border-b" style={{ borderColor: "var(--line)" }}>
+              <td className="px-2 py-1.5">{fr(r.date + "T00:00:00", { day: "2-digit", month: "2-digit" })}</td>
+              <td className="px-2 py-1.5 font-medium">{memberById[r.userId]?.name || "—"}</td>
+              <td className="px-2 py-1.5">{r.destination || (propById[r.propertyId]?.name) || "—"}</td>
+              <td className="px-2 py-1.5">{TRANSPORT_MODE[r.mode]}</td>
+              <td className="px-2 py-1.5">{r.motif}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(r.amount)}</td>
+            </tr>
+          ))}</tbody>
+          <tfoot><tr style={{ background: "#F1F3F5" }}>
+            <td colSpan={5} className="px-2 py-2 font-bold">TOTAL DU MOIS</td>
+            <td className="px-2 py-2 text-right font-bold tabular-nums" style={{ color: "var(--brass)" }}>{fcfa(total)}</td>
+          </tr></tfoot>
+        </table>
+
+        {total > 0 && <p className="text-[11px] italic mb-4">Arrêté le présent état à la somme de <strong>{amountInWords(total)}</strong>.</p>}
+
+        <p className="text-xs font-bold mb-1.5">RÉPARTITION PAR COLLABORATEUR</p>
+        <table className="w-full text-[11px] mb-4">
+          <tbody>{Object.values(byUser).sort((a, b) => b.total - a.total).map((u, i) => (
+            <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
+              <td className="px-2 py-1">{u.name}</td>
+              <td className="px-2 py-1 text-right" style={{ color: "var(--muted)" }}>{u.count} déplacement(s)</td>
+              <td className="px-2 py-1 text-right tabular-nums font-medium">{fcfa(u.total)}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+
+        <div className="flex justify-between items-end pt-8">
+          <div className="text-center" style={{ minWidth: 170 }}><p className="text-[11px] font-semibold pb-8">La Comptabilité</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
+          <div className="text-center" style={{ minWidth: 170 }}><p className="text-[11px] font-semibold pb-8">La Direction</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================= Vue principale ================= */
+function Transport({ store, me, userId }) {
+  const { requests, members, properties, actions } = store;
+  const [tab, setTab] = useState("mes");
+  const [modal, setModal] = useState(null);
+  const [period, setPeriod] = useState(trCurrentPeriod());
+  const [recap, setRecap] = useState(false);
+  const [decideOn, setDecideOn] = useState(null);
+
+  const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
+  const propById = useMemo(() => Object.fromEntries(properties.map((p) => [p.id, p])), [properties]);
+  const validator = canValidate(me.role);
+
+  if (recap) return <RecapSheet period={period} requests={requests} members={members} properties={properties} onBack={() => setRecap(false)} />;
+
+  const mine = requests.filter((r) => r.userId === userId);
+  const pending = requests.filter((r) => r.status === "en_attente");
+  const monthReqs = requests.filter((r) => monthIso(r.date + "T00:00:00") === period);
+  const monthTransport = monthReqs.filter((r) => r.reqType === "transport" && r.status === "approuve");
+  const monthTotal = monthTransport.reduce((a, r) => a + r.amount, 0);
+
+  const list = tab === "mes" ? mine : tab === "attente" ? pending : monthReqs;
+
+  /* Analyse : 6 derniers mois */
+  const trend = useMemo(() => {
+    const m = {};
+    requests.filter((r) => r.reqType === "transport" && r.status === "approuve").forEach((r) => {
+      const k = monthIso(r.date + "T00:00:00");
+      m[k] = m[k] || { key: k, name: monthLabel(k), value: 0 };
+      m[k].value += r.amount;
+    });
+    return Object.values(m).sort((a, b) => a.key.localeCompare(b.key)).slice(-6);
+  }, [requests]);
+
+  const byUserMonth = useMemo(() => {
+    const m = {};
+    monthTransport.forEach((r) => {
+      const n = memberById[r.userId]?.name?.split(" ")[0] || "—";
+      m[n] = m[n] || { name: n, value: 0, color: memberById[r.userId]?.color || "#64748B" };
+      m[n].value += r.amount;
+    });
+    return Object.values(m).sort((a, b) => b.value - a.value);
+  }, [monthTransport, memberById]);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
+        <h1 className="text-xl font-bold">Transport & absences</h1>
+        <button onClick={() => setModal({})} className="kb-btn kb-btn-primary"><Plus size={16} /> Nouvelle demande</button>
+      </div>
+      <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>Demandes de frais de transport et de permission d'absence, validées par la direction.</p>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <StatCard icon={Wallet} label={`Transport ${trPeriodLabel(period)}`} value={fcfa(monthTotal)} sub={`${monthTransport.length} déplacement(s)`} tint="#2E78A8" />
+        <StatCard icon={Clock} label="En attente de décision" value={pending.length} tint="#C58A1B" />
+        <StatCard icon={Car} label="Mes demandes" value={mine.length} sub={`${mine.filter((r) => r.status === "approuve").length} approuvée(s)`} tint="#4F9E2A" />
+        <StatCard icon={CalendarOff} label="Absences du mois" value={monthReqs.filter((r) => r.reqType === "absence" && r.status === "approuve").length} tint="#7C3AED" />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="flex rounded-lg border overflow-hidden" style={inputStyle}>
+          {[["mes", "Mes demandes"], ...(validator ? [["attente", `À valider (${pending.length})`]] : []), ["mois", "Le mois"]].map(([v, l]) => (
+            <button key={v} onClick={() => setTab(v)} className="px-3 py-2 text-sm whitespace-nowrap"
+              style={{ background: tab === v ? "var(--ink)" : "#fff", color: tab === v ? "#fff" : "var(--muted)" }}>{l}</button>
+          ))}
+        </div>
+        <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle} />
+        {validator && <button onClick={() => setRecap(true)} className="kb-btn kb-btn-ghost text-sm"><Printer size={14} /> Récapitulatif du mois</button>}
+      </div>
+
+      {/* Analyse (direction) */}
+      {validator && tab === "mois" && trend.length > 0 && (
+        <div className="grid lg:grid-cols-2 gap-4 mb-4">
+          <SectionCard title="Évolution des frais de transport" icon={BarChart3}>
+            <ResponsiveContainer width="100%" height={190}>
+              <BarChart data={trend} margin={{ top: 4, right: 4, left: -14, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#EEF1F5" />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#64748B" }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: "#64748B" }} axisLine={false} tickLine={false} />
+                <Tooltip formatter={(v) => [fcfa(v), "Transport"]} />
+                <Bar dataKey="value" radius={[5, 5, 0, 0]} fill="#2E78A8" />
+              </BarChart>
+            </ResponsiveContainer>
+          </SectionCard>
+          <SectionCard title={`Par collaborateur — ${trPeriodLabel(period)}`} icon={Users} pad={false}>
+            <div className="divide-y" style={{ borderColor: "var(--line)" }}>
+              {byUserMonth.length ? byUserMonth.map((u, i) => (
+                <div key={i} className="flex items-center justify-between px-4 py-2.5">
+                  <span className="text-sm">{u.name}</span>
+                  <span className="text-sm font-semibold tabular-nums">{fcfa(u.value)}</span>
+                </div>
+              )) : <p className="text-sm text-center py-8" style={{ color: "var(--muted)" }}>Aucun frais approuvé ce mois.</p>}
+            </div>
+          </SectionCard>
+        </div>
+      )}
+
+      {list.length ? <div className="space-y-2">
+        {list.map((r) => {
+          const cfg = REQ_TYPE[r.reqType]; const st = REQ_STATUS[r.status];
+          const author = memberById[r.userId];
+          const isTransport = r.reqType === "transport";
+          const own = r.userId === userId;
+          return (
+            <div key={r.id} className="bg-white rounded-xl border p-3" style={{ borderColor: "var(--line)" }}>
+              <div className="flex items-start justify-between gap-2 flex-wrap">
+                <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                  <span className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: cfg.color + "1A", color: cfg.color }}>
+                    {isTransport ? <Car size={17} /> : <CalendarOff size={17} />}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-semibold">{isTransport ? fcfa(r.amount) : `${daysBetween(r.startDate, r.endDate)} jour(s)`}</p>
+                      <Chip color={cfg.color}>{cfg.label}</Chip>
+                      <Chip color={st.color} dot>{st.label}</Chip>
+                    </div>
+                    <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>
+                      {author?.name || "—"} ·{" "}
+                      {isTransport
+                        ? `${TRANSPORT_MODE[r.mode]}${r.destination ? ` → ${r.destination}` : ""} · ${fr(r.date + "T00:00:00", { day: "numeric", month: "short" })}`
+                        : `${ABSENCE_TYPE[r.absenceType]} · du ${fr(r.startDate + "T00:00:00", { day: "numeric", month: "short" })} au ${fr(r.endDate + "T00:00:00", { day: "numeric", month: "short" })}`}
+                    </p>
+                    <p className="text-xs mt-1">{r.motif}</p>
+                    {r.decisionNote && <p className="text-[11px] mt-1 italic" style={{ color: st.color }}>Décision : {r.decisionNote}</p>}
+                    {r.propertyId && <div className="mt-1.5"><Chip color="#2E78A8"><Building2 size={10} /> {propById[r.propertyId]?.name}</Chip></div>}
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-1.5 shrink-0">
+                  {validator && r.status === "en_attente" && (
+                    <div className="flex gap-1">
+                      <button onClick={() => actions.decideRequest(r.id, "approuve", "")} className="kb-btn text-xs px-2.5 py-1.5" style={{ background: "#4F9E2A", color: "#fff" }}><ThumbsUp size={13} /> Approuver</button>
+                      <button onClick={() => setDecideOn(r)} className="kb-btn text-xs px-2.5 py-1.5" style={{ background: "#fff", color: "#D81F26", border: "1px solid #D81F2655" }}><ThumbsDown size={13} /> Refuser</button>
+                    </div>
+                  )}
+                  <div className="flex gap-1">
+                    {own && r.status === "en_attente" && <button onClick={() => setModal(r)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><Pencil size={14} /></button>}
+                    {(own && r.status === "en_attente") || isAdmin(me.role) ? (
+                      <button onClick={async () => { if (confirm("Supprimer cette demande ?")) await actions.deleteRequest(r.id); }} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div> : <EmptyState icon={Car} title="Aucune demande" sub={tab === "attente" ? "Aucune demande en attente de validation." : "Créez votre première demande de transport ou d'absence."}
+        action={tab !== "attente" ? <button onClick={() => setModal({})} className="kb-btn kb-btn-primary"><Plus size={15} /> Nouvelle demande</button> : null} />}
+
+      {modal && <RequestModal initial={modal} properties={properties} onSave={actions.saveRequest} onClose={() => setModal(null)} />}
+
+      {decideOn && <RefuseModal request={decideOn}
+        onConfirm={async (note) => { await actions.decideRequest(decideOn.id, "refuse", note); setDecideOn(null); }}
+        onClose={() => setDecideOn(null)} />}
+    </div>
+  );
+}
+
+function RefuseModal({ request, onConfirm, onClose }) {
+  const [note, setNote] = useState("");
+  return (
+    <Modal title="Refuser la demande" onClose={onClose}>
+      <p className="text-sm mb-3">Indiquez le motif du refus. Il sera visible par le demandeur.</p>
+      <Field label="Motif du refus"><textarea className={inputCls} style={inputStyle} rows={3} value={note} autoFocus onChange={(e) => setNote(e.target.value)} placeholder="Ex. Budget transport du mois déjà atteint." /></Field>
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} className="kb-btn kb-btn-ghost">Annuler</button>
+        <button onClick={() => onConfirm(note)} className="kb-btn" style={{ background: "#D81F26", color: "#fff" }}><ThumbsDown size={15} /> Confirmer le refus</button>
+      </div>
+    </Modal>
   );
 }
 
@@ -2382,7 +3714,7 @@ function TaskModal({ initial, departments, members, properties, owners, onSave, 
 }
 
 /* ---------------- Carte tâche compacte ---------------- */
-function TaskRow({ task, property, assignee, actualSec, isRunning, canTrack, onEdit, onToggleTimer, onAdvance, onShare }) {
+function TaskRow({ task, property, assignee, actualSec, isRunning, canTrack, onEdit, onToggleTimer, onAdvance, onShare, onPause, onFinish }) {
   const u = URGENCY[task.urgency]; const nat = NATURE[task.nature] || NATURE.autre;
   const done = task.status === "termine";
   const overEst = task.estMin && actualSec > task.estMin * 60;
@@ -2413,7 +3745,15 @@ function TaskRow({ task, property, assignee, actualSec, isRunning, canTrack, onE
             <div className="flex items-center gap-1 shrink-0">
               {onShare && <button onClick={() => onShare(task)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Envoyer"><Send size={13} /></button>}
               <button onClick={() => onEdit(task)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Modifier"><Pencil size={13} /></button>
-              {canTrack && !done && <button onClick={() => onToggleTimer(task)} title={isRunning ? "Arrêter" : "Démarrer"} className="p-1.5 rounded-lg text-white" style={{ background: isRunning ? "#D81F26" : "var(--live)" }}>{isRunning ? <Square size={13} /> : <Play size={13} />}</button>}
+              {canTrack && !done && isRunning && onPause && (
+                <button onClick={() => onPause(task)} title="Mettre en pause" className="p-1.5 rounded-lg text-white" style={{ background: "#C58A1B" }}><Pause size={13} /></button>
+              )}
+              {canTrack && !done && (
+                <button onClick={() => onToggleTimer(task)} title={isRunning ? "Arrêter le chrono" : "Démarrer le chrono"} className="p-1.5 rounded-lg text-white" style={{ background: isRunning ? "#D81F26" : "var(--live)" }}>{isRunning ? <Square size={13} /> : <Play size={13} />}</button>
+              )}
+              {!done && onFinish && (
+                <button onClick={() => onFinish(task)} title="Terminer la tâche" className="p-1.5 rounded-lg text-white" style={{ background: "#4F9E2A" }}><CheckCheck size={13} /></button>
+              )}
             </div>
           </div>
         </div>
@@ -2423,7 +3763,7 @@ function TaskRow({ task, property, assignee, actualSec, isRunning, canTrack, onE
 }
 
 /* ---------------- Vue principale ---------------- */
-function Taches({ store, me, userId, liveSecForTask, isRunning, toggleTimer, advanceStatus, onShare, onEdit, onNew }) {
+function Taches({ store, me, userId, liveSecForTask, isRunning, toggleTimer, advanceStatus, onShare, onEdit, onNew, onPause, onFinish }) {
   const { tasks, members, properties, templates, actions } = store;
   const [quick, setQuick] = useState("");
   const [quickProp, setQuickProp] = useState("");
@@ -2534,7 +3874,8 @@ function Taches({ store, me, userId, liveSecForTask, isRunning, toggleTimer, adv
         sorted.length ? <div className="space-y-2">
           {sorted.map((t) => <TaskRow key={t.id} task={t} property={propById[t.propertyId]} assignee={memberById[t.assigneeId]}
             actualSec={liveSecForTask(t.id)} isRunning={isRunning(t.id)} canTrack={t.assigneeId === userId}
-            onEdit={onEdit} onToggleTimer={toggleTimer} onAdvance={advanceStatus} onShare={onShare} />)}
+            onEdit={onEdit} onToggleTimer={toggleTimer} onAdvance={advanceStatus} onShare={onShare}
+            onPause={onPause} onFinish={onFinish} />)}
         </div> : <EmptyState icon={Inbox} title="Rien à faire ici" sub="Utilisez la saisie rapide ci-dessus pour ajouter une tâche." />
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -2549,7 +3890,8 @@ function Taches({ store, me, userId, liveSecForTask, isRunning, toggleTimer, adv
                 <div className="space-y-2">
                   {col.map((t) => <TaskRow key={t.id} task={t} property={propById[t.propertyId]} assignee={memberById[t.assigneeId]}
                     actualSec={liveSecForTask(t.id)} isRunning={isRunning(t.id)} canTrack={t.assigneeId === userId}
-                    onEdit={onEdit} onToggleTimer={toggleTimer} onAdvance={advanceStatus} onShare={onShare} />)}
+                    onEdit={onEdit} onToggleTimer={toggleTimer} onAdvance={advanceStatus} onShare={onShare}
+                    onPause={onPause} onFinish={onFinish} />)}
                   {col.length === 0 && <p className="text-xs text-center py-4" style={{ color: "#B6BEC9" }}>—</p>}
                 </div>
               </div>
@@ -2562,7 +3904,7 @@ function Taches({ store, me, userId, liveSecForTask, isRunning, toggleTimer, adv
 }
 
 /* ══════════════════════════════════════════════════════════════════════
-   APPLICATION (Root + Workspace + vues restantes)
+   APPLICATION (Root + Workspace)
    ══════════════════════════════════════════════════════════════════════ */
 /* ====================== Modales ====================== */
 function ShareTaskModal({ task, members, currentUserId, onSend, onClose }) {
@@ -2638,13 +3980,15 @@ body{margin:0;background:var(--bg);font-family:Inter,system-ui,sans-serif;}
 .kb-btn-ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}.kb-btn-ghost:hover{background:#F8FAFC}
 select,input,textarea{font-family:inherit;color:var(--ink);background:#fff}
 select:focus,input:focus,textarea:focus{border-color:var(--brass)!important;outline:none}
+select:disabled,input:disabled{background:#F6F8FA;color:#6B7280}
 button{cursor:pointer}
 @media print{
   body{background:#fff}
-  header,nav,.print\\:hidden{display:none!important}
+  header,nav,.print\:hidden{display:none!important}
   main{padding:0!important;max-width:100%!important}
   #print-area{border:none!important;box-shadow:none!important;padding:0!important;max-width:100%!important}
-  @page{margin:14mm}
+  table{page-break-inside:auto}tr{page-break-inside:avoid}
+  @page{margin:12mm;size:A4}
 }
 `;
 function KbStyles() {
@@ -2673,7 +4017,7 @@ export default function Root() {
 function Workspace({ userId }) {
   const store = useStore(userId);
   const { loading, departments, members, tasks, timeEntries, activeTimers, channels, channelMembers, messages,
-    owners, properties, products, releases, releaseLines, quotes, actions } = store;
+    owners, properties, products, releases, releaseLines, quotes, units, requests, actions } = store;
 
   const [view, setView] = useState("dashboard");
   const [viewWeek, setViewWeek] = useState(mondayIso(new Date()));
@@ -2709,6 +4053,8 @@ function Workspace({ userId }) {
     if (task.status === "a_faire") await actions.updateTask(task.id, { status: "en_cours" });
     await actions.startTimer(task.id);
   };
+  const pauseTask = async (task) => { await actions.pauseTask(); };
+  const finishTask = async (task) => { await actions.finishTask(task.id); };
   const advanceStatus = async (task) => { const i = STATUS_ORDER.indexOf(task.status); const next = STATUS_ORDER[Math.min(i + 1, 3)]; if (next === "termine" && isRunning(task.id)) await actions.stopTimer(); await actions.updateTask(task.id, { status: next }); };
   const saveTask = async (f) => { if (f.id) await actions.updateTask(f.id, f); else await actions.createTask(f); setTaskModal(null); };
   const removeTask = async (id) => { await actions.deleteTask(id); setTaskModal(null); };
@@ -2732,6 +4078,10 @@ function Workspace({ userId }) {
     else { const cid = await actions.ensureDm(dest); if (cid) await actions.sendMessage(cid, text, shareTask.id); if (reassign) await actions.updateTask(shareTask.id, { assigneeId: dest }); }
     setShareTask(null);
   };
+  const pendingReq = useMemo(
+    () => (canValidate(me?.role) ? requests.filter((r) => r.status === "en_attente").length : 0),
+    [requests, me]);
+
   const unreadTotal = useMemo(() => {
     const dmIds = channels.filter((c) => c.type === "dm" && channelMembers.some((cm) => cm.channelId === c.id && cm.userId === userId)).map((c) => c.id);
     return [GENERAL_CHANNEL_ID, ...dmIds].filter((ch) => hasUnread(ch)).length;
@@ -2746,6 +4096,8 @@ function Workspace({ userId }) {
     { id: "patrimoine", label: "Patrimoine", icon: Building2 },
     { id: "devis", label: "Devis artisans", icon: FileText },
     { id: "documents", label: "Documents", icon: FileSignature },
+    { id: "recouvrement", label: "Recouvrement", icon: Wallet },
+    { id: "transport", label: "Transport", icon: Car, badge: pendingReq },
     { id: "produits", label: "Produits", icon: SprayCan },
     { id: "messages", label: "Messages", icon: MessageSquare, badge: unreadTotal },
     { id: "time", label: "Suivi du temps", icon: Clock },
@@ -2775,7 +4127,7 @@ function Workspace({ userId }) {
             <div className="min-w-0 hidden xs:block"><p className="font-semibold leading-tight tracking-tight truncate">Suivi d'équipe</p><p className="text-[11px] leading-tight" style={{ color: "#9AA4B2" }}>Entreprise Kibegnon</p></div>
           </div>
           <div className="flex items-center gap-2">
-            {myTimer && <button onClick={actions.stopTimer} className="hidden sm:flex items-center gap-2 rounded-full pl-3 pr-2 py-1.5 text-sm font-medium" style={{ background: "var(--live)" }}><span className="w-2 h-2 rounded-full bg-white animate-pulse" />{fmtDur((now - myTimer.startedAt) / 1000)}<span className="bg-white/25 rounded-full p-0.5"><Square size={12} /></span></button>}
+            {myTimer && <button onClick={actions.stopTimer} className="hidden sm:flex items-center gap-2 rounded-full pl-3 pr-2 py-1.5 text-sm font-medium" style={{ background: "var(--live)" }}><span className="w-2 h-2 rounded-full bg-white animate-pulse" />{fmtClock((now - myTimer.startedAt) / 1000)}<span className="bg-white/25 rounded-full p-0.5"><Square size={12} /></span></button>}
             <div className="flex items-center gap-2 pl-1">
               <Avatar member={me} size={30} />
               <div className="hidden sm:block leading-tight"><p className="text-sm font-medium flex items-center gap-1">{me.name}{isAdmin(me.role) && <ShieldCheck size={13} style={{ color: "#9ED27E" }} />}</p><p className="text-[11px]" style={{ color: "#9AA4B2" }}>{ROLES[me.role]}</p></div>
@@ -2795,7 +4147,7 @@ function Workspace({ userId }) {
         </div>
       </header>
 
-      {myTimer && <button onClick={actions.stopTimer} className="sm:hidden w-full flex items-center justify-center gap-2 py-2 text-white text-sm font-medium" style={{ background: "var(--live)" }}><span className="w-2 h-2 rounded-full bg-white animate-pulse" /> En cours · {fmtDur((now - myTimer.startedAt) / 1000)} — toucher pour arrêter</button>}
+      {myTimer && <button onClick={actions.stopTimer} className="sm:hidden w-full flex items-center justify-center gap-2 py-2 text-white text-sm font-medium" style={{ background: "var(--live)" }}><span className="w-2 h-2 rounded-full bg-white animate-pulse" /> En cours · {fmtClock((now - myTimer.startedAt) / 1000)} — toucher pour arrêter</button>}
 
       <main className="max-w-6xl mx-auto px-4 py-5">
         {view === "dashboard" && Dashboard()}
@@ -2805,11 +4157,14 @@ function Workspace({ userId }) {
             liveSecForTask={liveSecForTask} isRunning={isRunning}
             toggleTimer={toggleTimer} advanceStatus={advanceStatus}
             onShare={setShareTask} onEdit={setTaskModal}
+            onPause={pauseTask} onFinish={finishTask}
             onNew={() => setTaskModal({ prefill: { assigneeId: userId, weekStart: viewWeek } })} />
         )}
         {view === "patrimoine" && <Patrimoine store={store} me={me} />}
         {view === "devis" && <Devis store={store} me={me} />}
         {view === "documents" && <Documents store={store} me={me} />}
+        {view === "recouvrement" && <Recouvrement store={store} me={me} userId={userId} />}
+        {view === "transport" && <Transport store={store} me={me} userId={userId} />}
         {view === "produits" && <Produits store={store} me={me} />}
         {view === "messages" && Messages()}
         {view === "time" && TimeView()}
@@ -2845,7 +4200,7 @@ function Workspace({ userId }) {
     return (
       <div>
         <div className="flex items-center justify-between mb-4"><div><h1 className="text-xl font-bold">Bonjour {me.name.split(" ")[0]} 👋</h1><p className="text-sm" style={{ color: "var(--muted)" }}>{fr(new Date(), { weekday: "long", day: "numeric", month: "long" })}</p></div><FloatingAdd /></div>
-        {runningTask && <div className="rounded-xl p-4 mb-4 text-white flex items-center justify-between" style={{ background: "linear-gradient(100deg,#3d7d20,#4F9E2A)" }}><div className="min-w-0"><p className="text-xs opacity-90 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-white animate-pulse" /> Chrono en cours</p><p className="font-medium truncate">{runningTask.title}</p></div><div className="flex items-center gap-3"><span className="text-2xl font-bold tabular-nums">{fmtDur((now - myTimer.startedAt) / 1000)}</span><button onClick={actions.stopTimer} className="bg-white/20 hover:bg-white/30 rounded-lg p-2"><Square size={18} /></button></div></div>}
+        {runningTask && <div className="rounded-xl p-4 mb-4 text-white flex items-center justify-between" style={{ background: "linear-gradient(100deg,#3d7d20,#4F9E2A)" }}><div className="min-w-0"><p className="text-xs opacity-90 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-white animate-pulse" /> Chrono en cours</p><p className="font-medium truncate">{runningTask.title}</p></div><div className="flex items-center gap-3"><span className="text-2xl font-bold tabular-nums">{fmtClock((now - myTimer.startedAt) / 1000)}</span><button onClick={actions.stopTimer} className="bg-white/20 hover:bg-white/30 rounded-lg p-2"><Square size={18} /></button></div></div>}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
           <StatCard icon={ListChecks} label="Mes tâches ouvertes" value={myOpen.length} sub={`${myTasks.length} au total`} tint="#2E78A8" />
           <StatCard icon={Clock} label="Temps suivi aujourd'hui" value={fmtDur(todaySec)} tint="#4F9E2A" />
@@ -2861,7 +4216,7 @@ function Workspace({ userId }) {
         <div className="grid lg:grid-cols-2 gap-4">
           <section className="bg-white rounded-xl border p-4" style={{ borderColor: "var(--line)" }}>
             <h2 className="font-semibold mb-3 flex items-center gap-2"><CalendarDays size={16} style={{ color: "var(--brass)" }} /> Mes prochaines tâches</h2>
-            <div className="space-y-2">{myOpen.slice(0, 5).map((t) => <TaskRow key={t.id} task={t} property={propById[t.propertyId]} assignee={memberById[t.assigneeId]} actualSec={liveSecForTask(t.id)} isRunning={isRunning(t.id)} canTrack onEdit={setTaskModal} onToggleTimer={toggleTimer} onAdvance={advanceStatus} onShare={setShareTask} />)}{myOpen.length === 0 && <p className="text-sm py-6 text-center" style={{ color: "var(--muted)" }}>Aucune tâche en attente.</p>}</div>
+            <div className="space-y-2">{myOpen.slice(0, 5).map((t) => <TaskRow key={t.id} task={t} property={propById[t.propertyId]} assignee={memberById[t.assigneeId]} actualSec={liveSecForTask(t.id)} isRunning={isRunning(t.id)} canTrack onEdit={setTaskModal} onToggleTimer={toggleTimer} onAdvance={advanceStatus} onShare={setShareTask} onPause={pauseTask} onFinish={finishTask} />)}{myOpen.length === 0 && <p className="text-sm py-6 text-center" style={{ color: "var(--muted)" }}>Aucune tâche en attente.</p>}</div>
           </section>
           {sup ? (
             <section className="bg-white rounded-xl border p-4" style={{ borderColor: "var(--line)" }}>
@@ -2902,12 +4257,12 @@ function Workspace({ userId }) {
             return (
               <div key={i} className="bg-white rounded-xl border" style={{ borderColor: isToday ? "var(--brass)" : "var(--line)" }}>
                 <div className="flex items-center justify-between px-3 py-2 border-b" style={{ borderColor: "var(--line)" }}><div><p className="text-sm font-semibold">{day}</p><p className="text-[11px]" style={{ color: "var(--muted)" }}>{fr(addDays(viewWeek + "T00:00:00", i), { day: "numeric", month: "short" })} · {fmtDur(secForUserDay(who, dayIso))}</p></div><button onClick={() => setTaskModal({ prefill: { assigneeId: who, weekStart: viewWeek, day: i } })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><Plus size={15} /></button></div>
-                <div className="p-2 space-y-2 min-h-[60px]">{dts.map((t) => <TaskRow key={t.id} task={t} property={propById[t.propertyId]} assignee={memberById[t.assigneeId]} actualSec={liveSecForTask(t.id)} isRunning={isRunning(t.id)} canTrack={who === userId} onEdit={setTaskModal} onToggleTimer={toggleTimer} onAdvance={advanceStatus} onShare={setShareTask} />)}{dts.length === 0 && <p className="text-xs text-center py-3" style={{ color: "#B6BEC9" }}>—</p>}</div>
+                <div className="p-2 space-y-2 min-h-[60px]">{dts.map((t) => <TaskRow key={t.id} task={t} property={propById[t.propertyId]} assignee={memberById[t.assigneeId]} actualSec={liveSecForTask(t.id)} isRunning={isRunning(t.id)} canTrack={who === userId} onEdit={setTaskModal} onToggleTimer={toggleTimer} onAdvance={advanceStatus} onShare={setShareTask} onPause={pauseTask} onFinish={finishTask} />)}{dts.length === 0 && <p className="text-xs text-center py-3" style={{ color: "#B6BEC9" }}>—</p>}</div>
               </div>
             );
           })}
         </div>
-        {unplanned.length > 0 && <div className="mt-4 bg-white rounded-xl border p-3" style={{ borderColor: "var(--line)" }}><p className="text-sm font-semibold mb-2 flex items-center gap-1.5"><AlertTriangle size={14} style={{ color: "#EA580C" }} /> À planifier cette semaine</p><div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">{unplanned.map((t) => <TaskRow key={t.id} task={t} property={propById[t.propertyId]} assignee={memberById[t.assigneeId]} actualSec={liveSecForTask(t.id)} isRunning={isRunning(t.id)} canTrack={who === userId} onEdit={setTaskModal} onToggleTimer={toggleTimer} onAdvance={advanceStatus} onShare={setShareTask} />)}</div></div>}
+        {unplanned.length > 0 && <div className="mt-4 bg-white rounded-xl border p-3" style={{ borderColor: "var(--line)" }}><p className="text-sm font-semibold mb-2 flex items-center gap-1.5"><AlertTriangle size={14} style={{ color: "#EA580C" }} /> À planifier cette semaine</p><div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">{unplanned.map((t) => <TaskRow key={t.id} task={t} property={propById[t.propertyId]} assignee={memberById[t.assigneeId]} actualSec={liveSecForTask(t.id)} isRunning={isRunning(t.id)} canTrack={who === userId} onEdit={setTaskModal} onToggleTimer={toggleTimer} onAdvance={advanceStatus} onShare={setShareTask} onPause={pauseTask} onFinish={finishTask} />)}</div></div>}
       </div>
     );
   }
