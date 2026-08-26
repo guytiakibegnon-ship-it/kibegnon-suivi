@@ -413,6 +413,22 @@ function amountInWords(amount) {
   return w + (w.endsWith("franc") ? "" : "") + " francs CFA";
 }
 
+
+/* Impression : force l'orientation de la page (portrait ou paysage).
+   @page ne pouvant pas être ciblé par une classe, on injecte la règle juste avant d'imprimer. */
+function printSheet(orientation = "portrait") {
+  const id = "kb-page-orientation";
+  document.getElementById(id)?.remove();
+  const el = document.createElement("style");
+  el.id = id;
+  el.media = "print";
+  el.textContent = `@page { size: A4 ${orientation}; margin: ${orientation === "landscape" ? "8mm" : "12mm"}; }`;
+  document.head.appendChild(el);
+  const cleanup = () => { document.getElementById(id)?.remove(); window.removeEventListener("afterprint", cleanup); };
+  window.addEventListener("afterprint", cleanup);
+  setTimeout(() => window.print(), 60);
+}
+
 /* ══════════════════════════════════════════════════════════════════════
    COMPOSANTS D'INTERFACE PARTAGÉS
    ══════════════════════════════════════════════════════════════════════ */
@@ -1352,7 +1368,7 @@ function DocSheet({ doc, property, owner, author, onBack }) {
     <div>
       <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
         <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour aux documents</button>
-        <button onClick={() => window.print()} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+        <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
       </div>
 
       <div id="print-area" className="bg-white rounded-xl border p-7 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
@@ -1696,7 +1712,7 @@ function QuoteSheet({ quote, lines, property, owner, recorder, onBack }) {
     <div>
       <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
         <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour aux devis</button>
-        <button onClick={() => window.print()} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+        <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
       </div>
 
       <div id="print-area" className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
@@ -2060,7 +2076,7 @@ function Register({ title, subtitle, columns, rows, onBack, footer }) {
     <div>
       <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
         <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
-        <button onClick={() => window.print()} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+        <button onClick={() => printSheet("landscape")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF (paysage)</button>
       </div>
       <div id="print-area" className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
         <div className="flex items-start justify-between gap-4 pb-3 border-b" style={{ borderColor: "var(--line)" }}>
@@ -2858,7 +2874,9 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, readOn
     <Modal title={`${RENT_SCOPE[period.scope].label} — ${property?.name || ""} · ${periodLabel(period.period)}`} onClose={onClose} wide>
       {readOnly && (
         <div className="rounded-lg p-3 mb-4 text-xs flex items-center gap-2" style={{ background: "#F1F3F5", color: "var(--muted)" }}>
-          <Eye size={14} /> Lecture seule — ce tableau appartient à son auteur. Seuls celui-ci et l'administrateur peuvent le modifier.
+          <Eye size={14} /> {period.scope === "comptable"
+            ? "Lecture seule — l'état comptable est consultable par toute l'équipe, mais seul l'administrateur peut le modifier."
+            : "Lecture seule — ce tableau appartient à son auteur. Seuls celui-ci et l'administrateur peuvent le modifier."}
         </div>
       )}
 
@@ -2971,7 +2989,7 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
     <div>
       <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
         <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
-        <button onClick={() => window.print()} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+        <button onClick={() => printSheet("landscape")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF (paysage)</button>
       </div>
 
       <div id="print-area" className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
@@ -3098,7 +3116,11 @@ function Recouvrement({ store, me, userId }) {
   const propById = useMemo(() => Object.fromEntries(properties.map((p) => [p.id, p])), [properties]);
   const ownerById = useMemo(() => Object.fromEntries(owners.map((o) => [o.id, o])), [owners]);
   const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
-  const canEditPeriod = (p) => p.createdBy === userId || isAdmin(me.role);
+  /* Suivi commercial : modifiable par son auteur (et l'administrateur).
+     État comptable : lecture pour tous, modification réservée aux administrateurs. */
+  const canEditPeriod = (p) => p.scope === "comptable"
+    ? isAdmin(me.role)
+    : (p.createdBy === userId || isAdmin(me.role));
 
   const sheet = rentPeriods.find((p) => p.id === sheetId);
   if (sheet) {
@@ -3153,7 +3175,10 @@ function Recouvrement({ store, me, userId }) {
         </select>
       </div>
 
-      <p className="text-xs mb-3" style={{ color: "var(--muted)" }}>{RENT_SCOPE[scope].desc}</p>
+      <p className="text-xs mb-3" style={{ color: "var(--muted)" }}>
+        {RENT_SCOPE[scope].desc}
+        {scope === "comptable" && " — consultable par toute l'équipe ; modification réservée à l'administrateur."}
+      </p>
 
       {list.length ? <div className="space-y-2">
         {list.map((p) => {
@@ -3206,7 +3231,7 @@ function Recouvrement({ store, me, userId }) {
         sub="Créez le tableau du mois pour un bâtiment."
         action={<button onClick={() => setCreator(true)} className="kb-btn kb-btn-primary"><Plus size={15} /> Nouveau tableau</button>} />}
 
-      {creator && <CreatorModal properties={properties} scope={scope} existing={rentPeriods}
+      {creator && <CreatorModal properties={properties} scope={isAdmin(me.role) ? scope : "commercial"} existing={rentPeriods} isAdminUser={isAdmin(me.role)}
         onCreate={async (f) => { const r = await actions.savePeriod(f); if (!r.error && r.id) { setCreator(false); const np = { ...f, id: r.id, createdBy: userId }; setEditor({ period: np, readOnly: false }); } return r; }}
         onClose={() => setCreator(false)} />}
 
@@ -3225,7 +3250,7 @@ function Recouvrement({ store, me, userId }) {
   );
 }
 
-function CreatorModal({ properties, scope, existing, onCreate, onClose }) {
+function CreatorModal({ properties, scope, existing, onCreate, onClose, isAdminUser }) {
   const [f, setF] = useState({ propertyId: properties[0]?.id || "", period: currentPeriod(), scope, rate: 0.07, status: "brouillon" });
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const dup = existing.some((p) => p.propertyId === f.propertyId && p.period === f.period && p.scope === f.scope);
@@ -3238,7 +3263,9 @@ function CreatorModal({ properties, scope, existing, onCreate, onClose }) {
     <Modal title="Nouveau tableau de recouvrement" onClose={onClose}>
       <Field label="Type de tableau">
         <select className={inputCls} style={inputStyle} value={f.scope} onChange={(e) => setF((p) => ({ ...p, scope: e.target.value }))}>
-          {Object.entries(RENT_SCOPE).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          {Object.entries(RENT_SCOPE)
+            .filter(([k]) => k !== "comptable" || isAdminUser)
+            .map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
       </Field>
       <Field label="Bâtiment">
@@ -3373,7 +3400,7 @@ function RecapSheet({ period, requests, members, properties, onBack }) {
     <div>
       <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
         <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
-        <button onClick={() => window.print()} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+        <button onClick={() => printSheet("landscape")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF (paysage)</button>
       </div>
 
       <div id="print-area" className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
@@ -3448,8 +3475,6 @@ function Transport({ store, me, userId }) {
   const propById = useMemo(() => Object.fromEntries(properties.map((p) => [p.id, p])), [properties]);
   const validator = canValidate(me.role);
 
-  if (recap) return <RecapSheet period={period} requests={requests} members={members} properties={properties} onBack={() => setRecap(false)} />;
-
   const mine = requests.filter((r) => r.userId === userId);
   const pending = requests.filter((r) => r.status === "en_attente");
   const monthReqs = requests.filter((r) => monthIso(r.date + "T00:00:00") === period);
@@ -3478,6 +3503,9 @@ function Transport({ store, me, userId }) {
     });
     return Object.values(m).sort((a, b) => b.value - a.value);
   }, [monthTransport, memberById]);
+
+  /* Tous les hooks sont appelés avant tout retour anticipé */
+  if (recap) return <RecapSheet period={period} requests={requests} members={members} properties={properties} onBack={() => setRecap(false)} />;
 
   return (
     <div>
