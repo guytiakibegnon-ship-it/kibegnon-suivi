@@ -273,6 +273,17 @@ const payStatusOf = (expected, collected) => {
   return "partiel";
 };
 const DEFAULT_CHARGES = ["Électricité", "Eau", "Réparation", "Entretien", "Autres charges"];
+/* Sommes qui s'AJOUTENT au versement dû au propriétaire */
+const SUPPLEMENT_PRESETS = [
+  "Caution encaissée à reverser",
+  "Avance sur loyer encaissée",
+  "Reliquat du mois précédent",
+  "Remboursement de trop-perçu",
+  "Régularisation de charges",
+  "Arriéré recouvré d'un mois antérieur",
+  "Indemnité d'occupation",
+  "Autre versement",
+];
 const MONTHS_FR = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
 
 /* ---- Transport & permissions ---- */
@@ -526,7 +537,7 @@ const mQLine   = (r) => ({ id: r.id, quoteId: r.quote_id, label: r.label, qty: N
 const mUnit    = (r) => ({ id: r.id, propertyId: r.property_id, label: r.label, kind: r.kind, floor: r.floor, rooms: r.rooms, surface: r.surface_m2, rent: Number(r.rent_amount), charges: Number(r.charges_amount), status: r.status, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, leaseStart: r.lease_start, notes: r.notes });
 const mPeriod  = (r) => ({ id: r.id, propertyId: r.property_id, period: r.period, scope: r.scope, rate: Number(r.agency_rate), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
 const mRLine   = (r) => ({ id: r.id, periodId: r.period_id, unitId: r.unit_id, unitLabel: r.unit_label, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, expected: Number(r.expected), collected: Number(r.collected), paidAt: r.paid_at, charges: Number(r.charges), comment: r.comment, position: r.position });
-const mRCharge = (r) => ({ id: r.id, periodId: r.period_id, label: r.label, amount: Number(r.amount), observation: r.observation, position: r.position });
+const mRCharge = (r) => ({ id: r.id, periodId: r.period_id, label: r.label, amount: Number(r.amount), observation: r.observation, position: r.position, kind: r.kind || "charge" });
 const mReq     = (r) => ({ id: r.id, reqType: r.req_type, userId: r.user_id, date: r.req_date, amount: Number(r.amount), destination: r.destination, mode: r.transport_mode, propertyId: r.property_id, startDate: r.start_date, endDate: r.end_date, absenceType: r.absence_type, motif: r.motif, status: r.status, decidedBy: r.decided_by, decidedAt: r.decided_at, decisionNote: r.decision_note, createdAt: Date.parse(r.created_at) });
 const mDoc     = (r) => ({ id: r.id, ref: r.ref, docType: r.doc_type, date: r.doc_date, propertyId: r.property_id, ownerId: r.owner_id, clientName: r.client_name, clientPhone: r.client_phone, clientEmail: r.client_email, clientAddr: r.client_addr, object: r.object, body: r.body, lines: r.lines || [], fields: r.fields || {}, total: Number(r.total_amount), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
 const mTpl     = (r) => ({ id: r.id, label: r.label, nature: r.nature, deptId: r.dept_id, urgency: r.urgency, estMin: r.est_min, sortOrder: r.sort_order, active: r.active });
@@ -971,7 +982,7 @@ function useStore(userId) {
       paid_at: l.paidAt || null, charges: Number(l.charges) || 0, comment: l.comment || "", position: i }));
     const cPayload = charges.filter((c) => (c.label || "").trim()).map((c, i) => ({
       period_id: periodId, label: c.label, amount: Number(c.amount) || 0,
-      observation: c.observation || "", position: i }));
+      observation: c.observation || "", position: i, kind: c.kind || "charge" }));
     let err = null;
     if (lPayload.length) { const { error } = await supabase.from("rent_lines").insert(lPayload); err = err || error; }
     if (cPayload.length) { const { error } = await supabase.from("rent_charges").insert(cPayload); err = err || error; }
@@ -2830,21 +2841,32 @@ function periodTotals(lines, charges, rate) {
   const arrears = lines.reduce((a, l) => a + Math.max(0, (Number(l.expected) || 0) - (Number(l.collected) || 0)), 0);
   const deducted = lines.reduce((a, l) => a + (Number(l.charges) || 0), 0);
   const netAfter = collected - deducted;
-  const chargesTotal = charges.reduce((a, c) => a + (Number(c.amount) || 0), 0);
+  const chargeRows = charges.filter((c) => (c.kind || "charge") === "charge");
+  const supplementRows = charges.filter((c) => c.kind === "supplement");
+  const chargesTotal = chargeRows.reduce((a, c) => a + (Number(c.amount) || 0), 0);
+  /* Sommes à verser en plus du loyer : caution reversée, reliquat du mois
+     précédent, remboursement… Elles s'ajoutent au net dû au propriétaire. */
+  const supplementsTotal = supplementRows.reduce((a, c) => a + (Number(c.amount) || 0), 0);
   const fee = Math.round(collected * (Number(rate) || 0));
-  const netOwner = collected - deducted - fee;
+  const netOwner = collected - deducted - fee + supplementsTotal;
   const nPaid = lines.filter((l) => payStatusOf(l.expected, l.collected) === "paye" && Number(l.expected) > 0).length;
   const nPartial = lines.filter((l) => payStatusOf(l.expected, l.collected) === "partiel").length;
   const nUnpaid = lines.filter((l) => payStatusOf(l.expected, l.collected) === "impaye" && Number(l.expected) > 0).length;
   const rateCollected = expected > 0 ? collected / expected : 0;
-  return { expected, collected, arrears, deducted, netAfter, chargesTotal, fee, netOwner, nPaid, nPartial, nUnpaid, rateCollected };
+  return { expected, collected, arrears, deducted, netAfter, chargesTotal, supplementsTotal, chargeRows, supplementRows, fee, netOwner, nPaid, nPartial, nUnpaid, rateCollected };
 }
 
 /* ================= Éditeur d'une période ================= */
 function PeriodEditor({ period, property, owner, units, lines0, charges0, readOnly, onSave, onClose }) {
   const [lines, setLines] = useState(() => lines0.length ? lines0.map((l) => ({ ...l })) : []);
-  const [charges, setCharges] = useState(() => charges0.length ? charges0.map((c) => ({ ...c }))
-    : DEFAULT_CHARGES.map((label) => ({ label, amount: 0, observation: "" })));
+  const [charges, setCharges] = useState(() => {
+    const rows = charges0.length ? charges0.map((c) => ({ ...c, kind: c.kind || "charge" }))
+      : DEFAULT_CHARGES.map((label) => ({ label, amount: 0, observation: "", kind: "charge" }));
+    return rows;
+  });
+  /* Index réels dans le tableau `charges`, pour éditer chaque bloc séparément */
+  const chargeIdx = charges.map((c, i) => [c, i]).filter(([c]) => (c.kind || "charge") === "charge");
+  const supplementIdx = charges.map((c, i) => [c, i]).filter(([c]) => c.kind === "supplement");
   const [rate, setRate] = useState(period.rate);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
 
@@ -2945,7 +2967,7 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, readOn
         <div className="rounded-xl border p-3" style={{ borderColor: "var(--line)" }}>
           <p className="text-xs font-bold mb-2">CHARGES DU MOIS</p>
           <div className="space-y-1.5">
-            {charges.map((c, i) => (
+            {chargeIdx.map(([c, i]) => (
               <div key={i} className="flex gap-1.5">
                 <input disabled={readOnly} className="flex-1 px-2 py-1.5 rounded border text-xs" style={inputStyle} value={c.label} onChange={(e) => setCharge(i, "label", e.target.value)} placeholder="Désignation" />
                 <input disabled={readOnly} type="number" min={0} step={1000} className="w-24 px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={c.amount} onChange={(e) => setCharge(i, "amount", e.target.value)} />
@@ -2953,18 +2975,54 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, readOn
               </div>
             ))}
           </div>
-          {!readOnly && <button onClick={() => setCharges((p) => [...p, { label: "", amount: 0, observation: "" }])} className="kb-btn kb-btn-ghost text-xs mt-2"><Plus size={12} /> Ligne</button>}
+          {!readOnly && <button onClick={() => setCharges((p) => [...p, { label: "", amount: 0, observation: "", kind: "charge" }])} className="kb-btn kb-btn-ghost text-xs mt-2"><Plus size={12} /> Ligne</button>}
           <div className="flex justify-between text-xs pt-2 mt-2 border-t font-bold" style={{ borderColor: "var(--line)" }}>
             <span>TOTAL CHARGES</span><span className="tabular-nums">{fcfa(t.chargesTotal)}</span>
           </div>
         </div>
       </div>
 
+      {/* --- Sommes à verser EN PLUS du loyer --- */}
+      <div className="rounded-xl border p-3 mb-3" style={{ borderColor: "#4F9E2A55", background: "#F6FBF3" }}>
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-xs font-bold" style={{ color: "#3d7d20" }}>SOMMES À VERSER EN PLUS DU LOYER</p>
+          {!readOnly && (
+            <select className="text-xs px-2 py-1 rounded border bg-white" style={inputStyle} value=""
+              onChange={(e) => { if (e.target.value) setCharges((p) => [...p, { label: e.target.value, amount: 0, observation: "", kind: "supplement" }]); }}>
+              <option value="">+ Ajouter…</option>
+              {SUPPLEMENT_PRESETS.map((l) => <option key={l} value={l}>{l}</option>)}
+            </select>
+          )}
+        </div>
+        <p className="text-[11px] mb-2" style={{ color: "var(--muted)" }}>Caution encaissée à reverser, reliquat du mois précédent, remboursement…</p>
+        <div className="space-y-1.5">
+          {supplementIdx.map(([c, i]) => (
+            <div key={i} className="flex gap-1.5">
+              <input disabled={readOnly} className="flex-1 px-2 py-1.5 rounded border text-xs" style={inputStyle} value={c.label} onChange={(e) => setCharge(i, "label", e.target.value)} placeholder="Désignation" />
+              <input disabled={readOnly} className="w-32 px-2 py-1.5 rounded border text-xs" style={inputStyle} value={c.observation || ""} onChange={(e) => setCharge(i, "observation", e.target.value)} placeholder="Observation" />
+              <input disabled={readOnly} type="number" min={0} step={1000} className="w-24 px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={c.amount} onChange={(e) => setCharge(i, "amount", e.target.value)} />
+              {!readOnly && <button onClick={() => setCharges((p) => p.filter((_, j) => j !== i))} className="text-slate-300 hover:text-red-500 px-1"><X size={13} /></button>}
+            </div>
+          ))}
+          {supplementIdx.length === 0 && <p className="text-[11px] text-center py-2" style={{ color: "#B6BEC9" }}>Aucune somme supplémentaire ce mois-ci.</p>}
+        </div>
+        {!readOnly && <button onClick={() => setCharges((p) => [...p, { label: "", amount: 0, observation: "", kind: "supplement" }])} className="kb-btn kb-btn-ghost text-xs mt-2"><Plus size={12} /> Ligne libre</button>}
+        {supplementIdx.length > 0 && (
+          <div className="flex justify-between text-xs pt-2 mt-2 border-t font-bold" style={{ borderColor: "#4F9E2A33" }}>
+            <span>TOTAL À VERSER EN PLUS</span><span className="tabular-nums" style={{ color: "#3d7d20" }}>+ {fcfa(t.supplementsTotal)}</span>
+          </div>
+        )}
+      </div>
+
       <div className="rounded-xl p-3 mb-3" style={{ background: "#F6F8FA" }}>
         <p className="text-xs font-bold mb-2">RÈGLEMENT PROPRIÉTAIRE</p>
-        {[["Loyers encaissés (base)", t.collected], ["Charges à prélever", t.deducted],
-          [`Prestation agence (${(Number(rate) * 100).toFixed(0)} %)`, t.fee]].map(([k, v]) => (
-          <div key={k} className="flex justify-between text-xs py-1"><span style={{ color: "var(--muted)" }}>{k}</span><span className="font-semibold tabular-nums">{fcfa(v)}</span></div>
+        {[["Loyers encaissés (base)", t.collected, ""], ["Charges à prélever", t.deducted, "-"],
+          [`Prestation agence (${(Number(rate) * 100).toFixed(0)} %)`, t.fee, "-"],
+          ...(t.supplementsTotal ? [["Sommes à verser en plus", t.supplementsTotal, "+"]] : [])].map(([k, v, sign]) => (
+          <div key={k} className="flex justify-between text-xs py-1">
+            <span style={{ color: "var(--muted)" }}>{k}</span>
+            <span className="font-semibold tabular-nums" style={{ color: sign === "+" ? "#3d7d20" : "var(--ink)" }}>{sign} {fcfa(v)}</span>
+          </div>
         ))}
         <div className="flex justify-between items-center pt-2 mt-1 border-t" style={{ borderColor: "var(--line)" }}>
           <span className="text-sm font-bold">NET À PAYER AU PROPRIÉTAIRE</span>
@@ -3061,7 +3119,7 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
           <div>
             <p className="text-xs font-bold mb-1.5">CHARGES DU MOIS</p>
             <table className="w-full text-[11px]">
-              <tbody>{charges.filter((c) => c.label).map((c, i) => (
+              <tbody>{t.chargeRows.filter((c) => c.label).map((c, i) => (
                 <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
                   <td className="px-2 py-1">{c.label}</td>
                   <td className="px-2 py-1 text-right tabular-nums">{fcfa(c.amount)}</td>
@@ -3072,14 +3130,34 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
                 <td className="px-2 py-1.5 text-right font-bold tabular-nums">{fcfa(t.chargesTotal)}</td>
               </tr></tfoot>
             </table>
+
+            {t.supplementRows.length > 0 && <>
+              <p className="text-xs font-bold mb-1.5 mt-3">SOMMES À VERSER EN PLUS</p>
+              <table className="w-full text-[11px]">
+                <tbody>{t.supplementRows.filter((c) => c.label).map((c, i) => (
+                  <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
+                    <td className="px-2 py-1">{c.label}{c.observation ? ` — ${c.observation}` : ""}</td>
+                    <td className="px-2 py-1 text-right tabular-nums">{fcfa(c.amount)}</td>
+                  </tr>
+                ))}</tbody>
+                <tfoot><tr style={{ background: "#F1F3F5" }}>
+                  <td className="px-2 py-1.5 font-bold">TOTAL SUPPLÉMENTS</td>
+                  <td className="px-2 py-1.5 text-right font-bold tabular-nums">{fcfa(t.supplementsTotal)}</td>
+                </tr></tfoot>
+              </table>
+            </>}
           </div>
           <div>
             <p className="text-xs font-bold mb-1.5">RÈGLEMENT PROPRIÉTAIRE</p>
             <table className="w-full text-[11px]">
               <tbody>
                 <tr className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-2 py-1">Loyers encaissés</td><td className="px-2 py-1 text-right tabular-nums">{fcfa(t.collected)}</td></tr>
-                <tr className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-2 py-1">Charges à prélever</td><td className="px-2 py-1 text-right tabular-nums">{fcfa(t.deducted)}</td></tr>
-                <tr className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-2 py-1">Prestation agence ({(period.rate * 100).toFixed(0)} %)</td><td className="px-2 py-1 text-right tabular-nums">{fcfa(t.fee)}</td></tr>
+                <tr className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-2 py-1">Charges à prélever</td><td className="px-2 py-1 text-right tabular-nums">− {fcfa(t.deducted)}</td></tr>
+                <tr className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-2 py-1">Prestation agence ({(period.rate * 100).toFixed(0)} %)</td><td className="px-2 py-1 text-right tabular-nums">− {fcfa(t.fee)}</td></tr>
+                {t.supplementsTotal > 0 && <tr className="border-b" style={{ borderColor: "var(--line)" }}>
+                  <td className="px-2 py-1" style={{ color: "#3d7d20" }}>Sommes à verser en plus</td>
+                  <td className="px-2 py-1 text-right tabular-nums" style={{ color: "#3d7d20" }}>+ {fcfa(t.supplementsTotal)}</td>
+                </tr>}
               </tbody>
               <tfoot><tr style={{ background: "#F1F3F5" }}>
                 <td className="px-2 py-2 font-bold">NET À PAYER</td>
