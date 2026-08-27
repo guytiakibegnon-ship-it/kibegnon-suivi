@@ -573,7 +573,7 @@ const mUnit    = (r) => ({ id: r.id, propertyId: r.property_id, label: r.label, 
 const mPeriod  = (r) => ({ id: r.id, propertyId: r.property_id, period: r.period, scope: r.scope, rate: Number(r.agency_rate), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
 const mRLine   = (r) => ({ id: r.id, periodId: r.period_id, unitId: r.unit_id, unitLabel: r.unit_label, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, expected: Number(r.expected), collected: Number(r.collected), paidAt: r.paid_at, charges: Number(r.charges), comment: r.comment, position: r.position });
 const mRCharge = (r) => ({ id: r.id, periodId: r.period_id, label: r.label, amount: Number(r.amount), observation: r.observation, position: r.position, kind: r.kind || "charge" });
-const mTax     = (r) => ({ id: r.id, propertyId: r.property_id, unitId: r.unit_id, customLabel: r.custom_label, ownerId: r.owner_id, ownerLabel: r.owner_label, taxYear: r.tax_year, noticeNumber: r.notice_number, taxedAmount: Number(r.taxed_amount), installments: r.installments || [], receipts: r.receipts, declarationNext: r.declaration_next, notes: r.notes, createdBy: r.created_by });
+const mTax     = (r) => ({ id: r.id, propertyId: r.property_id, unitId: r.unit_id, customLabel: r.custom_label, ownerId: r.owner_id, ownerLabel: r.owner_label, taxYear: r.tax_year, noticeNumber: r.notice_number, taxedAmount: Number(r.taxed_amount), installments: r.installments || [], receipts: r.receipts, declarationNext: r.declaration_next, notes: r.notes, createdBy: r.created_by, ncc: r.ncc || "", declarationDate: r.declaration_date, nextBase: r.next_base });
 const mReq     = (r) => ({ id: r.id, reqType: r.req_type, userId: r.user_id, date: r.req_date, amount: Number(r.amount), destination: r.destination, mode: r.transport_mode, propertyId: r.property_id, startDate: r.start_date, endDate: r.end_date, absenceType: r.absence_type, motif: r.motif, status: r.status, decidedBy: r.decided_by, decidedAt: r.decided_at, decisionNote: r.decision_note, createdAt: Date.parse(r.created_at) });
 const mDoc     = (r) => ({ id: r.id, ref: r.ref, docType: r.doc_type, date: r.doc_date, propertyId: r.property_id, ownerId: r.owner_id, clientName: r.client_name, clientPhone: r.client_phone, clientEmail: r.client_email, clientAddr: r.client_addr, object: r.object, body: r.body, lines: r.lines || [], fields: r.fields || {}, total: Number(r.total_amount), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
 const mTpl     = (r) => ({ id: r.id, label: r.label, nature: r.nature, deptId: r.dept_id, urgency: r.urgency, estMin: r.est_min, sortOrder: r.sort_order, active: r.active });
@@ -1075,7 +1075,9 @@ function useStore(userId) {
       custom_label: f.customLabel || "", owner_id: f.ownerId || null, owner_label: f.ownerLabel || "",
       tax_year: Number(f.taxYear), notice_number: f.noticeNumber || "",
       taxed_amount: Number(f.taxedAmount) || 0, installments: f.installments || [],
-      receipts: f.receipts || "non", declaration_next: f.declarationNext || "non", notes: f.notes || "" };
+      receipts: f.receipts || "non", declaration_next: f.declarationNext || "non", notes: f.notes || "",
+      ncc: f.ncc || "", declaration_date: f.declarationDate || null,
+      next_base: f.nextBase ? Number(f.nextBase) : null };
     if (f.id) {
       setTaxRecords((p) => p.map((x) => (x.id === f.id ? { ...x, ...f } : x)));
       const { error } = await supabase.from("tax_records").update(row).eq("id", f.id);
@@ -2913,7 +2915,12 @@ function periodTotals(lines, charges, rate) {
      précédent, remboursement… Elles s'ajoutent au net dû au propriétaire. */
   const supplementsTotal = supplementRows.reduce((a, c) => a + (Number(c.amount) || 0), 0);
   const fee = Math.round(collected * (Number(rate) || 0));
-  const netOwner = collected - deducted - fee + supplementsTotal;
+  /* NET PROPRIÉTAIRE = encaissé
+       − charges retenues sur les locataires (colonne "Charges" du tableau)
+       − charges du mois supportées par l'immeuble (électricité, eau, entretien…)
+       − prestation de l'agence
+       + sommes à verser en plus (caution, reliquat, remboursement…) */
+  const netOwner = collected - deducted - chargesTotal - fee + supplementsTotal;
   const nPaid = lines.filter((l) => payStatusOf(l.expected, l.collected) === "paye" && Number(l.expected) > 0).length;
   const nPartial = lines.filter((l) => payStatusOf(l.expected, l.collected) === "partiel").length;
   const nUnpaid = lines.filter((l) => payStatusOf(l.expected, l.collected) === "impaye" && Number(l.expected) > 0).length;
@@ -3081,12 +3088,14 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, readOn
 
       <div className="rounded-xl p-3 mb-3" style={{ background: "#F6F8FA" }}>
         <p className="text-xs font-bold mb-2">RÈGLEMENT PROPRIÉTAIRE</p>
-        {[["Loyers encaissés (base)", t.collected, ""], ["Charges à prélever", t.deducted, "-"],
+        {[["Loyers encaissés (base)", t.collected, ""],
+          ...(t.deducted ? [["Charges retenues sur locataires", t.deducted, "-"]] : []),
+          ...(t.chargesTotal ? [["Charges du mois (immeuble)", t.chargesTotal, "-"]] : []),
           [`Prestation agence (${(Number(rate) * 100).toFixed(0)} %)`, t.fee, "-"],
           ...(t.supplementsTotal ? [["Sommes à verser en plus", t.supplementsTotal, "+"]] : [])].map(([k, v, sign]) => (
           <div key={k} className="flex justify-between text-xs py-1">
             <span style={{ color: "var(--muted)" }}>{k}</span>
-            <span className="font-semibold tabular-nums" style={{ color: sign === "+" ? "#3d7d20" : "var(--ink)" }}>{sign} {fcfa(v)}</span>
+            <span className="font-semibold tabular-nums" style={{ color: sign === "+" ? "#3d7d20" : sign === "-" ? "#B5171D" : "var(--ink)" }}>{sign} {fcfa(v)}</span>
           </div>
         ))}
         <div className="flex justify-between items-center pt-2 mt-1 border-t" style={{ borderColor: "var(--line)" }}>
@@ -3217,7 +3226,8 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
             <table className="w-full text-[11px]">
               <tbody>
                 <tr className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-2 py-1">Loyers encaissés</td><td className="px-2 py-1 text-right tabular-nums">{fcfa(t.collected)}</td></tr>
-                <tr className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-2 py-1">Charges à prélever</td><td className="px-2 py-1 text-right tabular-nums">− {fcfa(t.deducted)}</td></tr>
+                <tr className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-2 py-1">Charges retenues sur locataires</td><td className="px-2 py-1 text-right tabular-nums">− {fcfa(t.deducted)}</td></tr>
+                <tr className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-2 py-1">Charges du mois (immeuble)</td><td className="px-2 py-1 text-right tabular-nums">− {fcfa(t.chargesTotal)}</td></tr>
                 <tr className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-2 py-1">Prestation agence ({(period.rate * 100).toFixed(0)} %)</td><td className="px-2 py-1 text-right tabular-nums">− {fcfa(t.fee)}</td></tr>
                 {t.supplementsTotal > 0 && <tr className="border-b" style={{ borderColor: "var(--line)" }}>
                   <td className="px-2 py-1" style={{ color: "#3d7d20" }}>Sommes à verser en plus</td>
@@ -4101,8 +4111,8 @@ function taxOwnerLabel(rec, ownerById, propById) {
 function TaxModal({ initial, properties, units, owners, onSave, onClose }) {
   const [f, setF] = useState(() => ({
     propertyId: "", unitId: "", customLabel: "", ownerId: "", ownerLabel: "",
-    taxYear: new Date().getFullYear(), noticeNumber: "", taxedAmount: "",
-    receipts: "non", declarationNext: "non", notes: "", ...initial,
+    taxYear: new Date().getFullYear(), noticeNumber: "", taxedAmount: "", ncc: "",
+    receipts: "non", declarationNext: "non", declarationDate: "", nextBase: "", notes: "", ...initial,
   }));
   const [inst, setInst] = useState(() =>
     initial?.installments?.length ? initial.installments.map((t) => ({ ...t }))
@@ -4161,7 +4171,7 @@ function TaxModal({ initial, properties, units, owners, onSave, onClose }) {
       </div>
 
       <p className="text-xs font-semibold mb-2 mt-1" style={{ color: "var(--ink)" }}>Avis d'imposition</p>
-      <div className="grid sm:grid-cols-3 gap-3">
+      <div className="grid sm:grid-cols-4 gap-3">
         <Field label="Année d'imposition">
           <input type="number" min={2000} max={2100} className={inputCls} style={inputStyle} value={f.taxYear}
             onChange={(e) => { set("taxYear", e.target.value); recompute(e.target.value, f.taxedAmount); }} />
@@ -4170,6 +4180,9 @@ function TaxModal({ initial, properties, units, owners, onSave, onClose }) {
         <Field label="Somme imposée (FCFA)">
           <input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.taxedAmount}
             onChange={(e) => { set("taxedAmount", e.target.value); recompute(f.taxYear, e.target.value); }} />
+        </Field>
+        <Field label="NCC du propriétaire" hint="Numéro de Compte Contribuable">
+          <input className={inputCls} style={inputStyle} value={f.ncc} onChange={(e) => set("ncc", e.target.value)} placeholder="Ex. 1234567 A" />
         </Field>
       </div>
 
@@ -4212,7 +4225,7 @@ function TaxModal({ initial, properties, units, owners, onSave, onClose }) {
             {Object.entries(RECEIPTS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
         </Field>
-        <Field label="Déclaration foncière N+1 faite">
+        <Field label={`Déclaration ${Number(f.taxYear) + 1} déposée`}>
           <select className={inputCls} style={inputStyle} value={f.declarationNext} onChange={(e) => set("declarationNext", e.target.value)}>
             <option value="non">Non</option><option value="oui">Oui</option>
           </select>
@@ -4222,6 +4235,19 @@ function TaxModal({ initial, properties, units, owners, onSave, onClose }) {
           <p className="text-sm font-bold tabular-nums">{fcfa(totals.paid)}</p>
           <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>Reste à payer</p>
           <p className="text-sm font-bold tabular-nums" style={{ color: totals.settled ? "#4F9E2A" : "#D81F26" }}>{fcfa(totals.remaining)}</p>
+        </div>
+      </div>
+
+      <div className="rounded-xl border p-3 mb-3" style={{ borderColor: "var(--line)", background: "#FAFBFC" }}>
+        <p className="text-xs font-semibold mb-1">Déclaration foncière de fin d'année</p>
+        <p className="text-[11px] mb-2" style={{ color: "var(--muted)" }}>
+          Déposée en fin d'année, elle fixe la base imposable de {Number(f.taxYear) + 1}.
+        </p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <Field label="Date de dépôt"><input type="date" className={inputCls} style={inputStyle} value={f.declarationDate || ""} onChange={(e) => set("declarationDate", e.target.value)} /></Field>
+          <Field label={`Nouvelle base imposable ${Number(f.taxYear) + 1} (FCFA)`}>
+            <input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.nextBase ?? ""} onChange={(e) => set("nextBase", e.target.value)} />
+          </Field>
         </div>
       </div>
 
@@ -4243,6 +4269,9 @@ function TaxSheet({ records, year, title, propById, unitById, ownerById, onBack 
     return { taxed: a.taxed + t.taxed, paid: a.paid + t.paid, remaining: a.remaining + t.remaining };
   }, { taxed: 0, paid: 0, remaining: 0 });
 
+  const nccs = [...new Set(records.map((r) => r.ncc).filter(Boolean))];
+  const multiYear = new Set(records.map((r) => r.taxYear)).size > 1;
+
   return (
     <div>
       <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
@@ -4260,32 +4289,37 @@ function TaxSheet({ records, year, title, propById, unitById, ownerById, onBack 
             </div>
           </div>
           <div className="text-right">
-            <p className="text-base font-bold" style={{ color: "#2E78A8" }}>SUIVI DE L'IMPÔT FONCIER</p>
-            <p className="text-sm font-semibold">Année d'imposition {year}</p>
+            <p className="text-base font-bold" style={{ color: "#2E78A8" }}>ÉTAT DE L'IMPÔT FONCIER</p>
+            <p className="text-sm font-semibold">{multiYear ? "Toutes années confondues" : `Année ${year}`}</p>
             <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
           </div>
         </div>
 
-        {title && <p className="text-sm font-semibold mt-3">{title}</p>}
+        {(title || nccs.length > 0) && (
+          <div className="flex items-center justify-between gap-4 mt-3">
+            {title && <p className="text-sm font-semibold">{title}</p>}
+            {nccs.length > 0 && <p className="text-xs" style={{ color: "var(--muted)" }}>NCC : <strong style={{ color: "var(--ink)" }}>{nccs.join(" · ")}</strong></p>}
+          </div>
+        )}
 
         <table className="w-full text-[10px] mt-3">
           <thead>
             <tr style={{ background: "#E8EDF2" }}>
+              {multiYear && <th className="text-left px-1.5 py-1.5 font-semibold" rowSpan={2}>Année</th>}
               <th className="text-left px-1.5 py-1.5 font-semibold" rowSpan={2}>Bien</th>
-              <th className="text-left px-1.5 py-1.5 font-semibold" rowSpan={2}>Propriétaire</th>
               <th className="text-left px-1.5 py-1.5 font-semibold" rowSpan={2}>N° avis</th>
               <th className="text-right px-1.5 py-1.5 font-semibold" rowSpan={2}>Somme imposée</th>
-              {TRANCHE_LABELS.map((l) => <th key={l} className="text-center px-1.5 py-1 font-semibold border-l" style={{ borderColor: "#fff" }} colSpan={3}>{l}</th>)}
-              <th className="text-center px-1.5 py-1.5 font-semibold border-l" style={{ borderColor: "#fff" }} rowSpan={2}>Quittances</th>
-              <th className="text-right px-1.5 py-1.5 font-semibold" rowSpan={2}>Total versé</th>
+              {TRANCHE_LABELS.map((l, i) => (
+                <th key={l} className="text-center px-1.5 py-1 font-semibold border-l" style={{ borderColor: "#fff" }} colSpan={2}>{`Tranche ${i + 1}`}</th>
+              ))}
+              <th className="text-right px-1.5 py-1.5 font-semibold border-l" style={{ borderColor: "#fff" }} rowSpan={2}>Total versé</th>
               <th className="text-right px-1.5 py-1.5 font-semibold" rowSpan={2}>Reste à payer</th>
-              <th className="text-center px-1.5 py-1.5 font-semibold" rowSpan={2}>Décl. N+1</th>
+              <th className="text-center px-1.5 py-1.5 font-semibold" rowSpan={2}>Quittances</th>
             </tr>
             <tr style={{ background: "#F1F3F5" }}>
               {TRANCHE_LABELS.map((l) => [
-                <th key={l + "d"} className="text-left px-1.5 py-1 font-medium border-l" style={{ borderColor: "#fff" }}>Échéance</th>,
-                <th key={l + "m"} className="text-left px-1.5 py-1 font-medium">Mode</th>,
-                <th key={l + "p"} className="text-right px-1.5 py-1 font-medium">Versé</th>,
+                <th key={l + "d"} className="text-left px-1.5 py-1 font-medium border-l" style={{ borderColor: "#fff" }}>Date versement</th>,
+                <th key={l + "p"} className="text-right px-1.5 py-1 font-medium">Montant versé</th>,
               ])}
             </tr>
           </thead>
@@ -4293,44 +4327,63 @@ function TaxSheet({ records, year, title, propById, unitById, ownerById, onBack 
             const t = taxTotals(r);
             return (
               <tr key={r.id} className="border-b" style={{ borderColor: "var(--line)" }}>
+                {multiYear && <td className="px-1.5 py-1.5 font-medium">{r.taxYear}</td>}
                 <td className="px-1.5 py-1.5 font-medium">{taxLabel(r, propById, unitById)}</td>
-                <td className="px-1.5 py-1.5">{taxOwnerLabel(r, ownerById, propById)}</td>
                 <td className="px-1.5 py-1.5">{r.noticeNumber || "—"}</td>
                 <td className="px-1.5 py-1.5 text-right tabular-nums">{fcfa(r.taxedAmount)}</td>
-                {(r.installments || []).slice(0, 4).map((tr, i) => {
-                  const late = isLate(tr);
+                {Array.from({ length: 4 }, (_, i) => (r.installments || [])[i] || {}).map((tr, i) => {
+                  const paid = Number(tr.amountPaid) || 0;
                   return [
-                    <td key={i + "d"} className="px-1.5 py-1.5 border-l" style={{ borderColor: "var(--line)", color: late ? "#D81F26" : "inherit", fontWeight: late ? 700 : 400 }}>
-                      {tr.dueDate ? fr(tr.dueDate + "T00:00:00", { day: "2-digit", month: "2-digit" }) : "—"}
+                    <td key={i + "d"} className="px-1.5 py-1.5 border-l" style={{ borderColor: "var(--line)" }}>
+                      {tr.paidAt ? fr(tr.paidAt + "T00:00:00", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "—"}
                     </td>,
-                    <td key={i + "m"} className="px-1.5 py-1.5">{tr.mode || "—"}</td>,
-                    <td key={i + "p"} className="px-1.5 py-1.5 text-right tabular-nums">{Number(tr.amountPaid) ? fcfa(tr.amountPaid) : "—"}</td>,
+                    <td key={i + "p"} className="px-1.5 py-1.5 text-right tabular-nums" style={{ color: paid > 0 ? "#3d7d20" : "var(--muted)" }}>
+                      {paid > 0 ? fcfa(paid) : "non versé"}
+                    </td>,
                   ];
                 })}
-                <td className="px-1.5 py-1.5 text-center border-l" style={{ borderColor: "var(--line)", color: RECEIPTS[r.receipts].color, fontWeight: 600 }}>{RECEIPTS[r.receipts].label}</td>
-                <td className="px-1.5 py-1.5 text-right tabular-nums font-medium">{fcfa(t.paid)}</td>
+                <td className="px-1.5 py-1.5 text-right tabular-nums font-medium border-l" style={{ borderColor: "var(--line)" }}>{fcfa(t.paid)}</td>
                 <td className="px-1.5 py-1.5 text-right tabular-nums font-bold" style={{ color: t.settled ? "#4F9E2A" : "#D81F26" }}>{fcfa(t.remaining)}</td>
-                <td className="px-1.5 py-1.5 text-center" style={{ color: r.declarationNext === "oui" ? "#4F9E2A" : "#D81F26", fontWeight: 600 }}>{r.declarationNext === "oui" ? "Oui" : "Non"}</td>
+                <td className="px-1.5 py-1.5 text-center" style={{ color: RECEIPTS[r.receipts].color, fontWeight: 600 }}>{RECEIPTS[r.receipts].label}</td>
               </tr>
             );
           })}</tbody>
           <tfoot><tr style={{ background: "#E8EDF2" }}>
-            <td colSpan={3} className="px-1.5 py-2 font-bold">TOTAUX</td>
+            <td colSpan={multiYear ? 3 : 2} className="px-1.5 py-2 font-bold">TOTAUX</td>
             <td className="px-1.5 py-2 text-right font-bold tabular-nums">{fcfa(grand.taxed)}</td>
-            <td colSpan={13} />
+            <td colSpan={8} />
             <td className="px-1.5 py-2 text-right font-bold tabular-nums">{fcfa(grand.paid)}</td>
             <td className="px-1.5 py-2 text-right font-bold tabular-nums" style={{ color: grand.remaining > 0 ? "#D81F26" : "#4F9E2A" }}>{fcfa(grand.remaining)}</td>
             <td />
           </tr></tfoot>
         </table>
 
-        {grand.remaining > 0 && (
-          <p className="text-[11px] italic mt-3">Reste à payer au titre de l'année {year} : <strong>{amountInWords(grand.remaining)}</strong>.</p>
-        )}
+        {grand.remaining > 0
+          ? <p className="text-[11px] italic mt-3">Reste à payer : <strong>{amountInWords(grand.remaining)}</strong>.</p>
+          : <p className="text-[11px] italic mt-3" style={{ color: "#3d7d20" }}>Impôt intégralement réglé pour la période présentée.</p>}
 
-        <p className="text-[10px] mt-3" style={{ color: "var(--muted)" }}>
-          Échéances légales : 15 mars, 15 juin, 15 septembre et 15 décembre. Une échéance en rouge signale un versement non enregistré à la date limite.
-        </p>
+        {/* Déclarations de fin d'année */}
+        {records.some((r) => r.declarationNext === "oui" || r.nextBase) && (
+          <div className="mt-4">
+            <p className="text-xs font-bold mb-1.5">DÉCLARATION FONCIÈRE DE FIN D'ANNÉE</p>
+            <table className="w-full text-[10px]">
+              <thead><tr style={{ background: "#F1F3F5" }}>
+                <th className="text-left px-1.5 py-1 font-semibold">Bien</th>
+                <th className="text-left px-1.5 py-1 font-semibold">Année déclarée</th>
+                <th className="text-left px-1.5 py-1 font-semibold">Date de dépôt</th>
+                <th className="text-right px-1.5 py-1 font-semibold">Nouvelle base imposable</th>
+              </tr></thead>
+              <tbody>{records.filter((r) => r.declarationNext === "oui" || r.nextBase).map((r) => (
+                <tr key={r.id} className="border-b" style={{ borderColor: "var(--line)" }}>
+                  <td className="px-1.5 py-1">{taxLabel(r, propById, unitById)}</td>
+                  <td className="px-1.5 py-1">{r.taxYear + 1}</td>
+                  <td className="px-1.5 py-1">{r.declarationDate ? fr(r.declarationDate + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" }) : "non déposée"}</td>
+                  <td className="px-1.5 py-1 text-right tabular-nums">{r.nextBase ? fcfa(r.nextBase) : "—"}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
 
         <div className="flex justify-between items-end pt-8 mt-2">
           <div className="text-center" style={{ minWidth: 180 }}><p className="text-[11px] font-semibold pb-8">Le Propriétaire</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
@@ -4347,6 +4400,7 @@ function ImpotFoncier({ store, me }) {
   const [year, setYear] = useState(new Date().getFullYear());
   const [search, setSearch] = useState("");
   const [filterOwner, setFilterOwner] = useState("all");
+  const [filterProp, setFilterProp] = useState("all");
   const [modal, setModal] = useState(null);
   const [sheet, setSheet] = useState(null);
 
@@ -4355,35 +4409,55 @@ function ImpotFoncier({ store, me }) {
   const ownerById = useMemo(() => Object.fromEntries(owners.map((o) => [o.id, o])), [owners]);
   const canEdit = isAdmin(me.role) || me.role === "comptable";
 
-  const yearRecords = taxRecords.filter((r) => r.taxYear === Number(year));
+  const allYears = year === "all";
+  const yearRecords = taxRecords.filter((r) => allYears || r.taxYear === Number(year));
   const list = yearRecords.filter((r) => {
     const ownerId = r.ownerId || propById[r.propertyId]?.ownerId;
     return (filterOwner === "all" || ownerId === filterOwner) &&
+      (filterProp === "all" || r.propertyId === filterProp) &&
       (!search || taxLabel(r, propById, unitById).toLowerCase().includes(search.toLowerCase()) ||
         taxOwnerLabel(r, ownerById, propById).toLowerCase().includes(search.toLowerCase()) ||
-        (r.noticeNumber || "").toLowerCase().includes(search.toLowerCase()));
-  });
+        (r.noticeNumber || "").toLowerCase().includes(search.toLowerCase()) ||
+        (r.ncc || "").toLowerCase().includes(search.toLowerCase()));
+  }).sort((a, b) => b.taxYear - a.taxYear);
+
+  /* Résumé pluriannuel : un bloc par propriétaire ou par bâtiment */
+  const summary = useMemo(() => {
+    const m = {};
+    list.forEach((r) => {
+      const ownerId = r.ownerId || propById[r.propertyId]?.ownerId;
+      const key = filterProp !== "all" ? (r.propertyId || "autre") : (ownerId || "autre");
+      const name = filterProp !== "all" ? taxLabel(r, propById, unitById) : taxOwnerLabel(r, ownerById, propById);
+      const t = taxTotals(r);
+      m[key] = m[key] || { key, name, years: new Set(), taxed: 0, paid: 0, remaining: 0, count: 0, ncc: r.ncc };
+      m[key].years.add(r.taxYear); m[key].taxed += t.taxed; m[key].paid += t.paid;
+      m[key].remaining += t.remaining; m[key].count += 1;
+      if (r.ncc) m[key].ncc = r.ncc;
+    });
+    return Object.values(m).sort((a, b) => b.remaining - a.remaining);
+  }, [list, propById, unitById, ownerById, filterProp]);
 
   if (sheet) {
-    return <TaxSheet records={sheet.records} year={year} title={sheet.title}
+    return <TaxSheet records={sheet.records} year={sheetYear} title={sheet.title}
       propById={propById} unitById={unitById} ownerById={ownerById} onBack={() => setSheet(null)} />;
   }
 
-  const totals = yearRecords.reduce((a, r) => {
+  const totals = list.reduce((a, r) => {
     const t = taxTotals(r);
     return { taxed: a.taxed + t.taxed, paid: a.paid + t.paid, remaining: a.remaining + t.remaining };
   }, { taxed: 0, paid: 0, remaining: 0 });
-  const lateCount = yearRecords.filter((r) => (r.installments || []).some(isLate)).length;
+  const lateCount = list.filter((r) => (r.installments || []).some(isLate)).length;
   const years = [...new Set([new Date().getFullYear(), ...taxRecords.map((r) => r.taxYear)])].sort((a, b) => b - a);
+  const sheetYear = allYears ? "toutes années" : year;
 
   return (
     <div>
       <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
         <h1 className="text-xl font-bold">Impôt foncier</h1>
         <div className="flex gap-2">
-          <button onClick={() => setSheet({ records: list, title: filterOwner !== "all" ? `Propriétaire : ${ownerById[filterOwner]?.name || ""}` : "" })}
+          <button onClick={() => setSheet({ records: list, title: filterProp !== "all" ? `Bâtiment : ${propById[filterProp]?.name || ""}` : filterOwner !== "all" ? `Propriétaire : ${ownerById[filterOwner]?.name || ""}` : "" })}
             className="kb-btn kb-btn-ghost"><Printer size={15} /> Imprimer l'état</button>
-          {canEdit && <button onClick={() => setModal({ taxYear: year })} className="kb-btn kb-btn-primary"><Plus size={16} /> Bien à suivre</button>}
+          {canEdit && <button onClick={() => setModal({ taxYear: allYears ? new Date().getFullYear() : year })} className="kb-btn kb-btn-primary"><Plus size={16} /> Bien à suivre</button>}
         </div>
       </div>
       <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>
@@ -4392,14 +4466,15 @@ function ImpotFoncier({ store, me }) {
       </p>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-        <StatCard icon={Landmark} label="Total imposé" value={fcfa(totals.taxed)} sub={`${yearRecords.length} bien(s) suivi(s)`} tint="#2E78A8" />
+        <StatCard icon={Landmark} label="Total imposé" value={fcfa(totals.taxed)} sub={`${list.length} avis · ${new Set(list.map((r) => r.taxYear)).size} année(s)`} tint="#2E78A8" />
         <StatCard icon={Wallet} label="Total versé" value={fcfa(totals.paid)} sub={totals.taxed ? `${((totals.paid / totals.taxed) * 100).toFixed(0)} % réglé` : undefined} tint="#4F9E2A" />
         <StatCard icon={AlertTriangle} label="Reste à payer" value={fcfa(totals.remaining)} tint="#D81F26" />
         <StatCard icon={Clock} label="Échéances dépassées" value={lateCount} sub="biens concernés" tint="#EA580C" />
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
-        <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+        <select value={year} onChange={(e) => setYear(e.target.value === "all" ? "all" : Number(e.target.value))} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+          <option value="all">Toutes les années</option>
           {years.map((y) => <option key={y} value={y}>Année {y}</option>)}
         </select>
         <div className="relative flex-1 min-w-[150px]">
@@ -4410,7 +4485,36 @@ function ImpotFoncier({ store, me }) {
           <option value="all">Tous les propriétaires</option>
           {owners.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
+        <select value={filterProp} onChange={(e) => setFilterProp(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+          <option value="all">Tous les bâtiments</option>
+          {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
       </div>
+
+      {summary.length > 1 || allYears ? (
+        <SectionCard title={filterProp !== "all" ? "Résumé par bien" : "Résumé par propriétaire"} icon={Landmark} pad={false}>
+          <div className="overflow-x-auto"><table className="w-full text-sm">
+            <thead><tr className="text-left" style={{ color: "var(--muted)" }}>
+              <th className="px-4 py-2.5 font-medium">{filterProp !== "all" ? "Bien" : "Propriétaire"}</th>
+              <th className="px-3 py-2.5 font-medium">NCC</th>
+              <th className="px-3 py-2.5 font-medium">Années</th>
+              <th className="px-3 py-2.5 font-medium text-right">Imposé</th>
+              <th className="px-3 py-2.5 font-medium text-right">Versé</th>
+              <th className="px-3 py-2.5 font-medium text-right">Reste</th>
+            </tr></thead>
+            <tbody>{summary.map((g) => (
+              <tr key={g.key} className="border-t" style={{ borderColor: "var(--line)" }}>
+                <td className="px-4 py-2.5 font-medium">{g.name}</td>
+                <td className="px-3 py-2.5" style={{ color: "var(--muted)" }}>{g.ncc || "—"}</td>
+                <td className="px-3 py-2.5" style={{ color: "var(--muted)" }}>{[...g.years].sort().join(", ")}</td>
+                <td className="px-3 py-2.5 text-right tabular-nums">{fcfa(g.taxed)}</td>
+                <td className="px-3 py-2.5 text-right tabular-nums">{fcfa(g.paid)}</td>
+                <td className="px-3 py-2.5 text-right tabular-nums font-semibold" style={{ color: g.remaining > 0 ? "#D81F26" : "#4F9E2A" }}>{fcfa(g.remaining)}</td>
+              </tr>
+            ))}</tbody>
+          </table></div>
+        </SectionCard>
+      ) : null}
 
       {list.length ? <div className="space-y-2">
         {list.map((r) => {
@@ -4423,7 +4527,9 @@ function ImpotFoncier({ store, me }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-semibold">{taxLabel(r, propById, unitById)}</p>
+                    <Chip color="#2E78A8">{r.taxYear}</Chip>
                     {r.noticeNumber && <Chip color="#64748B">{r.noticeNumber}</Chip>}
+                    {r.ncc && <Chip color="#7C3AED">NCC {r.ncc}</Chip>}
                     <Chip color={RECEIPTS[r.receipts].color} dot>Quittances : {RECEIPTS[r.receipts].label}</Chip>
                     {late > 0 && <Chip color="#D81F26" bg="#FDEAEA">{late} échéance(s) dépassée(s)</Chip>}
                   </div>
@@ -4466,9 +4572,9 @@ function ImpotFoncier({ store, me }) {
             </div>
           );
         })}
-      </div> : <EmptyState icon={Landmark} title={`Aucun bien suivi pour ${year}`}
+      </div> : <EmptyState icon={Landmark} title={allYears ? "Aucun bien suivi" : `Aucun bien suivi pour ${year}`}
         sub="Ajoutez les biens de vos propriétaires soumis à l'impôt foncier."
-        action={canEdit ? <button onClick={() => setModal({ taxYear: year })} className="kb-btn kb-btn-primary"><Plus size={15} /> Bien à suivre</button> : null} />}
+        action={canEdit ? <button onClick={() => setModal({ taxYear: allYears ? new Date().getFullYear() : year })} className="kb-btn kb-btn-primary"><Plus size={15} /> Bien à suivre</button> : null} />}
 
       {modal && <TaxModal initial={modal} properties={properties} units={units} owners={owners}
         onSave={actions.saveTaxRecord} onClose={() => setModal(null)} />}
