@@ -548,6 +548,66 @@ const SectionCard = ({ title, icon: Icon, action, children, pad = true }) => (
   </section>
 );
 
+/* ---- Papier à en-tête de l'agence ---- */
+const AGENCY = {
+  name: "ENTREPRISE KIBEGNON",
+  form: "SARL au capital de 5 000 000 FCFA",
+  address: "Cocody, Rue du Lycée Technique — Abidjan, Côte d'Ivoire",
+  agrement: "N° agrément : AB 0005262",
+  regime: "Régime d'imposition : TEE",
+  centre: "Centre des impôts : Cocody",
+  tel: "01 51 96 60 67 / 07 48 90 07 83",
+  rc: "RC : CI-ABJ-03-2020-B13-02665",
+  cc: "CC : 2011466 M",
+  bank: "BANK OF AFRICA CI — CI032 01016 008298970007 71",
+  email: "Entreprisekibegnon@gmail.com",
+  site: "www.entreprisekibegnon.com",
+};
+/* Logo « Agent Immobilier Agréé » intégré au fichier (aucun asset à déposer) */
+const LOGO_AGREMENT = "data:image/png;base64,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";
+
+/* En-tête commun à tous les documents imprimés */
+function PrintHead({ title, subtitle, extra }) {
+  return (
+    <div className="pb-3 border-b" style={{ borderColor: "var(--line)" }}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <img src={LOGO} alt="Entreprise Kibegnon" className="h-14 w-auto" />
+          <div>
+            <p className="font-bold text-sm" style={{ color: "var(--ink)" }}>{AGENCY.name}</p>
+            <p className="text-[10px] leading-snug" style={{ color: "var(--muted)" }}>{AGENCY.address}</p>
+            <p className="text-[10px] leading-snug" style={{ color: "var(--muted)" }}>{AGENCY.agrement} · {AGENCY.form}</p>
+            <p className="text-[10px] leading-snug" style={{ color: "var(--muted)" }}>{AGENCY.regime} · {AGENCY.centre}</p>
+          </div>
+        </div>
+        <div className="flex items-start gap-3">
+          <div className="text-right">
+            {title && <p className="text-base font-bold" style={{ color: "var(--brass)" }}>{title}</p>}
+            {subtitle && <p className="text-sm font-semibold">{subtitle}</p>}
+            {extra}
+          </div>
+          <img src={LOGO_AGREMENT} alt="Agent immobilier agréé" className="h-14 w-auto shrink-0" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* Pied de page légal, repris sur chaque document imprimé */
+function PrintFoot({ note }) {
+  return (
+    <div className="mt-5 pt-2 border-t text-center" style={{ borderColor: "var(--line)" }}>
+      {note && <p className="text-[10px] mb-1" style={{ color: "var(--muted)" }}>{note}</p>}
+      <p className="text-[9px] leading-relaxed" style={{ color: "var(--muted)" }}>
+        {AGENCY.name} — {AGENCY.form} — {AGENCY.address}<br />
+        Tél : {AGENCY.tel} — {AGENCY.rc} — {AGENCY.cc} — {AGENCY.agrement}<br />
+        {AGENCY.bank}<br />
+        {AGENCY.email} — {AGENCY.site}
+      </p>
+    </div>
+  );
+}
+
 /* ══════════════════════════════════════════════════════════════════════
    STORE (chargement, temps réel, actions Supabase)
    ══════════════════════════════════════════════════════════════════════ */
@@ -1451,20 +1511,9 @@ function DocSheet({ doc, property, owner, author, onBack }) {
 
       <div id="print-area" className="bg-white rounded-xl border p-7 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
         {/* En-tête */}
-        <div className="flex items-start justify-between gap-4 pb-4 border-b" style={{ borderColor: "var(--line)" }}>
-          <div className="flex items-center gap-3">
-            <img src={LOGO} alt="Entreprise Kibegnon" className="h-14 w-auto" />
-            <div>
-              <p className="font-bold text-sm" style={{ color: "var(--ink)" }}>ENTREPRISE KIBEGNON</p>
-              <p className="text-[11px]" style={{ color: "var(--muted)" }}>Agence immobilière · Cocody, Abidjan</p>
-              <p className="text-[11px]" style={{ color: "var(--muted)" }}>entreprisekibegnon.com</p>
-            </div>
-          </div>
-          <div className="text-right">
-            <p className="text-[11px]" style={{ color: "var(--muted)" }}>Abidjan, le {fr(doc.date + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
-            <p className="text-base font-bold mt-1" style={{ color: cfg.color }}>{doc.ref}</p>
-          </div>
-        </div>
+        <PrintHead title={doc.ref} extra={
+          <p className="text-[11px] mt-0.5" style={{ color: "var(--muted)" }}>Abidjan, le {fr(doc.date + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
+        } />
 
         {/* Destinataire */}
         <div className="flex justify-end py-4">
@@ -1555,9 +1604,10 @@ function DocSheet({ doc, property, owner, author, onBack }) {
         </div>
 
         <div className="flex items-center justify-between pt-4 mt-4 border-t" style={{ borderColor: "var(--line)" }}>
-          <p className="text-[10px]" style={{ color: "var(--muted)" }}>Document établi par {author?.name || "—"} · Entreprise Kibegnon SARL · Cocody, Abidjan</p>
+          <p className="text-[10px]" style={{ color: "var(--muted)" }}>Document établi par {author?.name || "—"}</p>
           <span className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold print:hidden" style={{ background: st.color + "1A", color: st.color }}>{st.label}</span>
         </div>
+        <PrintFoot />
       </div>
     </div>
   );
@@ -1794,20 +1844,9 @@ function QuoteSheet({ quote, lines, property, owner, recorder, onBack }) {
       </div>
 
       <div id="print-area" className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
-        <div className="flex items-start justify-between gap-4 pb-4 border-b" style={{ borderColor: "var(--line)" }}>
-          <div className="flex items-center gap-3">
-            <img src={LOGO} alt="Entreprise Kibegnon" className="h-12 w-auto" />
-            <div>
-              <p className="font-bold text-sm" style={{ color: "var(--ink)" }}>ENTREPRISE KIBEGNON</p>
-              <p className="text-[11px]" style={{ color: "var(--muted)" }}>Agence immobilière · Cocody, Abidjan</p>
-            </div>
-          </div>
-          <div className="text-right">
-            <p className="text-lg font-bold" style={{ color: "var(--brass)" }}>{quote.ref}</p>
-            <p className="text-[11px]" style={{ color: "var(--muted)" }}>Fiche de devis artisan</p>
-            <p className="text-[11px]" style={{ color: "var(--muted)" }}>{fr(quote.date + "T00:00:00", { day: "numeric", month: "long", year: "numeric" })}</p>
-          </div>
-        </div>
+        <PrintHead title={quote.ref} subtitle="Fiche de devis artisan" extra={
+          <p className="text-[11px]" style={{ color: "var(--muted)" }}>{fr(quote.date + "T00:00:00", { day: "numeric", month: "long", year: "numeric" })}</p>
+        } />
 
         <div className="grid sm:grid-cols-2 gap-4 py-4">
           <div>
@@ -1863,11 +1902,12 @@ function QuoteSheet({ quote, lines, property, owner, recorder, onBack }) {
 
         <div className="flex items-center justify-between pt-3 border-t" style={{ borderColor: "var(--line)" }}>
           <div>
-            <p className="text-[11px]" style={{ color: "var(--muted)" }}>Devis saisi par {recorder?.name || "—"} · Entreprise Kibegnon</p>
+            <p className="text-[11px]" style={{ color: "var(--muted)" }}>Devis saisi par {recorder?.name || "—"}</p>
             <p className="text-[10px] mt-0.5" style={{ color: "var(--muted)" }}>Document interne établi d'après le devis original de l'artisan, conservé au dossier du propriétaire.</p>
           </div>
           <span className="rounded-full px-3 py-1 text-xs font-semibold" style={{ background: st.color + "1A", color: st.color }}>{st.label}</span>
         </div>
+        <PrintFoot />
       </div>
     </div>
   );
@@ -2157,17 +2197,9 @@ function Register({ title, subtitle, columns, rows, onBack, footer }) {
         <button onClick={() => printSheet("landscape")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF (paysage)</button>
       </div>
       <div id="print-area" className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
-        <div className="flex items-start justify-between gap-4 pb-3 border-b" style={{ borderColor: "var(--line)" }}>
-          <div className="flex items-center gap-3">
-            <img src={LOGO} alt="Entreprise Kibegnon" className="h-12 w-auto" />
-            <div><p className="font-bold text-sm">ENTREPRISE KIBEGNON</p><p className="text-[11px]" style={{ color: "var(--muted)" }}>Agence immobilière · Cocody, Abidjan</p></div>
-          </div>
-          <div className="text-right">
-            <p className="text-base font-bold" style={{ color: "var(--brass)" }}>{title}</p>
-            <p className="text-[11px]" style={{ color: "var(--muted)" }}>{subtitle}</p>
-            <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
-          </div>
-        </div>
+        <PrintHead title={title} subtitle={subtitle} extra={
+          <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
+        } />
         <table className="w-full text-[11px] mt-4">
           <thead><tr style={{ background: "#F1F3F5" }}>
             {columns.map((c, i) => <th key={i} className={`px-2 py-1.5 font-semibold ${c.right ? "text-right" : "text-left"}`}>{c.label}</th>)}
@@ -2180,6 +2212,7 @@ function Register({ title, subtitle, columns, rows, onBack, footer }) {
         </table>
         {rows.length === 0 && <p className="text-sm text-center py-8" style={{ color: "var(--muted)" }}>Aucune ligne.</p>}
         {footer && <div className="mt-4 pt-3 border-t text-xs" style={{ borderColor: "var(--line)" }}>{footer}</div>}
+        <PrintFoot />
       </div>
     </div>
   );
@@ -3125,20 +3158,9 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
       </div>
 
       <div id="print-area" className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
-        <div className="flex items-start justify-between gap-4 pb-3 border-b" style={{ borderColor: "var(--line)" }}>
-          <div className="flex items-center gap-3">
-            <img src={LOGO} alt="Entreprise Kibegnon" className="h-12 w-auto" />
-            <div>
-              <p className="font-bold text-sm">ENTREPRISE KIBEGNON</p>
-              <p className="text-[11px]" style={{ color: "var(--muted)" }}>Gestion locative · Cocody, Abidjan</p>
-            </div>
-          </div>
-          <div className="text-right">
-            <p className="text-base font-bold" style={{ color: sc.color }}>{sc.label}</p>
-            <p className="text-sm font-semibold">{periodLabel(period.period)}</p>
-            <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
-          </div>
-        </div>
+        <PrintHead title={sc.label} subtitle={periodLabel(period.period)} extra={
+          <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
+        } />
 
         <div className="grid sm:grid-cols-4 gap-3 py-3 text-xs">
           <div><p style={{ color: "var(--muted)" }}>Propriétaire</p><p className="font-semibold">{owner?.name || "—"}</p></div>
@@ -3248,9 +3270,7 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
           <div className="text-center" style={{ minWidth: 170 }}><p className="text-[11px] font-semibold pb-8">Le Propriétaire</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
           <div className="text-center" style={{ minWidth: 170 }}><p className="text-[11px] font-semibold pb-8">Pour l'Agence</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
         </div>
-        <p className="text-[10px] mt-3 pt-2 border-t" style={{ color: "var(--muted)", borderColor: "var(--line)" }}>
-          État établi par {author?.name || "—"} · Entreprise Kibegnon SARL · Taux de recouvrement du mois : {(t.rateCollected * 100).toFixed(1)} %
-        </p>
+        <PrintFoot note={`État établi par ${author?.name || "—"} · Taux de recouvrement du mois : ${(t.rateCollected * 100).toFixed(1)} %`} />
       </div>
     </div>
   );
@@ -3557,16 +3577,7 @@ function RecapSheet({ period, requests, members, properties, onBack }) {
       </div>
 
       <div id="print-area" className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
-        <div className="flex items-start justify-between gap-4 pb-3 border-b" style={{ borderColor: "var(--line)" }}>
-          <div className="flex items-center gap-3">
-            <img src={LOGO} alt="Entreprise Kibegnon" className="h-12 w-auto" />
-            <div><p className="font-bold text-sm">ENTREPRISE KIBEGNON</p><p className="text-[11px]" style={{ color: "var(--muted)" }}>Cocody, Abidjan</p></div>
-          </div>
-          <div className="text-right">
-            <p className="text-base font-bold" style={{ color: "#2E78A8" }}>FRAIS DE TRANSPORT</p>
-            <p className="text-sm font-semibold">{trPeriodLabel(period)}</p>
-          </div>
-        </div>
+        <PrintHead title="FRAIS DE TRANSPORT" subtitle={trPeriodLabel(period)} />
 
         <table className="w-full text-[11px] my-4">
           <thead><tr style={{ background: "#F1F3F5" }}>
@@ -3610,6 +3621,7 @@ function RecapSheet({ period, requests, members, properties, onBack }) {
           <div className="text-center" style={{ minWidth: 170 }}><p className="text-[11px] font-semibold pb-8">La Comptabilité</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
           <div className="text-center" style={{ minWidth: 170 }}><p className="text-[11px] font-semibold pb-8">La Direction</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
         </div>
+        <PrintFoot />
       </div>
     </div>
   );
@@ -4280,20 +4292,9 @@ function TaxSheet({ records, year, title, propById, unitById, ownerById, onBack 
       </div>
 
       <div id="print-area" className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
-        <div className="flex items-start justify-between gap-4 pb-3 border-b" style={{ borderColor: "var(--line)" }}>
-          <div className="flex items-center gap-3">
-            <img src={LOGO} alt="Entreprise Kibegnon" className="h-12 w-auto" />
-            <div>
-              <p className="font-bold text-sm">ENTREPRISE KIBEGNON SARL</p>
-              <p className="text-[11px]" style={{ color: "var(--muted)" }}>Agence immobilière · Cocody, Abidjan</p>
-            </div>
-          </div>
-          <div className="text-right">
-            <p className="text-base font-bold" style={{ color: "#2E78A8" }}>ÉTAT DE L'IMPÔT FONCIER</p>
-            <p className="text-sm font-semibold">{multiYear ? "Toutes années confondues" : `Année ${year}`}</p>
-            <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
-          </div>
-        </div>
+        <PrintHead title="ÉTAT DE L'IMPÔT FONCIER" subtitle={multiYear ? "Toutes années confondues" : `Année ${year}`} extra={
+          <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
+        } />
 
         {(title || nccs.length > 0) && (
           <div className="flex items-center justify-between gap-4 mt-3">
@@ -4389,6 +4390,7 @@ function TaxSheet({ records, year, title, propById, unitById, ownerById, onBack 
           <div className="text-center" style={{ minWidth: 180 }}><p className="text-[11px] font-semibold pb-8">Le Propriétaire</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
           <div className="text-center" style={{ minWidth: 180 }}><p className="text-[11px] font-semibold pb-8">Pour l'Agence</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
         </div>
+        <PrintFoot />
       </div>
     </div>
   );
@@ -4438,7 +4440,7 @@ function ImpotFoncier({ store, me }) {
   }, [list, propById, unitById, ownerById, filterProp]);
 
   if (sheet) {
-    return <TaxSheet records={sheet.records} year={sheetYear} title={sheet.title}
+    return <TaxSheet records={sheet.records} year={allYears ? "toutes années" : year} title={sheet.title}
       propById={propById} unitById={unitById} ownerById={ownerById} onBack={() => setSheet(null)} />;
   }
 
@@ -4448,7 +4450,6 @@ function ImpotFoncier({ store, me }) {
   }, { taxed: 0, paid: 0, remaining: 0 });
   const lateCount = list.filter((r) => (r.installments || []).some(isLate)).length;
   const years = [...new Set([new Date().getFullYear(), ...taxRecords.map((r) => r.taxYear)])].sort((a, b) => b - a);
-  const sheetYear = allYears ? "toutes années" : year;
 
   return (
     <div>
