@@ -6,7 +6,7 @@
  * ==========================================================================*/
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
-  AlertTriangle, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, BarChart3, Briefcase, Building2, CalendarDays, CalendarOff, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, DoorOpen, Download, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, Filter, Hammer, Home, Inbox, KeyRound, Landmark, Layers, LayoutDashboard, ListChecks, Lock, LogOut, Mail, MapPin, MessageCircle, MessageSquare, Package, Pause, Pencil, Phone, Play, Plus, Printer, Receipt, RotateCcw, Search, Send, Settings, ShieldCheck, SprayCan, Square, Store, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, UserPlus, UserRound, Users, Wallet, X, Zap,
+  AlertTriangle, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, BarChart3, Bell, BellOff, Briefcase, Building2, CalendarDays, CalendarOff, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, DoorOpen, Download, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, Hammer, Home, Image, Inbox, KeyRound, Landmark, Layers, LayoutDashboard, ListChecks, Lock, LogOut, Mail, MapPin, MessageCircle, MessageCircleWarning, MessageSquare, Package, Paperclip, Pause, Pencil, Phone, Play, Plus, Printer, Receipt, RotateCcw, Search, Send, Settings, ShieldCheck, SprayCan, Square, Store, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, UserPlus, UserRound, Users, Wallet, X, Zap,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, CartesianGrid,
@@ -198,6 +198,18 @@ const DOC_TYPES = {
       { label: "Charges", qty: 1, unit: "mois", price: 0 },
     ],
   },
+  courrier: {
+    label: "Courrier libre",
+    short: "Courrier",
+    prefix: "CR",
+    dept: "Direction & Gérance",
+    layout: "lettre",
+    title: "",
+    color: "#0D9488",
+    desc: "Tout courrier de l'agence : convocation, mise au point, information, attestation, réponse à un client…",
+    clientLabel: "Destinataire",
+    preset: [],
+  },
   relance: {
     label: "Relance locataire",
     short: "Relance",
@@ -211,7 +223,7 @@ const DOC_TYPES = {
     preset: [{ label: "Loyer impayé", qty: 1, unit: "mois", price: 0 }],
   },
 };
-const DOC_TYPE_ORDER = ["decompte_entree", "prestation", "facture_impayes", "quittance", "relance"];
+const DOC_TYPE_ORDER = ["decompte_entree", "prestation", "facture_impayes", "quittance", "relance", "courrier"];
 
 const DOC_STATUS = {
   brouillon: { label: "Brouillon", color: "#94A3B8" },
@@ -221,6 +233,22 @@ const DOC_STATUS = {
   annule:    { label: "Annulé",    color: "#D81F26" },
 };
 const DOC_STATUS_ORDER = ["brouillon", "emis", "envoye", "regle", "annule"];
+
+const COURRIER_MODELS = {
+  vide:         { label: "Page blanche", object: "", body: "" },
+  convocation:  { label: "Convocation", object: "Convocation",
+    body: "Madame, Monsieur,\n\nNous vous prions de bien vouloir vous présenter à nos bureaux, sis à Cocody Rue du Lycée Technique, le [date] à [heure], afin d'échanger sur [objet de la rencontre].\n\nVotre présence est vivement souhaitée.\n\nVeuillez agréer, Madame, Monsieur, l'expression de nos salutations distinguées." },
+  information:  { label: "Note d'information", object: "Information aux occupants",
+    body: "Madame, Monsieur,\n\nNous vous informons que [objet de l'information].\n\nNous vous remercions par avance de votre compréhension et restons à votre disposition pour tout complément.\n\nVeuillez agréer, Madame, Monsieur, l'expression de nos salutations distinguées." },
+  attestation:  { label: "Attestation", object: "Attestation",
+    body: "Je soussigné, représentant de l'Entreprise Kibegnon SARL, atteste par la présente que [contenu de l'attestation].\n\nLa présente attestation est délivrée pour servir et valoir ce que de droit." },
+  reponse:      { label: "Réponse à une réclamation", object: "Réponse à votre réclamation",
+    body: "Madame, Monsieur,\n\nNous accusons réception de votre réclamation relative à [objet] et vous remercions de nous en avoir informés.\n\nAprès examen, [suite donnée].\n\nNous restons à votre disposition et vous prions d'agréer, Madame, Monsieur, l'expression de nos salutations distinguées." },
+  preavis:      { label: "Accusé de préavis", object: "Accusé de réception de préavis",
+    body: "Madame, Monsieur,\n\nNous accusons réception de votre préavis de départ concernant le logement que vous occupez, avec effet au [date].\n\nUn état des lieux de sortie sera organisé le [date]. Le solde de tout compte sera établi après cet état des lieux, déduction faite des éventuelles réparations locatives.\n\nVeuillez agréer, Madame, Monsieur, l'expression de nos salutations distinguées." },
+  travaux:      { label: "Annonce de travaux", object: "Annonce de travaux",
+    body: "Madame, Monsieur,\n\nNous vous informons que des travaux de [nature des travaux] seront réalisés dans l'immeuble du [date de début] au [date de fin].\n\nNous mettons tout en œuvre pour limiter la gêne occasionnée et vous remercions de votre compréhension.\n\nVeuillez agréer, Madame, Monsieur, l'expression de nos salutations distinguées." },
+};
 
 const RELANCE_TONE = {
   rappel:  "Rappel amiable",
@@ -608,6 +636,35 @@ function PrintFoot({ note }) {
   );
 }
 
+
+/* ---- Notifications sur l'appareil (messagerie) ---- */
+const NOTIF_KEY = "kb_notifications";
+function notifAllowed() {
+  return typeof Notification !== "undefined" && Notification.permission === "granted"
+    && localStorage.getItem(NOTIF_KEY) !== "off";
+}
+async function askNotifications() {
+  if (typeof Notification === "undefined") return "unsupported";
+  let perm = Notification.permission;
+  if (perm === "default") perm = await Notification.requestPermission();
+  if (perm === "granted") localStorage.setItem(NOTIF_KEY, "on");
+  return perm;
+}
+function notify(title, body, onClick) {
+  if (!notifAllowed()) return;
+  try {
+    const n = new Notification(title, { body, icon: LOGO, badge: LOGO, tag: "kibegnon-msg", renotify: true });
+    n.onclick = () => { window.focus(); n.close(); onClick?.(); };
+  } catch { /* certaines plateformes exigent un service worker */ }
+}
+/* Pastille de non-lus dans le titre de l'onglet */
+function useTitleBadge(count) {
+  useEffect(() => {
+    const base = "Kibegnon · Suivi d'équipe";
+    document.title = count > 0 ? `(${count}) ${base}` : base;
+  }, [count]);
+}
+
 /* ══════════════════════════════════════════════════════════════════════
    STORE (chargement, temps réel, actions Supabase)
    ══════════════════════════════════════════════════════════════════════ */
@@ -619,7 +676,7 @@ const mEntry   = (r) => ({ id: r.id, taskId: r.task_id, userId: r.user_id, start
 const mTimer   = (r) => ({ userId: r.user_id, taskId: r.task_id, startedAt: Date.parse(r.started_at) });
 const mChannel = (r) => ({ id: r.id, type: r.type, name: r.name });
 const mCM      = (r) => ({ channelId: r.channel_id, userId: r.user_id, lastReadAt: Date.parse(r.last_read_at) });
-const mMsg     = (r) => ({ id: r.id, channelId: r.channel_id, fromId: r.from_id, text: r.body, taskId: r.task_id, createdAt: Date.parse(r.created_at) });
+const mMsg     = (r) => ({ id: r.id, channelId: r.channel_id, fromId: r.from_id, text: r.body, taskId: r.task_id, createdAt: Date.parse(r.created_at), fileUrl: r.file_url || "", fileName: r.file_name || "", fileType: r.file_type || "", fileSize: r.file_size || 0 });
 
 const mOwner   = (r) => ({ id: r.id, name: r.full_name, kind: r.kind, phone: r.phone, email: r.email, address: r.address, idNumber: r.id_number, notes: r.notes, active: r.active });
 const mProp    = (r) => ({ id: r.id, ref: r.ref, name: r.name, kind: r.kind, address: r.address, commune: r.commune, quartier: r.quartier, ownerId: r.owner_id, lotsCount: r.lots_count, surface: r.surface_m2, rent: r.rent_amount, mandate: r.mandate_type, status: r.status, notes: r.notes, agentId: r.agent_id, salePrice: r.sale_price, availableFor: r.available_for || 'aucun' });
@@ -629,13 +686,14 @@ const mRelease = (r) => ({ id: r.id, ref: r.ref, propertyId: r.property_id, rele
 const mRelLine = (r) => ({ id: r.id, releaseId: r.release_id, productId: r.product_id, qty: Number(r.qty), price: Number(r.unit_price) });
 const mQuote   = (r) => ({ id: r.id, ref: r.ref, artisanName: r.artisan_name, trade: r.artisan_trade, phone: r.artisan_phone, propertyId: r.property_id, ownerId: r.owner_id, date: r.quote_date, source: r.source, object: r.object, total: Number(r.total_amount), status: r.status, notes: r.notes, recordedBy: r.recorded_by, createdAt: Date.parse(r.created_at) });
 const mQLine   = (r) => ({ id: r.id, quoteId: r.quote_id, label: r.label, qty: Number(r.qty), unit: r.unit, price: Number(r.unit_price), position: r.position });
-const mUnit    = (r) => ({ id: r.id, propertyId: r.property_id, label: r.label, kind: r.kind, floor: r.floor, rooms: r.rooms, surface: r.surface_m2, rent: Number(r.rent_amount), charges: Number(r.charges_amount), status: r.status, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, leaseStart: r.lease_start, notes: r.notes });
+const mUnit    = (r) => ({ id: r.id, propertyId: r.property_id, label: r.label, kind: r.kind, floor: r.floor, rooms: r.rooms, surface: r.surface_m2, rent: Number(r.rent_amount), charges: Number(r.charges_amount), status: r.status, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, leaseStart: r.lease_start, notes: r.notes, tenantEmail: r.tenant_email || "", leaseEnd: r.lease_end, dueDay: r.due_day || 5, deposit: Number(r.deposit) || 0 });
 const mPeriod  = (r) => ({ id: r.id, propertyId: r.property_id, period: r.period, scope: r.scope, rate: Number(r.agency_rate), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
 const mRLine   = (r) => ({ id: r.id, periodId: r.period_id, unitId: r.unit_id, unitLabel: r.unit_label, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, expected: Number(r.expected), collected: Number(r.collected), paidAt: r.paid_at, charges: Number(r.charges), comment: r.comment, position: r.position });
 const mRCharge = (r) => ({ id: r.id, periodId: r.period_id, label: r.label, amount: Number(r.amount), observation: r.observation, position: r.position, kind: r.kind || "charge" });
+const mComplaint = (r) => ({ id: r.id, ref: r.ref, propertyId: r.property_id, unitId: r.unit_id, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, category: r.category, cause: r.cause, priority: r.priority, description: r.description, reportedAt: r.reported_at, channel: r.channel, status: r.status, assignedTo: r.assigned_to, quoteId: r.quote_id, cost: Number(r.cost) || 0, resolution: r.resolution, resolvedAt: r.resolved_at, createdBy: r.created_by });
 const mTax     = (r) => ({ id: r.id, propertyId: r.property_id, unitId: r.unit_id, customLabel: r.custom_label, ownerId: r.owner_id, ownerLabel: r.owner_label, taxYear: r.tax_year, noticeNumber: r.notice_number, taxedAmount: Number(r.taxed_amount), installments: r.installments || [], receipts: r.receipts, declarationNext: r.declaration_next, notes: r.notes, createdBy: r.created_by, ncc: r.ncc || "", declarationDate: r.declaration_date, nextBase: r.next_base });
 const mReq     = (r) => ({ id: r.id, reqType: r.req_type, userId: r.user_id, date: r.req_date, amount: Number(r.amount), destination: r.destination, mode: r.transport_mode, propertyId: r.property_id, startDate: r.start_date, endDate: r.end_date, absenceType: r.absence_type, motif: r.motif, status: r.status, decidedBy: r.decided_by, decidedAt: r.decided_at, decisionNote: r.decision_note, createdAt: Date.parse(r.created_at) });
-const mDoc     = (r) => ({ id: r.id, ref: r.ref, docType: r.doc_type, date: r.doc_date, propertyId: r.property_id, ownerId: r.owner_id, clientName: r.client_name, clientPhone: r.client_phone, clientEmail: r.client_email, clientAddr: r.client_addr, object: r.object, body: r.body, lines: r.lines || [], fields: r.fields || {}, total: Number(r.total_amount), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
+const mDoc     = (r) => ({ id: r.id, ref: r.ref, docType: r.doc_type, date: r.doc_date, propertyId: r.property_id, ownerId: r.owner_id, clientName: r.client_name, clientPhone: r.client_phone, clientEmail: r.client_email, clientAddr: r.client_addr, object: r.object, body: r.body, lines: r.lines || [], fields: r.fields || {}, total: Number(r.total_amount), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at), unitId: r.unit_id, paidStamp: !!r.paid_stamp, stampedBy: r.stamped_by, period: r.period || "" });
 const mTpl     = (r) => ({ id: r.id, label: r.label, nature: r.nature, deptId: r.dept_id, urgency: r.urgency, estMin: r.est_min, sortOrder: r.sort_order, active: r.active });
 
 const upsertBy = (key, map) => (setter) => (row) =>
@@ -668,9 +726,14 @@ function useStore(userId) {
   const [rentCharges, setRentCharges] = useState([]);
   const [requests, setRequests] = useState([]);
   const [taxRecords, setTaxRecords] = useState([]);
+  const [complaints, setComplaints] = useState([]);
+
+  /* Référence vivante des membres, utilisée par les notifications */
+  const membersRef = useRef([]);
+  useEffect(() => { membersRef.current = members; }, [members]);
 
   const load = useCallback(async () => {
-    const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc, un, rp, rlin, rch, rq, tax] = await Promise.all([
+    const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc, un, rp, rlin, rch, rq, tax, cp] = await Promise.all([
       supabase.from("departments").select("*").order("created_at"),
       supabase.from("profiles").select("*").order("created_at"),
       supabase.from("tasks").select("*"),
@@ -695,6 +758,7 @@ function useStore(userId) {
       supabase.from("rent_charges").select("*").order("position"),
       supabase.from("requests").select("*").order("req_date", { ascending: false }),
       supabase.from("tax_records").select("*").order("tax_year", { ascending: false }),
+      supabase.from("complaints").select("*").order("reported_at", { ascending: false }),
     ]);
     setDepartments((dep.data || []).map(mDept));
     setMembers((prof.data || []).map(mProfile));
@@ -720,6 +784,7 @@ function useStore(userId) {
     setRentCharges((rch.data || []).map(mRCharge));
     setRequests((rq.data || []).map(mReq));
     setTaxRecords((tax.data || []).map(mTax));
+    setComplaints((cp.data || []).map(mComplaint));
     setLoading(false);
   }, []);
 
@@ -749,6 +814,7 @@ function useStore(userId) {
     const upRC = upsertBy("id", mRCharge)(setRentCharges), rmRC = removeBy("id")(setRentCharges);
     const upReq = upsertBy("id", mReq)(setRequests), rmReq = removeBy("id")(setRequests);
     const upTax = upsertBy("id", mTax)(setTaxRecords), rmTax = removeBy("id")(setTaxRecords);
+    const upCp = upsertBy("id", mComplaint)(setComplaints), rmCp = removeBy("id")(setComplaints);
     const h = (up, rm, key = "id") => (p) => p.eventType === "DELETE" ? rm(p.old[key]) : up(p.new);
 
     const ch = supabase.channel("kibegnon-rt")
@@ -756,6 +822,11 @@ function useStore(userId) {
       .on("postgres_changes", { event: "*", schema: "public", table: "time_entries" }, h(upEntry, rmEntry))
       .on("postgres_changes", { event: "*", schema: "public", table: "active_timers" }, h(upTimer, rmTimer, "user_id"))
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (p) => {
+        if (p.new.from_id !== userId) {
+          const author = membersRef.current.find((m) => m.id === p.new.from_id);
+          const preview = p.new.body?.trim() || (p.new.file_name ? `📎 ${p.new.file_name}` : "Tâche partagée");
+          notify(author?.name || "Nouveau message", preview);
+        }
         setMessages((prev) => {
           const cleaned = prev.filter((m) => !(String(m.id).startsWith("tmp-") && m.fromId === p.new.from_id && m.text === p.new.body && (m.taskId || null) === (p.new.task_id || null)));
           if (cleaned.some((m) => m.id === p.new.id)) return cleaned;
@@ -782,6 +853,7 @@ function useStore(userId) {
       .on("postgres_changes", { event: "*", schema: "public", table: "rent_charges" }, h(upRC, rmRC))
       .on("postgres_changes", { event: "*", schema: "public", table: "requests" }, h(upReq, rmReq))
       .on("postgres_changes", { event: "*", schema: "public", table: "tax_records" }, h(upTax, rmTax))
+      .on("postgres_changes", { event: "*", schema: "public", table: "complaints" }, h(upCp, rmCp))
       .subscribe();
 
     return () => { supabase.removeChannel(ch); };
@@ -862,13 +934,26 @@ function useStore(userId) {
     await supabase.from("channels").select("*").then(({ data: c }) => c && setChannels(c.map(mChannel)));
     return data;
   };
-  const sendMessage = async (channelId, text, taskId = null) => {
+  const sendMessage = async (channelId, text, taskId = null, file = null) => {
     const body = (text || "").trim();
-    if (!body && !taskId) return;
-    const tmp = { id: "tmp-" + Date.now(), channelId, fromId: userId, text: body, taskId, createdAt: Date.now() };
+    if (!body && !taskId && !file) return;
+    const tmp = { id: "tmp-" + Date.now(), channelId, fromId: userId, text: body, taskId, createdAt: Date.now(),
+      fileUrl: "", fileName: file?.fileName || "", fileType: file?.fileType || "", fileSize: file?.fileSize || 0 };
     setMessages((p) => [...p, tmp]);
-    await supabase.from("messages").insert({ channel_id: channelId, from_id: userId, body, task_id: taskId });
+    await supabase.from("messages").insert({ channel_id: channelId, from_id: userId, body, task_id: taskId,
+      file_url: file?.fileUrl || "", file_name: file?.fileName || "", file_type: file?.fileType || "", file_size: file?.fileSize || 0 });
     markRead(channelId);
+  };
+  /* Envoi d'un fichier dans la messagerie (Supabase Storage) */
+  const uploadAttachment = async (file) => {
+    if (!file) return { error: "Aucun fichier" };
+    if (file.size > 15 * 1024 * 1024) return { error: "Fichier trop volumineux (15 Mo maximum)." };
+    const safe = file.name.replace(/[^\w.\-]/g, "_");
+    const path = `${userId}/${Date.now()}-${safe}`;
+    const { error } = await supabase.storage.from("pieces-jointes").upload(path, file, { upsert: false });
+    if (error) return { error: error.message };
+    const { data } = supabase.storage.from("pieces-jointes").getPublicUrl(path);
+    return { fileUrl: data.publicUrl, fileName: file.name, fileType: file.type, fileSize: file.size };
   };
   const markRead = async (channelId) => {
     setChannelMembers((p) => p.map((c) => (c.channelId === channelId && c.userId === userId ? { ...c, lastReadAt: Date.now() } : c)));
@@ -1026,7 +1111,9 @@ function useStore(userId) {
       rooms: f.rooms ? Number(f.rooms) : null, surface_m2: f.surface ? Number(f.surface) : null,
       rent_amount: Number(f.rent) || 0, charges_amount: Number(f.charges) || 0, status: f.status,
       tenant_name: f.tenantName || "", tenant_phone: f.tenantPhone || "",
-      lease_start: f.leaseStart || null, notes: f.notes || "" };
+      lease_start: f.leaseStart || null, notes: f.notes || "",
+      tenant_email: f.tenantEmail || "", lease_end: f.leaseEnd || null,
+      due_day: Number(f.dueDay) || 5, deposit: Number(f.deposit) || 0 };
     if (f.id) {
       setUnits((p) => p.map((u) => (u.id === f.id ? { ...u, ...f } : u)));
       const { error } = await supabase.from("units").update(row).eq("id", f.id);
@@ -1129,6 +1216,29 @@ function useStore(userId) {
     return { error: error?.message };
   };
 
+  /* ================= ACTIONS : PLAINTES ================= */
+  const saveComplaint = async (f) => {
+    const row = { property_id: f.propertyId || null, unit_id: f.unitId || null,
+      tenant_name: f.tenantName || "", tenant_phone: f.tenantPhone || "",
+      category: f.category, cause: f.cause, priority: f.priority, description: f.description || "",
+      reported_at: f.reportedAt, channel: f.channel, status: f.status,
+      assigned_to: f.assignedTo || null, quote_id: f.quoteId || null,
+      cost: Number(f.cost) || 0, resolution: f.resolution || "", resolved_at: f.resolvedAt || null };
+    if (f.id) {
+      setComplaints((p) => p.map((x) => (x.id === f.id ? { ...x, ...f } : x)));
+      const { error } = await supabase.from("complaints").update(row).eq("id", f.id);
+      return { error: error?.message, id: f.id };
+    }
+    const { data, error } = await supabase.from("complaints").insert({ ...row, created_by: userId }).select().single();
+    if (data) setComplaints((p) => (p.some((x) => x.id === data.id) ? p : [mComplaint(data), ...p]));
+    return { error: error?.message, id: data?.id };
+  };
+  const deleteComplaint = async (id) => {
+    setComplaints((p) => p.filter((x) => x.id !== id));
+    const { error } = await supabase.from("complaints").delete().eq("id", id);
+    return { error: error?.message };
+  };
+
   /* ================= ACTIONS : IMPÔT FONCIER ================= */
   const saveTaxRecord = async (f) => {
     const row = { property_id: f.propertyId || null, unit_id: f.unitId || null,
@@ -1163,6 +1273,8 @@ function useStore(userId) {
       client_addr: f.clientAddr || "", object: f.object || "", body: f.body || "",
       lines: f.lines || [], fields: f.fields || {}, total_amount: total,
       status: f.status || "brouillon", notes: f.notes || "",
+      unit_id: f.unitId || null, paid_stamp: !!f.paidStamp, period: f.period || "",
+      stamped_by: f.paidStamp ? userId : null, stamped_at: f.paidStamp ? new Date().toISOString() : null,
     };
     if (f.id) {
       const { error } = await supabase.from("documents").update(row).eq("id", f.id);
@@ -1186,7 +1298,7 @@ function useStore(userId) {
   return {
     loading, departments, members, tasks, timeEntries, activeTimers, channels, channelMembers, messages,
     owners, properties, products, stockEntries, releases, releaseLines, quotes, quoteLines, templates, documents,
-    units, rentPeriods, rentLines, rentCharges, requests, taxRecords,
+    units, rentPeriods, rentLines, rentCharges, requests, taxRecords, complaints,
     actions: {
       createTask, updateTask, deleteTask, startTimer, stopTimer, pauseTask, finishTask, addManualTime, deleteEntry,
       ensureDm, sendMessage, markRead, saveDept, deleteDept, updateProfile, adminUsers,
@@ -1197,7 +1309,7 @@ function useStore(userId) {
       saveUnit, deleteUnit, bulkCreateUnits,
       savePeriod, deletePeriod, savePeriodContent, setPeriodStatus,
       saveRequest, decideRequest, deleteRequest,
-      saveTaxRecord, deleteTaxRecord, reload: load,
+      saveTaxRecord, deleteTaxRecord, saveComplaint, deleteComplaint, uploadAttachment, reload: load,
     },
   };
 }
@@ -1399,9 +1511,22 @@ function DocModal({ initial, properties, owners, onSave, onClose }) {
         </div>
       )}
 
+      {f.docType === "courrier" && (
+        <Field label="Modèle de courrier" hint="Sert de point de départ, le texte reste modifiable">
+          <select className={inputCls} style={inputStyle} value=""
+            onChange={(e) => {
+              const m = COURRIER_MODELS[e.target.value];
+              if (m) setF((p) => ({ ...p, object: m.object || p.object, body: m.body }));
+            }}>
+            <option value="">— Choisir un modèle —</option>
+            {Object.entries(COURRIER_MODELS).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
+          </select>
+        </Field>
+      )}
+
       {isLetter && (
         <>
-          <div className="grid sm:grid-cols-2 gap-3">
+          <div className="grid sm:grid-cols-2 gap-3" style={{ display: f.docType === "courrier" ? "none" : undefined }}>
             <Field label="Ton du courrier">
               <select className={inputCls} style={inputStyle} value={f.fields.tone || "rappel"} onChange={(e) => setField("tone", e.target.value)}>
                 {Object.entries(RELANCE_TONE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -1500,7 +1625,7 @@ function DocSheet({ doc, property, owner, author, onBack }) {
   const cfg = DOC_TYPES[doc.docType];
   const st = DOC_STATUS[doc.status];
   const isLetter = cfg.layout === "lettre";
-  const body = doc.body?.trim() || (isLetter ? relanceBody(doc, property) : "");
+  const body = doc.body?.trim() || (doc.docType === "relance" ? relanceBody(doc, property) : "");
 
   return (
     <div>
@@ -1527,7 +1652,7 @@ function DocSheet({ doc, property, owner, author, onBack }) {
 
         {/* Titre */}
         <div className="text-center py-3">
-          <h2 className="text-lg font-bold tracking-wide" style={{ color: "var(--ink)" }}>{cfg.title}</h2>
+          <h2 className="text-lg font-bold tracking-wide" style={{ color: "var(--ink)" }}>{cfg.title || (doc.docType === "courrier" ? "" : cfg.label)}</h2>
           {doc.object && <p className="text-sm font-semibold mt-1 uppercase">{doc.object}</p>}
           {doc.fields?.periode && <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>Période : {doc.fields.periode}</p>}
         </div>
@@ -4584,6 +4709,842 @@ function ImpotFoncier({ store, me }) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════
+   LOCATAIRES · QUITTANCES · PLAINTES · PORTEFEUILLE COMMERCIAL
+   ══════════════════════════════════════════════════════════════════════ */
+
+const COMPLAINT_CATEGORY = {
+  reparation_plomberie:     { label: "Plomberie",              color: "#2E78A8", group: "Réparation" },
+  reparation_electricite:   { label: "Électricité",            color: "#C58A1B", group: "Réparation" },
+  infiltration_toiture:     { label: "Infiltration / toiture", color: "#0D9488", group: "Réparation" },
+  degat_eaux:               { label: "Dégât des eaux",         color: "#2E78A8", group: "Réparation" },
+  serrurerie:               { label: "Serrurerie",             color: "#64748B", group: "Réparation" },
+  climatisation:            { label: "Climatisation",          color: "#0891B2", group: "Réparation" },
+  menuiserie:               { label: "Menuiserie",             color: "#EA580C", group: "Réparation" },
+  peinture_revetement:      { label: "Peinture / revêtement",  color: "#DB2777", group: "Réparation" },
+  parties_communes:         { label: "Parties communes",       color: "#7C3AED", group: "Immeuble" },
+  ascenseur:                { label: "Ascenseur",              color: "#6366F1", group: "Immeuble" },
+  insalubrite_ordures:      { label: "Insalubrité / ordures",  color: "#4F9E2A", group: "Immeuble" },
+  eau_electricite_compteur: { label: "Compteur eau / élec.",   color: "#C58A1B", group: "Immeuble" },
+  nuisances_sonores:        { label: "Nuisances sonores",      color: "#EA580C", group: "Voisinage" },
+  conflit_voisinage:        { label: "Conflit de voisinage",   color: "#D81F26", group: "Voisinage" },
+  securite_effraction:      { label: "Sécurité / effraction",  color: "#B91C1C", group: "Voisinage" },
+  charges_facturation:      { label: "Charges / facturation",  color: "#7C3AED", group: "Administratif" },
+  autre:                    { label: "Autre diligence",        color: "#64748B", group: "Administratif" },
+};
+const COMPLAINT_CAUSE = {
+  vetuste:              "Vétusté",
+  defaut_entretien:     "Défaut d'entretien",
+  mauvaise_utilisation: "Mauvaise utilisation",
+  intemperies:          "Intempéries",
+  malfacon:             "Malfaçon",
+  fait_de_tiers:        "Fait d'un tiers",
+  indetermine:          "Cause indéterminée",
+};
+const COMPLAINT_STATUS = {
+  signale:    { label: "Signalée",   color: "#D81F26" },
+  en_cours:   { label: "En cours",   color: "#2E78A8" },
+  en_attente: { label: "En attente", color: "#C58A1B" },
+  resolu:     { label: "Résolue",    color: "#4F9E2A" },
+  clos:       { label: "Clôturée",   color: "#64748B" },
+  rejete:     { label: "Rejetée",    color: "#94A3B8" },
+};
+const COMPLAINT_STATUS_ORDER = ["signale", "en_cours", "en_attente", "resolu", "clos", "rejete"];
+const COMPLAINT_CHANNEL = { telephone: "Téléphone", whatsapp: "WhatsApp", visite: "Visite au bureau", courrier: "Courrier", email: "E-mail", autre: "Autre" };
+
+/* ---------------- Modale locataire ---------------- */
+function TenantModal({ unit, property, onSave, onClose }) {
+  const [f, setF] = useState(() => ({ ...unit }));
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const submit = async () => {
+    setBusy(true);
+    const r = await onSave({ ...f, status: f.tenantName?.trim() ? (f.status === "vacant" ? "occupe" : f.status) : "vacant" });
+    setBusy(false);
+    if (r?.error) setErr(r.error); else onClose();
+  };
+  return (
+    <Modal title={`Locataire — ${property?.name || ""} · ${unit.label}`} onClose={onClose}>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Nom du locataire"><input className={inputCls} style={inputStyle} value={f.tenantName || ""} autoFocus onChange={(e) => set("tenantName", e.target.value)} placeholder="Ex. Mme DIALLO Aminata" /></Field>
+        <Field label="Téléphone"><input className={inputCls} style={inputStyle} value={f.tenantPhone || ""} onChange={(e) => set("tenantPhone", e.target.value)} placeholder="+225 07 ..." /></Field>
+      </div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="E-mail"><input className={inputCls} style={inputStyle} value={f.tenantEmail || ""} onChange={(e) => set("tenantEmail", e.target.value)} /></Field>
+        <Field label="Statut du lot">
+          <select className={inputCls} style={inputStyle} value={f.status} onChange={(e) => set("status", e.target.value)}>
+            {Object.entries(UNIT_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+        </Field>
+      </div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Début du bail"><input type="date" className={inputCls} style={inputStyle} value={f.leaseStart || ""} onChange={(e) => set("leaseStart", e.target.value)} /></Field>
+        <Field label="Fin du bail"><input type="date" className={inputCls} style={inputStyle} value={f.leaseEnd || ""} onChange={(e) => set("leaseEnd", e.target.value)} /></Field>
+      </div>
+      <div className="grid sm:grid-cols-3 gap-3">
+        <Field label="Loyer mensuel"><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.rent || 0} onChange={(e) => set("rent", e.target.value)} /></Field>
+        <Field label="Charges"><input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.charges || 0} onChange={(e) => set("charges", e.target.value)} /></Field>
+        <Field label="Loyer dû le" hint="Jour du mois"><input type="number" min={1} max={31} className={inputCls} style={inputStyle} value={f.dueDay || 5} onChange={(e) => set("dueDay", e.target.value)} /></Field>
+      </div>
+      <Field label="Caution versée"><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.deposit || 0} onChange={(e) => set("deposit", e.target.value)} /></Field>
+      {err && <p className="text-xs text-red-600 mb-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} className="kb-btn kb-btn-ghost">Annuler</button>
+        <button disabled={busy} onClick={submit} className="kb-btn kb-btn-primary disabled:opacity-40"><Check size={16} /> Enregistrer</button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ---------------- Quittance de loyer (modèle soigné + tampon PAYÉ) ---------------- */
+function ReceiptModal({ initial, unit, property, owner, onSave, onClose }) {
+  const now = new Date();
+  const [f, setF] = useState(() => ({
+    docType: "quittance", date: isoDate(now),
+    clientName: unit?.tenantName || "", clientPhone: unit?.tenantPhone || "", clientEmail: unit?.tenantEmail || "",
+    propertyId: property?.id || "", unitId: unit?.id || "", ownerId: property?.ownerId || "",
+    object: "", period: `${MONTHS_FR[now.getMonth()]} ${now.getFullYear()}`,
+    fields: { mode: "Espèces", paidOn: isoDate(now), dueOn: "" },
+    status: "emis", notes: "", paidStamp: true, ...initial,
+  }));
+  const [lines, setLines] = useState(() => initial?.lines?.length ? initial.lines : [
+    { label: "Loyer", qty: 1, unit: "mois", price: unit?.rent || 0 },
+    ...(unit?.charges ? [{ label: "Charges", qty: 1, unit: "mois", price: unit.charges }] : []),
+  ]);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const setField = (k, v) => setF((p) => ({ ...p, fields: { ...p.fields, [k]: v } }));
+  const total = linesTotal(lines);
+  const submit = async () => {
+    setBusy(true);
+    const r = await onSave({ ...f, lines });
+    setBusy(false);
+    if (r?.error) setErr(r.error); else onClose();
+  };
+  return (
+    <Modal title={f.id ? `Quittance ${f.ref || ""}` : "Nouvelle quittance de loyer"} onClose={onClose} wide>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Locataire"><input className={inputCls} style={inputStyle} value={f.clientName} onChange={(e) => set("clientName", e.target.value)} /></Field>
+        <Field label="Téléphone"><input className={inputCls} style={inputStyle} value={f.clientPhone} onChange={(e) => set("clientPhone", e.target.value)} /></Field>
+      </div>
+      <div className="grid sm:grid-cols-3 gap-3">
+        <Field label="Période quittancée"><input className={inputCls} style={inputStyle} value={f.period} onChange={(e) => set("period", e.target.value)} placeholder="Ex. décembre 2026" /></Field>
+        <Field label="Date d'échéance"><input type="date" className={inputCls} style={inputStyle} value={f.fields.dueOn || ""} onChange={(e) => setField("dueOn", e.target.value)} /></Field>
+        <Field label="Date de paiement"><input type="date" className={inputCls} style={inputStyle} value={f.fields.paidOn || ""} onChange={(e) => setField("paidOn", e.target.value)} /></Field>
+      </div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Mode de paiement">
+          <select className={inputCls} style={inputStyle} value={f.fields.mode || "Espèces"} onChange={(e) => setField("mode", e.target.value)}>
+            {["Espèces", "Chèque", "Virement", "Mobile Money : Wave", "Mobile Money : Orange Money", "Mobile Money : MTN", "Mobile Money : Moov"].map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </Field>
+        <Field label="Solde restant dû (FCFA)"><input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.fields.balance ?? 0} onChange={(e) => setField("balance", e.target.value)} /></Field>
+      </div>
+
+      <p className="text-xs font-semibold mb-2 mt-1" style={{ color: "var(--ink)" }}>Détail encaissé</p>
+      <LineEditor lines={lines} setLines={setLines} labelPlaceholder="Ex. Loyer" />
+
+      <label className="flex items-center gap-2 text-sm mt-4 mb-3 cursor-pointer p-2.5 rounded-lg" style={{ background: f.paidStamp ? "#FDEAEA" : "#F6F8FA" }}>
+        <input type="checkbox" checked={!!f.paidStamp} onChange={(e) => set("paidStamp", e.target.checked)} />
+        <span>Apposer la mention <strong style={{ color: "var(--brass)" }}>PAYÉ</strong> (tampon rouge) sur la quittance</span>
+      </label>
+
+      <Field label="Message au locataire"><textarea className={inputCls} style={inputStyle} rows={2} value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Merci pour votre paiement. Veuillez conserver cette quittance." /></Field>
+      {err && <p className="text-xs text-red-600 mb-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm">Total : <strong style={{ color: "var(--brass)" }}>{fcfa(total)}</strong></span>
+        <div className="flex gap-2">
+          <button onClick={onClose} className="kb-btn kb-btn-ghost">Annuler</button>
+          <button disabled={!f.clientName.trim() || busy} onClick={submit} className="kb-btn kb-btn-primary disabled:opacity-40"><Check size={16} /> Enregistrer</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* Quittance imprimable — modèle soigné */
+function ReceiptSheet({ doc, unit, property, owner, author, onBack }) {
+  const total = doc.total || linesTotal(doc.lines || []);
+  const balance = Number(doc.fields?.balance) || 0;
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
+        <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
+        <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+      </div>
+
+      <div id="print-area" className="bg-white rounded-xl border p-6 max-w-3xl mx-auto relative overflow-hidden" style={{ borderColor: "var(--line)" }}>
+        <PrintHead title={doc.ref} subtitle="Reçu de paiement de loyer" extra={
+          <p className="text-[11px] mt-0.5" style={{ color: "var(--muted)" }}>Abidjan, le {fr(doc.date + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
+        } />
+
+        <div className="text-center py-4">
+          <h2 className="text-lg font-bold tracking-wide" style={{ color: "#3d7d20" }}>QUITTANCE DE LOYER</h2>
+          <p className="text-sm font-semibold mt-0.5" style={{ color: "var(--muted)" }}>Période : {doc.period || doc.fields?.periode || "—"}</p>
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-3 mb-3">
+          <div className="rounded-lg overflow-hidden border" style={{ borderColor: "var(--line)" }}>
+            <p className="text-[11px] font-bold px-3 py-1.5" style={{ background: "#EAF6E3", color: "#3d7d20" }}>LOCATAIRE</p>
+            <div className="p-3 text-sm">
+              <p className="font-semibold">{doc.clientName}</p>
+              {doc.clientPhone && <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>{doc.clientPhone}</p>}
+              {doc.clientEmail && <p className="text-xs" style={{ color: "var(--muted)" }}>{doc.clientEmail}</p>}
+              {doc.clientAddr && <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>{doc.clientAddr}</p>}
+            </div>
+          </div>
+          <div className="rounded-lg overflow-hidden border" style={{ borderColor: "var(--line)" }}>
+            <p className="text-[11px] font-bold px-3 py-1.5" style={{ background: "#EAF6E3", color: "#3d7d20" }}>BAIL</p>
+            <div className="p-3 text-sm">
+              <p><span style={{ color: "var(--muted)" }}>Propriété :</span> <strong>{property?.name || "—"}</strong></p>
+              {unit && <p><span style={{ color: "var(--muted)" }}>Lot :</span> <strong>{unit.label}</strong></p>}
+              {unit?.leaseStart && <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>
+                Bail du {fr(unit.leaseStart + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                {unit.leaseEnd ? ` au ${fr(unit.leaseEnd + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" })}` : ""}
+              </p>}
+              {unit?.rent ? <p className="text-xs mt-1"><span style={{ color: "var(--muted)" }}>Loyer (dû le {unit.dueDay || 5} de chaque mois) :</span> <strong>{fcfa(unit.rent)}</strong></p> : null}
+              {owner && <p className="text-xs mt-1"><span style={{ color: "var(--muted)" }}>Propriétaire :</span> {owner.name}{owner.phone ? ` — ${owner.phone}` : ""}</p>}
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-lg overflow-hidden border mb-3" style={{ borderColor: "var(--line)" }}>
+          <p className="text-[11px] font-bold px-3 py-1.5" style={{ background: "#EAF6E3", color: "#3d7d20" }}>PAIEMENT</p>
+          <div className="p-3">
+            <table className="w-full text-sm mb-3">
+              <thead><tr style={{ background: "#F6F8FA" }}>
+                <th className="text-left px-2 py-1.5 font-semibold">Désignation</th>
+                <th className="text-right px-2 py-1.5 font-semibold w-16">Qté</th>
+                <th className="text-right px-2 py-1.5 font-semibold w-28">P. unitaire</th>
+                <th className="text-right px-2 py-1.5 font-semibold w-28">Montant</th>
+              </tr></thead>
+              <tbody>{(doc.lines || []).filter((l) => (l.label || "").trim()).map((l, i) => (
+                <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
+                  <td className="px-2 py-1.5">{l.label}</td>
+                  <td className="px-2 py-1.5 text-right">{qty(l.qty)} {l.unit}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(l.price)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fcfa(lineTotal(l))}</td>
+                </tr>
+              ))}</tbody>
+              <tfoot><tr style={{ background: "#F6F8FA" }}>
+                <td colSpan={3} className="px-2 py-2 font-bold">MONTANT PAYÉ</td>
+                <td className="px-2 py-2 text-right text-base font-bold tabular-nums" style={{ color: "#3d7d20" }}>{fcfa(total)}</td>
+              </tr></tfoot>
+            </table>
+
+            <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+              <p><span style={{ color: "var(--muted)" }}>Date d'échéance :</span> <strong>{doc.fields?.dueOn ? fr(doc.fields.dueOn + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—"}</strong></p>
+              <p><span style={{ color: "var(--muted)" }}>Date de paiement :</span> <strong>{doc.fields?.paidOn ? fr(doc.fields.paidOn + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—"}</strong></p>
+              <p><span style={{ color: "var(--muted)" }}>Mode de paiement :</span> <strong>{doc.fields?.mode || "—"}</strong></p>
+              <p><span style={{ color: "var(--muted)" }}>Solde restant dû :</span> <strong style={{ color: balance > 0 ? "#D81F26" : "#3d7d20" }}>{fcfa(balance)}</strong></p>
+            </div>
+          </div>
+        </div>
+
+        <p className="text-sm italic mb-3">Arrêtée la présente quittance à la somme de <strong>{amountInWords(total)}</strong>.</p>
+
+        {doc.notes && (
+          <div className="rounded-lg overflow-hidden border mb-3" style={{ borderColor: "var(--line)" }}>
+            <p className="text-[11px] font-bold px-3 py-1.5" style={{ background: "#EAF6E3", color: "#3d7d20" }}>MESSAGE</p>
+            <p className="p-3 text-sm whitespace-pre-wrap">{doc.notes}</p>
+          </div>
+        )}
+
+        <div className="flex justify-between items-end pt-6">
+          <div className="relative" style={{ minWidth: 200 }}>
+            {doc.paidStamp && (
+              <div className="absolute" style={{ left: 0, top: -18, transform: "rotate(-14deg)" }}>
+                <div style={{
+                  border: "4px double #D81F26", color: "#D81F26", padding: "6px 22px",
+                  borderRadius: 8, fontWeight: 900, fontSize: 30, letterSpacing: 4,
+                  fontFamily: "Inter, sans-serif", opacity: 0.85, textAlign: "center", lineHeight: 1.1,
+                }}>
+                  PAYÉ
+                  <div style={{ fontSize: 9, letterSpacing: 1, fontWeight: 700 }}>
+                    {doc.fields?.paidOn ? fr(doc.fields.paidOn + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" }) : ""}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="text-center" style={{ minWidth: 190 }}>
+            <p className="text-[11px] font-semibold pb-10">Pour l'Agence</p>
+            <div className="border-t" style={{ borderColor: "var(--ink)" }} />
+            <p className="text-[10px] mt-1" style={{ color: "var(--muted)" }}>{author?.name || ""}</p>
+          </div>
+        </div>
+
+        <PrintFoot note="Cette quittance atteste du paiement des sommes ci-dessus pour la période indiquée. À conserver sans limitation de durée." />
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Module LOCATAIRES ---------------- */
+function Locataires({ store, me, userId }) {
+  const { units, properties, owners, documents, members, rentPeriods, rentLines, actions } = store;
+  const [search, setSearch] = useState("");
+  const [filterProp, setFilterProp] = useState("all");
+  const [onlyMine, setOnlyMine] = useState(false);
+  const [tenantModal, setTenantModal] = useState(null);
+  const [receiptModal, setReceiptModal] = useState(null);
+  const [sheetId, setSheetId] = useState(null);
+
+  const propById = useMemo(() => Object.fromEntries(properties.map((p) => [p.id, p])), [properties]);
+  const ownerById = useMemo(() => Object.fromEntries(owners.map((o) => [o.id, o])), [owners]);
+  const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
+  const unitById = useMemo(() => Object.fromEntries(units.map((u) => [u.id, u])), [units]);
+  const canStamp = isAdmin(me.role) || me.role === "comptable";
+
+  const sheetDoc = documents.find((d) => d.id === sheetId);
+  if (sheetDoc) {
+    return <ReceiptSheet doc={sheetDoc} unit={unitById[sheetDoc.unitId]} property={propById[sheetDoc.propertyId]}
+      owner={ownerById[sheetDoc.ownerId]} author={memberById[sheetDoc.createdBy]} onBack={() => setSheetId(null)} />;
+  }
+
+  /* Dernier état de paiement connu, tiré des tableaux de recouvrement */
+  const lastPayment = (u) => {
+    const periods = rentPeriods.filter((p) => p.propertyId === u.propertyId).sort((a, b) => b.period.localeCompare(a.period));
+    for (const p of periods) {
+      const line = rentLines.find((l) => l.periodId === p.id && (l.unitId === u.id || (l.unitLabel || "").toLowerCase() === (u.label || "").toLowerCase()));
+      if (line) return { period: p.period, status: payStatusOf(line.expected, line.collected), collected: line.collected, expected: line.expected };
+    }
+    return null;
+  };
+
+  const tenants = units.filter((u) => (u.tenantName || "").trim() || u.status === "occupe");
+  const list = tenants.filter((u) => {
+    const p = propById[u.propertyId];
+    return (filterProp === "all" || u.propertyId === filterProp) &&
+      (!onlyMine || p?.agentId === userId) &&
+      (!search || (u.tenantName || "").toLowerCase().includes(search.toLowerCase()) ||
+        (u.tenantPhone || "").includes(search) || (u.label || "").toLowerCase().includes(search.toLowerCase()) ||
+        (p?.name || "").toLowerCase().includes(search.toLowerCase()));
+  });
+
+  const withoutPhone = list.filter((u) => !(u.tenantPhone || "").trim()).length;
+  const rentRoll = list.reduce((a, u) => a + (u.rent || 0), 0);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
+        <h1 className="text-xl font-bold">Locataires</h1>
+      </div>
+      <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>Recensement des locataires par lot, coordonnées et quittances de loyer.</p>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <StatCard icon={Users} label="Locataires recensés" value={list.length} sub={`${units.length} lot(s) au total`} tint="#2E78A8" />
+        <StatCard icon={Wallet} label="Loyer mensuel cumulé" value={fcfa(rentRoll)} tint="#4F9E2A" />
+        <StatCard icon={Phone} label="Sans numéro" value={withoutPhone} sub="à compléter" tint="#EA580C" />
+        <StatCard icon={Receipt} label="Quittances émises" value={documents.filter((d) => d.docType === "quittance").length} tint="var(--brass)" />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="relative flex-1 min-w-[150px]">
+          <Search size={15} className="absolute left-2.5 top-2.5 text-slate-400" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nom, téléphone, lot, bâtiment…" className="w-full pl-8 pr-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle} />
+        </div>
+        <select value={filterProp} onChange={(e) => setFilterProp(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+          <option value="all">Tous les bâtiments</option>
+          {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <button onClick={() => setOnlyMine((s) => !s)} className="kb-btn kb-btn-ghost text-sm" style={onlyMine ? { background: "var(--ink)", color: "#fff" } : undefined}>
+          <BadgeCheck size={14} /> Mes biens
+        </button>
+      </div>
+
+      {list.length ? (
+        <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: "var(--line)" }}>
+          <div className="overflow-x-auto"><table className="w-full text-sm">
+            <thead><tr className="text-left" style={{ color: "var(--muted)" }}>
+              <th className="px-4 py-2.5 font-medium">Locataire</th>
+              <th className="px-3 py-2.5 font-medium">Téléphone</th>
+              <th className="px-3 py-2.5 font-medium">Bâtiment / lot</th>
+              <th className="px-3 py-2.5 font-medium">Loyer</th>
+              <th className="px-3 py-2.5 font-medium">Dernier paiement</th>
+              <th className="px-3 py-2.5 font-medium">Agent</th>
+              <th />
+            </tr></thead>
+            <tbody>{list.map((u) => {
+              const p = propById[u.propertyId];
+              const pay = lastPayment(u);
+              const st = pay ? PAY_STATUS[pay.status] : null;
+              return (
+                <tr key={u.id} className="border-t" style={{ borderColor: "var(--line)" }}>
+                  <td className="px-4 py-2.5">
+                    <p className="font-medium">{u.tenantName || <span style={{ color: "#B6BEC9" }}>non renseigné</span>}</p>
+                    {u.tenantEmail && <p className="text-[11px]" style={{ color: "var(--muted)" }}>{u.tenantEmail}</p>}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    {u.tenantPhone
+                      ? <a href={`tel:${u.tenantPhone}`} className="hover:underline" style={{ color: "#2E78A8" }}>{u.tenantPhone}</a>
+                      : <span style={{ color: "#D81F26" }}>à compléter</span>}
+                  </td>
+                  <td className="px-3 py-2.5"><span style={{ color: "var(--muted)" }}>{p?.name || "—"}</span> · <strong>{u.label}</strong></td>
+                  <td className="px-3 py-2.5 tabular-nums">{fcfa(u.rent)}</td>
+                  <td className="px-3 py-2.5">
+                    {pay ? <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: st.bg, color: st.color }}>{st.label} · {pay.period}</span>
+                         : <span className="text-xs" style={{ color: "var(--muted)" }}>aucun relevé</span>}
+                  </td>
+                  <td className="px-3 py-2.5 text-xs" style={{ color: p?.agentId ? "var(--ink)" : "#B6BEC9" }}>{memberById[p?.agentId]?.name || "non attribué"}</td>
+                  <td className="px-3 py-2.5">
+                    <div className="flex gap-1 justify-end">
+                      <button onClick={() => setReceiptModal({ unit: u, property: p })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Établir une quittance"><Receipt size={14} /></button>
+                      <button onClick={() => setTenantModal({ unit: u, property: p })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Modifier le locataire"><Pencil size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}</tbody>
+          </table></div>
+        </div>
+      ) : <EmptyState icon={Users} title="Aucun locataire recensé"
+        sub="Les locataires se saisissent sur les lots, dans Patrimoine ou directement ici." />}
+
+      {/* Quittances déjà émises */}
+      {documents.filter((d) => d.docType === "quittance").length > 0 && (
+        <SectionCard title="Quittances émises" icon={Receipt} pad={false}>
+          <div className="divide-y" style={{ borderColor: "var(--line)" }}>
+            {documents.filter((d) => d.docType === "quittance").slice(0, 12).map((d) => (
+              <div key={d.id} className="flex items-center justify-between px-4 py-2.5 gap-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{d.clientName} · {d.period || "—"}</p>
+                  <p className="text-[11px]" style={{ color: "var(--muted)" }}>{d.ref} · {fr(d.date + "T00:00:00", { day: "numeric", month: "short", year: "numeric" })}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {d.paidStamp && <Chip color="#D81F26" bg="#FDEAEA">PAYÉ</Chip>}
+                  <span className="text-sm font-semibold tabular-nums">{fcfa(d.total)}</span>
+                  <button onClick={() => setSheetId(d.id)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Imprimer"><Printer size={14} /></button>
+                  {canStamp && <button onClick={() => setReceiptModal({ doc: d, unit: unitById[d.unitId], property: propById[d.propertyId] })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><Pencil size={14} /></button>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      )}
+
+      {tenantModal && <TenantModal unit={tenantModal.unit} property={tenantModal.property}
+        onSave={actions.saveUnit} onClose={() => setTenantModal(null)} />}
+
+      {receiptModal && <ReceiptModal initial={receiptModal.doc} unit={receiptModal.unit} property={receiptModal.property}
+        owner={ownerById[receiptModal.property?.ownerId]}
+        onSave={async (f) => { const r = await actions.saveDocument(f); if (!r.error && r.id) setSheetId(r.id); return r; }}
+        onClose={() => setReceiptModal(null)} />}
+    </div>
+  );
+}
+
+/* ---------------- Module PLAINTES ---------------- */
+function ComplaintModal({ initial, properties, units, members, quotes, onSave, onClose }) {
+  const [f, setF] = useState(() => ({
+    propertyId: "", unitId: "", tenantName: "", tenantPhone: "",
+    category: "reparation_plomberie", cause: "indetermine", priority: "normale",
+    description: "", reportedAt: isoDate(new Date()), channel: "telephone",
+    status: "signale", assignedTo: "", quoteId: "", cost: "", resolution: "", resolvedAt: "", ...initial,
+  }));
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const propUnits = units.filter((u) => u.propertyId === f.propertyId);
+
+  const pickUnit = (id) => {
+    const u = units.find((x) => x.id === id);
+    setF((s) => ({ ...s, unitId: id, tenantName: u?.tenantName || s.tenantName, tenantPhone: u?.tenantPhone || s.tenantPhone }));
+  };
+  const submit = async () => {
+    setBusy(true);
+    const r = await onSave({ ...f, resolvedAt: ["resolu", "clos"].includes(f.status) ? (f.resolvedAt || isoDate(new Date())) : null });
+    setBusy(false);
+    if (r?.error) setErr(r.error); else onClose();
+  };
+
+  const groups = [...new Set(Object.values(COMPLAINT_CATEGORY).map((c) => c.group))];
+
+  return (
+    <Modal title={f.id ? `Plainte ${f.ref || ""}` : "Enregistrer une plainte"} onClose={onClose} wide>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Bâtiment concerné">
+          <select className={inputCls} style={inputStyle} value={f.propertyId || ""} onChange={(e) => setF((p) => ({ ...p, propertyId: e.target.value, unitId: "" }))}>
+            <option value="">— Non précisé —</option>
+            {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Lot / appartement">
+          <select className={inputCls} style={inputStyle} value={f.unitId || ""} onChange={(e) => pickUnit(e.target.value)} disabled={!f.propertyId}>
+            <option value="">— Non précisé —</option>
+            {propUnits.map((u) => <option key={u.id} value={u.id}>{u.label}{u.tenantName ? ` — ${u.tenantName}` : ""}</option>)}
+          </select>
+        </Field>
+      </div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Locataire plaignant"><input className={inputCls} style={inputStyle} value={f.tenantName} onChange={(e) => set("tenantName", e.target.value)} /></Field>
+        <Field label="Téléphone"><input className={inputCls} style={inputStyle} value={f.tenantPhone} onChange={(e) => set("tenantPhone", e.target.value)} /></Field>
+      </div>
+
+      <Field label="Nature de la plainte">
+        <select className={inputCls} style={inputStyle} value={f.category} onChange={(e) => set("category", e.target.value)}>
+          {groups.map((g) => (
+            <optgroup key={g} label={g}>
+              {Object.entries(COMPLAINT_CATEGORY).filter(([, c]) => c.group === g).map(([k, c]) => <option key={k} value={k}>{c.label}</option>)}
+            </optgroup>
+          ))}
+        </select>
+      </Field>
+
+      <div className="grid sm:grid-cols-3 gap-3">
+        <Field label="Cause identifiée" hint="Détermine qui supporte les frais">
+          <select className={inputCls} style={inputStyle} value={f.cause} onChange={(e) => set("cause", e.target.value)}>
+            {Object.entries(COMPLAINT_CAUSE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </Field>
+        <Field label="Priorité">
+          <select className={inputCls} style={inputStyle} value={f.priority} onChange={(e) => set("priority", e.target.value)}>
+            {URGENCY_ORDER.map((u) => <option key={u} value={u}>{URGENCY[u].label}</option>)}
+          </select>
+        </Field>
+        <Field label="Reçue par">
+          <select className={inputCls} style={inputStyle} value={f.channel} onChange={(e) => set("channel", e.target.value)}>
+            {Object.entries(COMPLAINT_CHANNEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      <Field label="Description de la plainte">
+        <textarea className={inputCls} style={inputStyle} rows={3} value={f.description} onChange={(e) => set("description", e.target.value)}
+          placeholder="Ex. Fuite au niveau du lavabo de la salle de bain depuis deux jours." />
+      </Field>
+
+      <div className="grid sm:grid-cols-3 gap-3">
+        <Field label="Date du signalement"><input type="date" className={inputCls} style={inputStyle} value={f.reportedAt} onChange={(e) => set("reportedAt", e.target.value)} /></Field>
+        <Field label="Statut">
+          <select className={inputCls} style={inputStyle} value={f.status} onChange={(e) => set("status", e.target.value)}>
+            {COMPLAINT_STATUS_ORDER.map((k) => <option key={k} value={k}>{COMPLAINT_STATUS[k].label}</option>)}
+          </select>
+        </Field>
+        <Field label="Traitée par">
+          <select className={inputCls} style={inputStyle} value={f.assignedTo || ""} onChange={(e) => set("assignedTo", e.target.value)}>
+            <option value="">— Non attribuée —</option>
+            {members.filter((m) => m.active).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      <div className="rounded-xl border p-3 mb-3" style={{ borderColor: "var(--line)", background: "#FAFBFC" }}>
+        <p className="text-xs font-semibold mb-2">Traitement et règlement</p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <Field label="Devis artisan lié">
+            <select className={inputCls} style={inputStyle} value={f.quoteId || ""} onChange={(e) => set("quoteId", e.target.value)}>
+              <option value="">— Aucun —</option>
+              {quotes.filter((q) => !f.propertyId || q.propertyId === f.propertyId).map((q) => (
+                <option key={q.id} value={q.id}>{q.ref} — {q.artisanName} ({fcfa(q.total)})</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Coût du règlement (FCFA)"><input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.cost} onChange={(e) => set("cost", e.target.value)} /></Field>
+        </div>
+        <Field label="Suite donnée / résolution">
+          <textarea className={inputCls} style={inputStyle} rows={2} value={f.resolution} onChange={(e) => set("resolution", e.target.value)}
+            placeholder="Ex. Intervention du plombier le 12/08, joint remplacé, fuite arrêtée." />
+        </Field>
+        {["resolu", "clos"].includes(f.status) && (
+          <Field label="Date de règlement"><input type="date" className={inputCls} style={inputStyle} value={f.resolvedAt || ""} onChange={(e) => set("resolvedAt", e.target.value)} /></Field>
+        )}
+      </div>
+
+      {err && <p className="text-xs text-red-600 mb-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} className="kb-btn kb-btn-ghost">Annuler</button>
+        <button disabled={!f.description.trim() || busy} onClick={submit} className="kb-btn kb-btn-primary disabled:opacity-40"><Check size={16} /> Enregistrer</button>
+      </div>
+    </Modal>
+  );
+}
+
+function Plaintes({ store, me, userId }) {
+  const { complaints, properties, units, members, quotes, actions } = store;
+  const [search, setSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState("ouvertes");
+  const [filterProp, setFilterProp] = useState("all");
+  const [modal, setModal] = useState(null);
+
+  const propById = useMemo(() => Object.fromEntries(properties.map((p) => [p.id, p])), [properties]);
+  const unitById = useMemo(() => Object.fromEntries(units.map((u) => [u.id, u])), [units]);
+  const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
+
+  const open = complaints.filter((c) => ["signale", "en_cours", "en_attente"].includes(c.status));
+  const list = complaints.filter((c) =>
+    (filterStatus === "all" || (filterStatus === "ouvertes" ? ["signale", "en_cours", "en_attente"].includes(c.status) : c.status === filterStatus)) &&
+    (filterProp === "all" || c.propertyId === filterProp) &&
+    (!search || (c.tenantName || "").toLowerCase().includes(search.toLowerCase()) ||
+      (c.description || "").toLowerCase().includes(search.toLowerCase()) ||
+      (c.ref || "").toLowerCase().includes(search.toLowerCase())));
+
+  const delay = (c) => {
+    const end = c.resolvedAt ? new Date(c.resolvedAt) : new Date();
+    return Math.max(0, Math.round((end - new Date(c.reportedAt)) / 86400000));
+  };
+  const byCategory = useMemo(() => {
+    const m = {};
+    complaints.forEach((c) => {
+      const cfg = COMPLAINT_CATEGORY[c.category] || COMPLAINT_CATEGORY.autre;
+      m[c.category] = m[c.category] || { name: cfg.label, value: 0, color: cfg.color };
+      m[c.category].value += 1;
+    });
+    return Object.values(m).sort((a, b) => b.value - a.value).slice(0, 8);
+  }, [complaints]);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
+        <h1 className="text-xl font-bold">Plaintes des locataires</h1>
+        <button onClick={() => setModal({})} className="kb-btn kb-btn-primary"><Plus size={16} /> Enregistrer une plainte</button>
+      </div>
+      <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>Du signalement au règlement : nature, cause, traitement et suite donnée.</p>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <StatCard icon={AlertTriangle} label="Plaintes ouvertes" value={open.length} sub={`${complaints.length} au total`} tint="#D81F26" />
+        <StatCard icon={Clock} label="Urgentes" value={open.filter((c) => c.priority === "urgente" || c.priority === "haute").length} tint="#EA580C" />
+        <StatCard icon={CheckCircle2} label="Résolues" value={complaints.filter((c) => ["resolu", "clos"].includes(c.status)).length} tint="#4F9E2A" />
+        <StatCard icon={Wallet} label="Coût des règlements" value={fcfa(complaints.reduce((a, c) => a + (Number(c.cost) || 0), 0))} tint="var(--brass)" />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="relative flex-1 min-w-[150px]">
+          <Search size={15} className="absolute left-2.5 top-2.5 text-slate-400" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Locataire, description, référence…" className="w-full pl-8 pr-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle} />
+        </div>
+        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+          <option value="ouvertes">Plaintes ouvertes</option>
+          <option value="all">Toutes</option>
+          {COMPLAINT_STATUS_ORDER.map((k) => <option key={k} value={k}>{COMPLAINT_STATUS[k].label}</option>)}
+        </select>
+        <select value={filterProp} onChange={(e) => setFilterProp(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+          <option value="all">Tous les bâtiments</option>
+          {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </div>
+
+      {byCategory.length > 0 && (
+        <SectionCard title="Motifs les plus fréquents" icon={BarChart3}>
+          <ResponsiveContainer width="100%" height={Math.max(150, byCategory.length * 28)}>
+            <BarChart data={byCategory} layout="vertical" margin={{ top: 0, right: 16, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#EEF1F5" />
+              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: "#64748B" }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="name" width={140} tick={{ fontSize: 11, fill: "#64748B" }} axisLine={false} tickLine={false} />
+              <Tooltip formatter={(v) => [`${v} plainte(s)`, "Total"]} />
+              <Bar dataKey="value" radius={[0, 5, 5, 0]}>{byCategory.map((d, i) => <Cell key={i} fill={d.color} />)}</Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </SectionCard>
+      )}
+
+      {list.length ? <div className="space-y-2">
+        {list.map((c) => {
+          const cfg = COMPLAINT_CATEGORY[c.category] || COMPLAINT_CATEGORY.autre;
+          const st = COMPLAINT_STATUS[c.status];
+          const ur = URGENCY[c.priority];
+          const u = unitById[c.unitId];
+          const openDays = delay(c);
+          return (
+            <div key={c.id} className="bg-white rounded-xl border p-3" style={{ borderColor: st.color + "33" }}>
+              <div className="flex items-start justify-between gap-2 flex-wrap">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ background: "#F1F3F5", color: "var(--muted)" }}>{c.ref}</span>
+                    <Chip color={cfg.color} dot>{cfg.label}</Chip>
+                    <Chip color={ur.color} bg={ur.bg}>{ur.label}</Chip>
+                    <Chip color={st.color}>{st.label}</Chip>
+                  </div>
+                  <p className="text-sm mt-1.5">{c.description}</p>
+                  <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>
+                    {c.tenantName || "Locataire non précisé"}{c.tenantPhone ? ` · ${c.tenantPhone}` : ""}
+                    {propById[c.propertyId] ? ` · ${propById[c.propertyId].name}` : ""}{u ? ` — ${u.label}` : ""}
+                    {" · "}signalée le {fr(c.reportedAt + "T00:00:00", { day: "numeric", month: "short", year: "numeric" })} ({COMPLAINT_CHANNEL[c.channel]})
+                  </p>
+                  <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>
+                    Cause : <strong style={{ color: "var(--ink)" }}>{COMPLAINT_CAUSE[c.cause]}</strong>
+                    {c.assignedTo ? ` · traitée par ${memberById[c.assignedTo]?.name || "—"}` : " · non attribuée"}
+                    {" · "}
+                    <span style={{ color: ["resolu", "clos"].includes(c.status) ? "#4F9E2A" : openDays > 7 ? "#D81F26" : "var(--muted)" }}>
+                      {["resolu", "clos"].includes(c.status) ? `réglée en ${openDays} jour(s)` : `ouverte depuis ${openDays} jour(s)`}
+                    </span>
+                  </p>
+                  {c.resolution && <p className="text-[11px] mt-1.5 italic p-2 rounded" style={{ background: "#F6FBF3", color: "#3d7d20" }}>{c.resolution}</p>}
+                </div>
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  {Number(c.cost) > 0 && <span className="text-sm font-bold tabular-nums" style={{ color: "var(--brass)" }}>{fcfa(c.cost)}</span>}
+                  <select value={c.status} onChange={(e) => actions.saveComplaint({ ...c, status: e.target.value, resolvedAt: ["resolu", "clos"].includes(e.target.value) ? (c.resolvedAt || isoDate(new Date())) : null })}
+                    className="text-xs px-2 py-1 rounded-lg border bg-white" style={{ borderColor: st.color + "55", color: st.color }}>
+                    {COMPLAINT_STATUS_ORDER.map((k) => <option key={k} value={k}>{COMPLAINT_STATUS[k].label}</option>)}
+                  </select>
+                  <div className="flex gap-1">
+                    <button onClick={() => setModal(c)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><Pencil size={14} /></button>
+                    {canSupervise(me.role) && <button onClick={async () => { if (confirm(`Supprimer la plainte ${c.ref} ?`)) await actions.deleteComplaint(c.id); }} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div> : <EmptyState icon={AlertTriangle} title="Aucune plainte" sub="Enregistrez les signalements des locataires pour en assurer le suivi."
+        action={<button onClick={() => setModal({})} className="kb-btn kb-btn-primary"><Plus size={15} /> Enregistrer une plainte</button>} />}
+
+      {modal && <ComplaintModal initial={modal} properties={properties} units={units} members={members} quotes={quotes}
+        onSave={actions.saveComplaint} onClose={() => setModal(null)} />}
+    </div>
+  );
+}
+
+/* ---------------- Module MON PORTEFEUILLE (agent commercial) ---------------- */
+function Portefeuille({ store, me, userId }) {
+  const { properties, units, owners, members, rentPeriods, rentLines, complaints, tasks, quotes } = store;
+  const [agentId, setAgentId] = useState(userId);
+  const sup = canSupervise(me.role);
+  const who = sup ? agentId : userId;
+
+  const ownerById = useMemo(() => Object.fromEntries(owners.map((o) => [o.id, o])), [owners]);
+  const mine = properties.filter((p) => p.agentId === who);
+  const mineIds = new Set(mine.map((p) => p.id));
+  const myUnits = units.filter((u) => mineIds.has(u.propertyId));
+  const myTenants = myUnits.filter((u) => (u.tenantName || "").trim());
+  const myComplaints = complaints.filter((c) => mineIds.has(c.propertyId) && ["signale", "en_cours", "en_attente"].includes(c.status));
+
+  const lastPayment = (u) => {
+    const periods = rentPeriods.filter((p) => p.propertyId === u.propertyId).sort((a, b) => b.period.localeCompare(a.period));
+    for (const p of periods) {
+      const line = rentLines.find((l) => l.periodId === p.id && (l.unitId === u.id || (l.unitLabel || "").toLowerCase() === (u.label || "").toLowerCase()));
+      if (line) return { period: p.period, status: payStatusOf(line.expected, line.collected), collected: line.collected, expected: line.expected };
+    }
+    return null;
+  };
+
+  const payments = myTenants.map((u) => ({ u, pay: lastPayment(u) }));
+  const unpaid = payments.filter((x) => x.pay && x.pay.status !== "paye");
+  const expectedTotal = myUnits.reduce((a, u) => a + (u.rent || 0), 0);
+  const vacants = myUnits.filter((u) => u.status === "vacant");
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
+        <h1 className="text-xl font-bold">Mon portefeuille</h1>
+        {sup && (
+          <select value={agentId} onChange={(e) => setAgentId(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+            {members.filter((m) => m.active).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+        )}
+      </div>
+      <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>Les biens qui vous sont attribués, leurs locataires et leur état de paiement.</p>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <StatCard icon={Building2} label="Biens attribués" value={mine.length} sub={`${myUnits.length} lot(s)`} tint="#2E78A8" />
+        <StatCard icon={Users} label="Locataires suivis" value={myTenants.length} tint="#4F9E2A" />
+        <StatCard icon={Wallet} label="Loyer mensuel attendu" value={fcfa(expectedTotal)} tint="var(--brass)" />
+        <StatCard icon={AlertTriangle} label="Points d'attention" value={unpaid.length + vacants.length + myComplaints.length}
+          sub={`${unpaid.length} impayé(s) · ${vacants.length} vacant(s) · ${myComplaints.length} plainte(s)`} tint="#D81F26" />
+      </div>
+
+      {mine.length === 0 ? (
+        <EmptyState icon={BadgeCheck} title="Aucun bien attribué"
+          sub="L'attribution se fait dans Patrimoine, sur la fiche de chaque bien (champ « Agent en charge »)." />
+      ) : (
+        <>
+          {unpaid.length > 0 && (
+            <SectionCard title={`À relancer (${unpaid.length})`} icon={AlertTriangle} pad={false}>
+              <div className="divide-y" style={{ borderColor: "var(--line)" }}>
+                {unpaid.map(({ u, pay }) => {
+                  const st = PAY_STATUS[pay.status];
+                  return (
+                    <div key={u.id} className="flex items-center justify-between px-4 py-2.5 gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{u.tenantName} · {u.label}</p>
+                        <p className="text-[11px]" style={{ color: "var(--muted)" }}>
+                          {properties.find((p) => p.id === u.propertyId)?.name} · {pay.period}
+                          {u.tenantPhone ? ` · ${u.tenantPhone}` : ""}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs tabular-nums" style={{ color: "var(--muted)" }}>{fcfa(pay.collected)} / {fcfa(pay.expected)}</span>
+                        <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: st.bg, color: st.color }}>{st.label}</span>
+                        {u.tenantPhone && <a href={`tel:${u.tenantPhone}`} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><Phone size={14} /></a>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </SectionCard>
+          )}
+
+          <SectionCard title={`Mes biens (${mine.length})`} icon={Building2} pad={false}>
+            <div className="overflow-x-auto"><table className="w-full text-sm">
+              <thead><tr className="text-left" style={{ color: "var(--muted)" }}>
+                <th className="px-4 py-2.5 font-medium">Bien</th>
+                <th className="px-3 py-2.5 font-medium">Propriétaire</th>
+                <th className="px-3 py-2.5 font-medium">Lots</th>
+                <th className="px-3 py-2.5 font-medium">Occupation</th>
+                <th className="px-3 py-2.5 font-medium">Loyer attendu</th>
+              </tr></thead>
+              <tbody>{mine.map((p) => {
+                const pu = units.filter((u) => u.propertyId === p.id);
+                const occ = pu.filter((u) => u.status === "occupe").length;
+                return (
+                  <tr key={p.id} className="border-t" style={{ borderColor: "var(--line)" }}>
+                    <td className="px-4 py-2.5"><p className="font-medium">{p.name}</p><p className="text-[11px]" style={{ color: "var(--muted)" }}>{[p.quartier, p.commune].filter(Boolean).join(", ")}</p></td>
+                    <td className="px-3 py-2.5">{ownerById[p.ownerId]?.name || "—"}</td>
+                    <td className="px-3 py-2.5">{pu.length || "—"}</td>
+                    <td className="px-3 py-2.5">{pu.length ? `${occ}/${pu.length}` : "—"}</td>
+                    <td className="px-3 py-2.5 tabular-nums">{fcfa(pu.reduce((a, u) => a + (u.rent || 0), 0) || p.rent || 0)}</td>
+                  </tr>
+                );
+              })}</tbody>
+            </table></div>
+          </SectionCard>
+
+          <SectionCard title={`Mes locataires (${myTenants.length})`} icon={Users} pad={false}>
+            <div className="overflow-x-auto"><table className="w-full text-sm">
+              <thead><tr className="text-left" style={{ color: "var(--muted)" }}>
+                <th className="px-4 py-2.5 font-medium">Locataire</th>
+                <th className="px-3 py-2.5 font-medium">Téléphone</th>
+                <th className="px-3 py-2.5 font-medium">Lot</th>
+                <th className="px-3 py-2.5 font-medium">Loyer</th>
+                <th className="px-3 py-2.5 font-medium">Dernier paiement</th>
+              </tr></thead>
+              <tbody>{payments.map(({ u, pay }) => {
+                const st = pay ? PAY_STATUS[pay.status] : null;
+                return (
+                  <tr key={u.id} className="border-t" style={{ borderColor: "var(--line)" }}>
+                    <td className="px-4 py-2.5 font-medium">{u.tenantName}</td>
+                    <td className="px-3 py-2.5">{u.tenantPhone || <span style={{ color: "#D81F26" }}>à compléter</span>}</td>
+                    <td className="px-3 py-2.5">{properties.find((p) => p.id === u.propertyId)?.name} — {u.label}</td>
+                    <td className="px-3 py-2.5 tabular-nums">{fcfa(u.rent)}</td>
+                    <td className="px-3 py-2.5">{pay
+                      ? <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: st.bg, color: st.color }}>{st.label} · {pay.period}</span>
+                      : <span className="text-xs" style={{ color: "var(--muted)" }}>aucun relevé</span>}</td>
+                  </tr>
+                );
+              })}</tbody>
+            </table></div>
+          </SectionCard>
+
+          {myComplaints.length > 0 && (
+            <SectionCard title={`Plaintes en cours (${myComplaints.length})`} icon={AlertTriangle} pad={false}>
+              <div className="divide-y" style={{ borderColor: "var(--line)" }}>
+                {myComplaints.map((c) => (
+                  <div key={c.id} className="flex items-center justify-between px-4 py-2.5 gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm truncate">{c.description}</p>
+                      <p className="text-[11px]" style={{ color: "var(--muted)" }}>{c.ref} · {c.tenantName} · {properties.find((p) => p.id === c.propertyId)?.name}</p>
+                    </div>
+                    <Chip color={COMPLAINT_STATUS[c.status].color} dot>{COMPLAINT_STATUS[c.status].label}</Chip>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
    APPLICATION (Root + Workspace)
    ══════════════════════════════════════════════════════════════════════ */
 /* ====================== Modales ====================== */
@@ -4697,7 +5658,7 @@ export default function Root() {
 function Workspace({ userId }) {
   const store = useStore(userId);
   const { loading, departments, members, tasks, timeEntries, activeTimers, channels, channelMembers, messages,
-    owners, properties, products, releases, releaseLines, quotes, units, requests, actions } = store;
+    owners, properties, products, releases, releaseLines, quotes, units, requests, complaints, documents, actions } = store;
 
   const [view, setView] = useState("dashboard");
   const [viewWeek, setViewWeek] = useState(mondayIso(new Date()));
@@ -4712,6 +5673,10 @@ function Workspace({ userId }) {
   const [activeChannel, setActiveChannel] = useState(null);
   const [msgDraft, setMsgDraft] = useState("");
   const [attachTaskId, setAttachTaskId] = useState("");
+  const [pendingFile, setPendingFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [notifPerm, setNotifPerm] = useState(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
+  const fileRef = useRef(null);
   const threadRef = useRef(null);
 
   useEffect(() => { if (activeTimers.length === 0) return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, [activeTimers.length]);
@@ -4751,13 +5716,30 @@ function Workspace({ userId }) {
   const hasUnread = (chId) => { const lr = lastRead(chId); return messages.some((m) => m.channelId === chId && m.fromId !== userId && m.createdAt > lr); };
   const openGeneral = () => { setActiveChannel(GENERAL_CHANNEL_ID); actions.markRead(GENERAL_CHANNEL_ID); };
   const openDm = async (otherId) => { const cid = await actions.ensureDm(otherId); if (cid) { setActiveChannel(cid); actions.markRead(cid); } };
-  const sendDraft = () => { if (!activeChannel) return; actions.sendMessage(activeChannel, msgDraft, attachTaskId || null); setMsgDraft(""); setAttachTaskId(""); };
+  const sendDraft = async () => {
+    if (!activeChannel) return;
+    let file = null;
+    if (pendingFile) {
+      setUploading(true);
+      const r = await actions.uploadAttachment(pendingFile);
+      setUploading(false);
+      if (r.error) { alert(r.error); return; }
+      file = r;
+    }
+    await actions.sendMessage(activeChannel, msgDraft, attachTaskId || null, file);
+    setMsgDraft(""); setAttachTaskId(""); setPendingFile(null);
+    if (fileRef.current) fileRef.current.value = "";
+  };
   const doShare = async ({ dest, note, reassign }) => {
     const text = note || "Je vous partage cette tâche.";
     if (dest === "group") await actions.sendMessage(GENERAL_CHANNEL_ID, text, shareTask.id);
     else { const cid = await actions.ensureDm(dest); if (cid) await actions.sendMessage(cid, text, shareTask.id); if (reassign) await actions.updateTask(shareTask.id, { assigneeId: dest }); }
     setShareTask(null);
   };
+  const openComplaints = useMemo(
+    () => complaints.filter((c) => ["signale", "en_cours", "en_attente"].includes(c.status)).length,
+    [complaints]);
+
   const pendingReq = useMemo(
     () => (canValidate(me?.role) ? requests.filter((r) => r.status === "en_attente").length : 0),
     [requests, me]);
@@ -4767,6 +5749,8 @@ function Workspace({ userId }) {
     return [GENERAL_CHANNEL_ID, ...dmIds].filter((ch) => hasUnread(ch)).length;
   }, [channels, channelMembers, messages, userId]);
 
+  useTitleBadge(unreadTotal);   // pastille de non-lus dans le titre de l'onglet
+
   if (loading || !me) return <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg)" }}><p style={{ color: "var(--muted)" }}>Chargement de votre espace…</p></div>;
 
   const NAV = [
@@ -4774,6 +5758,9 @@ function Workspace({ userId }) {
     { id: "board", label: "Tâches", icon: ListChecks },
     { id: "planner", label: "Planning", icon: CalendarDays },
     { id: "patrimoine", label: "Patrimoine", icon: Building2 },
+    { id: "locataires", label: "Locataires", icon: Users },
+    { id: "portefeuille", label: "Mon portefeuille", icon: BadgeCheck },
+    { id: "plaintes", label: "Plaintes", icon: MessageCircleWarning, badge: openComplaints },
     { id: "devis", label: "Devis artisans", icon: FileText },
     { id: "documents", label: "Documents", icon: FileSignature },
     { id: "recouvrement", label: "Recouvrement", icon: Wallet },
@@ -4842,6 +5829,9 @@ function Workspace({ userId }) {
             onNew={() => setTaskModal({ prefill: { assigneeId: userId, weekStart: viewWeek } })} />
         )}
         {view === "patrimoine" && <Patrimoine store={store} me={me} />}
+        {view === "locataires" && <Locataires store={store} me={me} userId={userId} />}
+        {view === "portefeuille" && <Portefeuille store={store} me={me} userId={userId} />}
+        {view === "plaintes" && <Plaintes store={store} me={me} userId={userId} />}
         {view === "devis" && <Devis store={store} me={me} />}
         {view === "documents" && <Documents store={store} me={me} />}
         {view === "recouvrement" && <Recouvrement store={store} me={me} userId={userId} />}
@@ -4980,6 +5970,22 @@ function Workspace({ userId }) {
                 <div className="px-3 py-2 rounded-2xl text-sm" style={{ background: mine ? "var(--brass)" : "#F1F3F5", color: mine ? "#fff" : "var(--ink)", borderTopRightRadius: mine ? 4 : 16, borderTopLeftRadius: mine ? 16 : 4 }}>
                   {!mine && current.group && <p className="text-[11px] font-semibold mb-0.5" style={{ color: from?.color }}>{from?.name}</p>}
                   {m.text && <p className="whitespace-pre-wrap">{m.text}</p>}
+                  {m.fileUrl && (
+                    /^image\//.test(m.fileType)
+                      ? <a href={m.fileUrl} target="_blank" rel="noreferrer" className="block mt-1.5">
+                          <img src={m.fileUrl} alt={m.fileName} className="rounded-lg max-h-52 w-auto" />
+                        </a>
+                      : <a href={m.fileUrl} target="_blank" rel="noreferrer"
+                          className="flex items-center gap-2 mt-1.5 px-2.5 py-2 rounded-lg"
+                          style={{ background: mine ? "rgba(255,255,255,.18)" : "#fff", border: mine ? "none" : "1px solid var(--line)", color: mine ? "#fff" : "var(--ink)" }}>
+                          <Paperclip size={14} />
+                          <span className="text-xs truncate max-w-[180px]">{m.fileName}</span>
+                          <Download size={13} className="ml-auto shrink-0" />
+                        </a>
+                  )}
+                  {String(m.id).startsWith("tmp-") && m.fileName && !m.fileUrl && (
+                    <p className="text-[11px] mt-1 opacity-80">📎 {m.fileName} — envoi…</p>
+                  )}
                   {refTask && <div className="mt-2 rounded-lg p-2 text-left" style={{ background: mine ? "rgba(255,255,255,.15)" : "#fff", border: mine ? "none" : "1px solid var(--line)" }}><p className="text-[11px] flex items-center gap-1 mb-0.5" style={{ color: mine ? "rgba(255,255,255,.85)" : "var(--muted)" }}><ListChecks size={11} /> Tâche partagée</p><p className="text-sm font-medium" style={{ color: mine ? "#fff" : "var(--ink)" }}>{refTask.title}</p><p className="text-[11px] mt-0.5" style={{ color: mine ? "rgba(255,255,255,.85)" : "var(--muted)" }}>{URGENCY[refTask.urgency].label} · {STATUS[refTask.status].label}</p></div>}
                 </div>
                 <span className="text-[10px] mt-0.5 px-1" style={{ color: "var(--muted)" }}>{fmtTime(m.createdAt)}</span>
@@ -4989,10 +5995,18 @@ function Workspace({ userId }) {
           {channelMessages(current.chId).length === 0 && <p className="text-sm text-center py-10" style={{ color: "var(--muted)" }}>Aucun message. Écrivez le premier.</p>}
         </div>
         {attachTaskId && <div className="px-3 pt-2 flex items-center gap-2"><Chip color="var(--brass)" bg="#FDEAEA"><ListChecks size={11} /> {tasks.find((t) => t.id === attachTaskId)?.title?.slice(0, 40)}</Chip><button onClick={() => setAttachTaskId("")} className="text-slate-400"><X size={14} /></button></div>}
+        {pendingFile && <div className="px-3 pt-2 flex items-center gap-2">
+          <Chip color="#2E78A8" bg="#E8F2F8"><Paperclip size={11} /> {pendingFile.name} ({Math.round(pendingFile.size / 1024)} Ko)</Chip>
+          <button onClick={() => { setPendingFile(null); if (fileRef.current) fileRef.current.value = ""; }} className="text-slate-400"><X size={14} /></button>
+        </div>}
         <div className="p-2.5 border-t flex items-center gap-2" style={{ borderColor: "var(--line)" }}>
-          <select value={attachTaskId} onChange={(e) => setAttachTaskId(e.target.value)} className="text-xs px-2 py-2 rounded-lg border bg-white shrink-0" style={{ ...inputStyle, width: 46 }} title="Joindre une tâche"><option value="">📎</option>{myTasks.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}</select>
+          <input ref={fileRef} type="file" className="hidden" onChange={(e) => setPendingFile(e.target.files?.[0] || null)} />
+          <button onClick={() => fileRef.current?.click()} className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 shrink-0" title="Joindre un fichier"><Paperclip size={17} /></button>
+          <select value={attachTaskId} onChange={(e) => setAttachTaskId(e.target.value)} className="text-xs px-2 py-2 rounded-lg border bg-white shrink-0" style={{ ...inputStyle, width: 46 }} title="Joindre une tâche"><option value="">📋</option>{myTasks.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}</select>
           <input value={msgDraft} onChange={(e) => setMsgDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendDraft(); } }} placeholder="Écrire un message…" className="flex-1 px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle} />
-          <button onClick={sendDraft} disabled={!msgDraft.trim() && !attachTaskId} className="kb-btn kb-btn-primary disabled:opacity-40 px-3"><Send size={16} /></button>
+          <button onClick={sendDraft} disabled={(!msgDraft.trim() && !attachTaskId && !pendingFile) || uploading} className="kb-btn kb-btn-primary disabled:opacity-40 px-3">
+            {uploading ? <span className="text-xs">…</span> : <Send size={16} />}
+          </button>
         </div>
       </div>
     );
@@ -5000,7 +6014,20 @@ function Workspace({ userId }) {
     return (
       <div>
         <h1 className="text-xl font-bold mb-1">Messagerie d'équipe</h1>
-        <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>Échangez en privé, en groupe, et partagez des tâches en un geste.</p>
+        <p className="text-sm mb-3" style={{ color: "var(--muted)" }}>Échangez en privé, en groupe, partagez des fichiers et des tâches.</p>
+        {notifPerm === "default" && (
+          <div className="rounded-xl border p-3 mb-3 flex items-center justify-between gap-3 flex-wrap" style={{ borderColor: "#BFDBFE", background: "#EFF6FF" }}>
+            <p className="text-xs" style={{ color: "#1F5C82" }}>
+              <Bell size={13} className="inline mb-0.5" /> Recevez une alerte sur cet appareil dès qu'un message arrive, même dans un autre onglet.
+            </p>
+            <button onClick={async () => setNotifPerm(await askNotifications())} className="kb-btn kb-btn-primary text-sm"><Bell size={14} /> Activer les notifications</button>
+          </div>
+        )}
+        {notifPerm === "denied" && (
+          <p className="text-[11px] mb-3" style={{ color: "var(--muted)" }}>
+            <BellOff size={12} className="inline mb-0.5" /> Notifications bloquées pour ce site — réactivez-les dans les réglages du navigateur (icône à gauche de l'adresse).
+          </p>
+        )}
         <div className="flex gap-4">{ConvoList}{activeChannel ? Thread : <div className="hidden md:flex flex-1 bg-white rounded-xl border items-center justify-center text-sm min-h-[60vh]" style={{ borderColor: "var(--line)", color: "var(--muted)" }}>Sélectionnez une conversation</div>}</div>
       </div>
     );
