@@ -1113,7 +1113,8 @@ function useStore(userId) {
       tenant_name: f.tenantName || "", tenant_phone: f.tenantPhone || "",
       lease_start: f.leaseStart || null, notes: f.notes || "",
       tenant_email: f.tenantEmail || "", lease_end: f.leaseEnd || null,
-      due_day: Number(f.dueDay) || 5, deposit: Number(f.deposit) || 0 };
+      due_day: Number(f.dueDay) || 5, deposit: Number(f.deposit) || 0,
+      advance_months: Number(f.advanceMonths) || 0, advance_start: f.advanceStart || null };
     if (f.id) {
       setUnits((p) => p.map((u) => (u.id === f.id ? { ...u, ...f } : u)));
       const { error } = await supabase.from("units").update(row).eq("id", f.id);
@@ -2396,6 +2397,7 @@ function PropertyDetail({ property, owner, agent, units, tasks, quotes, releases
             <thead><tr className="text-left" style={{ color: "var(--muted)" }}>
               <th className="px-4 py-2.5 font-medium">Lot</th><th className="px-3 py-2.5 font-medium">Type</th>
               <th className="px-3 py-2.5 font-medium">Locataire</th><th className="px-3 py-2.5 font-medium">Loyer</th>
+              <th className="px-3 py-2.5 font-medium">Avance</th>
               <th className="px-3 py-2.5 font-medium">Statut</th></tr></thead>
             <tbody>{pUnits.map((u) => {
               const us = UNIT_STATUS[u.status];
@@ -2404,6 +2406,9 @@ function PropertyDetail({ property, owner, agent, units, tasks, quotes, releases
                 <td className="px-3 py-2.5">{UNIT_KIND[u.kind]}</td>
                 <td className="px-3 py-2.5" style={{ color: u.tenantName ? "var(--ink)" : "var(--muted)" }}>{u.tenantName || "—"}</td>
                 <td className="px-3 py-2.5 tabular-nums">{fcfa(u.rent)}</td>
+                <td className="px-3 py-2.5">{Number(u.advanceMonths) > 0
+                  ? <Chip color="#2E78A8">{u.advanceMonths} mois</Chip>
+                  : <span className="text-xs" style={{ color: "var(--muted)" }}>—</span>}</td>
                 <td className="px-3 py-2.5"><Chip color={us.color} dot>{us.label}</Chip></td>
               </tr>;
             })}</tbody>
@@ -3086,13 +3091,78 @@ function periodTotals(lines, charges, rate) {
   return { expected, collected, arrears, deducted, netAfter, chargesTotal, supplementsTotal, chargeRows, supplementRows, fee, netOwner, nPaid, nPartial, nUnpaid, rateCollected };
 }
 
+
+/* ---- Avance versée à l'entrée du locataire ----
+   Renvoie le rang du mois dans l'avance (1..n) si la période est couverte, sinon 0. */
+function advanceRank(unit, period) {
+  const n = Number(unit?.advanceMonths) || 0;
+  const start = unit?.advanceStart || unit?.leaseStart;
+  if (!n || !start || !period) return 0;
+  const [sy, sm] = start.slice(0, 7).split("-").map(Number);
+  const [py, pm] = period.split("-").map(Number);
+  const diff = (py - sy) * 12 + (pm - sm);
+  return diff >= 0 && diff < n ? diff + 1 : 0;
+}
+
+/* ---- Amorçage d'un tableau mensuel ----
+   On repart du mois précédent du même bâtiment (locataires, loyers, charges),
+   à défaut des lots du patrimoine. Les encaissements repartent à zéro,
+   les arriérés sont rappelés en commentaire, et les mois couverts par
+   l'avance d'entrée sont marqués comme déjà réglés. */
+function seedPeriod({ period, rentPeriods, rentLines, rentCharges, units }) {
+  const unitById = Object.fromEntries(units.map((u) => [u.id, u]));
+  const findUnit = (l) => unitById[l.unitId]
+    || units.find((u) => u.propertyId === period.propertyId
+        && (u.label || "").toLowerCase() === (l.unitLabel || "").toLowerCase());
+
+  const applyAdvance = (line, unit) => {
+    const rank = advanceRank(unit, period.period);
+    if (!rank) return line;
+    const n = Number(unit.advanceMonths) || 0;
+    return { ...line, collected: line.expected,
+      paidAt: (unit.advanceStart || unit.leaseStart || "").slice(0, 10),
+      comment: `Avance versée à l'entrée (mois ${rank}/${n})` };
+  };
+
+  const prev = rentPeriods
+    .filter((p) => p.propertyId === period.propertyId && p.scope === period.scope && p.period < period.period)
+    .sort((a, b) => b.period.localeCompare(a.period))[0];
+
+  if (prev) {
+    const lines = rentLines.filter((l) => l.periodId === prev.id)
+      .sort((a, b) => a.position - b.position)
+      .map((l) => {
+        const u = findUnit(l);
+        const arrear = Math.max(0, (Number(l.expected) || 0) - (Number(l.collected) || 0));
+        const base = { unitId: l.unitId || u?.id || null, unitLabel: l.unitLabel, tenantName: l.tenantName,
+          tenantPhone: l.tenantPhone, expected: l.expected, collected: 0, paidAt: "",
+          charges: l.charges, comment: arrear > 0 ? `Arriéré ${prev.period} : ${fcfa(arrear)}` : "" };
+        return u ? applyAdvance(base, u) : base;
+      });
+    const charges = rentCharges.filter((c) => c.periodId === prev.id && (c.kind || "charge") === "charge")
+      .sort((a, b) => a.position - b.position)
+      .map((c) => ({ label: c.label, amount: c.amount, observation: c.observation || "", kind: "charge" }));
+    return { lines, charges, source: `report de ${prev.period}` };
+  }
+
+  const us = units.filter((u) => u.propertyId === period.propertyId);
+  const lines = us.map((u) => applyAdvance({
+    unitId: u.id, unitLabel: u.label, tenantName: u.tenantName || "", tenantPhone: u.tenantPhone || "",
+    expected: u.rent || 0, collected: 0, paidAt: "", charges: 0, comment: "",
+  }, u));
+  return { lines, charges: DEFAULT_CHARGES.map((label) => ({ label, amount: 0, observation: "", kind: "charge" })),
+    source: us.length ? "lots du bâtiment" : "" };
+}
+
 /* ================= Éditeur d'une période ================= */
-function PeriodEditor({ period, property, owner, units, lines0, charges0, readOnly, onSave, onClose }) {
-  const [lines, setLines] = useState(() => lines0.length ? lines0.map((l) => ({ ...l })) : []);
+function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, readOnly, onSave, onClose }) {
+  /* Tableau vierge : on l'amorce depuis le mois précédent, sinon depuis les lots */
+  const isNew = lines0.length === 0 && charges0.length === 0;
+  const [lines, setLines] = useState(() => lines0.length ? lines0.map((l) => ({ ...l })) : (isNew ? seed.lines : []));
   const [charges, setCharges] = useState(() => {
-    const rows = charges0.length ? charges0.map((c) => ({ ...c, kind: c.kind || "charge" }))
-      : DEFAULT_CHARGES.map((label) => ({ label, amount: 0, observation: "", kind: "charge" }));
-    return rows;
+    if (charges0.length) return charges0.map((c) => ({ ...c, kind: c.kind || "charge" }));
+    if (isNew) return seed.charges;
+    return DEFAULT_CHARGES.map((label) => ({ label, amount: 0, observation: "", kind: "charge" }));
   });
   /* Index réels dans le tableau `charges`, pour éditer chaque bloc séparément */
   const chargeIdx = charges.map((c, i) => [c, i]).filter(([c]) => (c.kind || "charge") === "charge");
@@ -3104,10 +3174,14 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, readOn
   const loadFromUnits = () => {
     const us = units.filter((u) => u.propertyId === period.propertyId);
     if (!us.length) { setErr("Aucun lot enregistré pour ce bâtiment. Ajoutez-les dans Patrimoine."); return; }
-    setLines(us.map((u) => ({
-      unitId: u.id, unitLabel: u.label, tenantName: u.tenantName || "", tenantPhone: u.tenantPhone || "",
-      expected: u.rent || 0, collected: 0, paidAt: "", charges: 0, comment: "",
-    })));
+    setLines(us.map((u) => {
+      const base = { unitId: u.id, unitLabel: u.label, tenantName: u.tenantName || "", tenantPhone: u.tenantPhone || "",
+        expected: u.rent || 0, collected: 0, paidAt: "", charges: 0, comment: "" };
+      const rank = advanceRank(u, period.period);
+      if (!rank) return base;
+      return { ...base, collected: base.expected, paidAt: (u.advanceStart || u.leaseStart || "").slice(0, 10),
+        comment: `Avance versée à l'entrée (mois ${rank}/${u.advanceMonths})` };
+    }));
     setErr("");
   };
 
@@ -3129,6 +3203,17 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, readOn
           <Eye size={14} /> {period.scope === "comptable"
             ? "Lecture seule — l'état comptable est consultable par toute l'équipe, mais seul l'administrateur peut le modifier."
             : "Lecture seule — ce tableau appartient à son auteur. Seuls celui-ci et l'administrateur peuvent le modifier."}
+        </div>
+      )}
+
+      {isNew && seed.source && !readOnly && (
+        <div className="rounded-lg p-3 mb-3 text-xs flex items-start gap-2" style={{ background: "#EFF6FF", color: "#1F5C82" }}>
+          <RotateCcw size={14} className="mt-0.5 shrink-0" />
+          <span>
+            Tableau pré-rempli par <strong>{seed.source}</strong> : locataires, loyers et charges repris tels quels,
+            encaissements remis à zéro. Les arriérés du mois précédent sont rappelés en commentaire et les mois couverts
+            par l'avance d'entrée sont déjà marqués comme réglés. Adaptez librement avant d'enregistrer.
+          </span>
         </div>
       )}
 
@@ -3537,6 +3622,7 @@ function Recouvrement({ store, me, userId }) {
         owner={ownerById[propById[editor.period.propertyId]?.ownerId]} units={units}
         lines0={rentLines.filter((l) => l.periodId === editor.period.id)}
         charges0={rentCharges.filter((c) => c.periodId === editor.period.id)}
+        seed={seedPeriod({ period: editor.period, rentPeriods, rentLines, rentCharges, units })}
         readOnly={editor.readOnly}
         onSave={async (p, lines, charges) => {
           const r1 = await actions.savePeriod(p);
@@ -4785,7 +4871,30 @@ function TenantModal({ unit, property, onSave, onClose }) {
         <Field label="Charges"><input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.charges || 0} onChange={(e) => set("charges", e.target.value)} /></Field>
         <Field label="Loyer dû le" hint="Jour du mois"><input type="number" min={1} max={31} className={inputCls} style={inputStyle} value={f.dueDay || 5} onChange={(e) => set("dueDay", e.target.value)} /></Field>
       </div>
-      <Field label="Caution versée"><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.deposit || 0} onChange={(e) => set("deposit", e.target.value)} /></Field>
+      <div className="rounded-xl border p-3 mb-3" style={{ borderColor: "#BFDBFE", background: "#EFF6FF" }}>
+        <p className="text-xs font-semibold mb-1" style={{ color: "#1F5C82" }}>Versements d'entrée</p>
+        <p className="text-[11px] mb-2" style={{ color: "var(--muted)" }}>
+          Se saisit une seule fois, à l'entrée du locataire. Les mois d'avance seront automatiquement
+          marqués comme réglés dans les tableaux de recouvrement concernés.
+        </p>
+        <div className="grid sm:grid-cols-3 gap-3">
+          <Field label="Caution versée"><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.deposit || 0} onChange={(e) => set("deposit", e.target.value)} /></Field>
+          <Field label="Mois d'avance payés" hint="2 en général, parfois 1">
+            <select className={inputCls} style={inputStyle} value={f.advanceMonths || 0} onChange={(e) => set("advanceMonths", Number(e.target.value))}>
+              {[0, 1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n === 0 ? "Aucune avance" : `${n} mois`}</option>)}
+            </select>
+          </Field>
+          <Field label="Premier mois couvert" hint="Début du bail par défaut">
+            <input type="date" className={inputCls} style={inputStyle} value={f.advanceStart || f.leaseStart || ""} onChange={(e) => set("advanceStart", e.target.value)} />
+          </Field>
+        </div>
+        {Number(f.advanceMonths) > 0 && (
+          <p className="text-[11px]" style={{ color: "#1F5C82" }}>
+            Soit <strong>{fcfa((Number(f.rent) || 0) * Number(f.advanceMonths))}</strong> d'avance couvrant {Number(f.advanceMonths)} mois
+            à partir de {(f.advanceStart || f.leaseStart) ? fr((f.advanceStart || f.leaseStart) + "T00:00:00", { month: "long", year: "numeric" }) : "…"}.
+          </p>
+        )}
+      </div>
       {err && <p className="text-xs text-red-600 mb-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
       <div className="flex justify-end gap-2">
         <button onClick={onClose} className="kb-btn kb-btn-ghost">Annuler</button>
@@ -5060,6 +5169,7 @@ function Locataires({ store, me, userId }) {
               <th className="px-3 py-2.5 font-medium">Téléphone</th>
               <th className="px-3 py-2.5 font-medium">Bâtiment / lot</th>
               <th className="px-3 py-2.5 font-medium">Loyer</th>
+              <th className="px-3 py-2.5 font-medium">Avance d'entrée</th>
               <th className="px-3 py-2.5 font-medium">Dernier paiement</th>
               <th className="px-3 py-2.5 font-medium">Agent</th>
               <th />
@@ -5081,6 +5191,11 @@ function Locataires({ store, me, userId }) {
                   </td>
                   <td className="px-3 py-2.5"><span style={{ color: "var(--muted)" }}>{p?.name || "—"}</span> · <strong>{u.label}</strong></td>
                   <td className="px-3 py-2.5 tabular-nums">{fcfa(u.rent)}</td>
+                  <td className="px-3 py-2.5">
+                    {Number(u.advanceMonths) > 0
+                      ? <Chip color="#2E78A8">{u.advanceMonths} mois{(u.advanceStart || u.leaseStart) ? ` dès ${fr((u.advanceStart || u.leaseStart) + "T00:00:00", { month: "short", year: "2-digit" })}` : ""}</Chip>
+                      : <span className="text-xs" style={{ color: "var(--muted)" }}>—</span>}
+                  </td>
                   <td className="px-3 py-2.5">
                     {pay ? <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: st.bg, color: st.color }}>{st.label} · {pay.period}</span>
                          : <span className="text-xs" style={{ color: "var(--muted)" }}>aucun relevé</span>}
@@ -5397,6 +5512,7 @@ function Plaintes({ store, me, userId }) {
 function Portefeuille({ store, me, userId }) {
   const { properties, units, owners, members, rentPeriods, rentLines, complaints, tasks, quotes } = store;
   const [agentId, setAgentId] = useState(userId);
+  const [search, setSearch] = useState("");
   const sup = canSupervise(me.role);
   const who = sup ? agentId : userId;
 
@@ -5417,6 +5533,17 @@ function Portefeuille({ store, me, userId }) {
   };
 
   const payments = myTenants.map((u) => ({ u, pay: lastPayment(u) }));
+  const q = search.trim().toLowerCase();
+  const filteredPayments = q
+    ? payments.filter(({ u }) => (u.tenantName || "").toLowerCase().includes(q)
+        || (u.tenantPhone || "").includes(q)
+        || (u.label || "").toLowerCase().includes(q)
+        || (properties.find((p) => p.id === u.propertyId)?.name || "").toLowerCase().includes(q))
+    : payments;
+  /* Regroupement par bâtiment, comme dans le patrimoine */
+  const byBuilding = mine
+    .map((p) => ({ property: p, rows: filteredPayments.filter(({ u }) => u.propertyId === p.id) }))
+    .filter((g) => g.rows.length > 0);
   const unpaid = payments.filter((x) => x.pay && x.pay.status !== "paye");
   const expectedTotal = myUnits.reduce((a, u) => a + (u.rent || 0), 0);
   const vacants = myUnits.filter((u) => u.status === "vacant");
@@ -5497,31 +5624,52 @@ function Portefeuille({ store, me, userId }) {
             </table></div>
           </SectionCard>
 
-          <SectionCard title={`Mes locataires (${myTenants.length})`} icon={Users} pad={false}>
-            <div className="overflow-x-auto"><table className="w-full text-sm">
-              <thead><tr className="text-left" style={{ color: "var(--muted)" }}>
-                <th className="px-4 py-2.5 font-medium">Locataire</th>
-                <th className="px-3 py-2.5 font-medium">Téléphone</th>
-                <th className="px-3 py-2.5 font-medium">Lot</th>
-                <th className="px-3 py-2.5 font-medium">Loyer</th>
-                <th className="px-3 py-2.5 font-medium">Dernier paiement</th>
-              </tr></thead>
-              <tbody>{payments.map(({ u, pay }) => {
-                const st = pay ? PAY_STATUS[pay.status] : null;
-                return (
-                  <tr key={u.id} className="border-t" style={{ borderColor: "var(--line)" }}>
-                    <td className="px-4 py-2.5 font-medium">{u.tenantName}</td>
-                    <td className="px-3 py-2.5">{u.tenantPhone || <span style={{ color: "#D81F26" }}>à compléter</span>}</td>
-                    <td className="px-3 py-2.5">{properties.find((p) => p.id === u.propertyId)?.name} — {u.label}</td>
-                    <td className="px-3 py-2.5 tabular-nums">{fcfa(u.rent)}</td>
-                    <td className="px-3 py-2.5">{pay
-                      ? <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: st.bg, color: st.color }}>{st.label} · {pay.period}</span>
-                      : <span className="text-xs" style={{ color: "var(--muted)" }}>aucun relevé</span>}</td>
-                  </tr>
-                );
-              })}</tbody>
-            </table></div>
-          </SectionCard>
+          <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+            <h2 className="font-semibold text-sm flex items-center gap-2"><Users size={16} style={{ color: "var(--brass)" }} /> Mes locataires ({filteredPayments.length}{search ? ` sur ${payments.length}` : ""})</h2>
+            <div className="relative flex-1 min-w-[180px] max-w-sm">
+              <Search size={15} className="absolute left-2.5 top-2.5 text-slate-400" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)}
+                placeholder="Rechercher un locataire, un lot, un téléphone…"
+                className="w-full pl-8 pr-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle} />
+            </div>
+          </div>
+
+          {byBuilding.length === 0 ? (
+            <EmptyState icon={Users} title="Aucun locataire trouvé" sub="Essayez un autre terme de recherche." />
+          ) : byBuilding.map((grp) => (
+            <SectionCard key={grp.property.id} title={`${grp.property.name} — ${grp.rows.length} locataire(s)`} icon={Building2} pad={false}
+              action={<span className="text-xs tabular-nums" style={{ color: "var(--muted)" }}>{fcfa(grp.rows.reduce((a, x) => a + (x.u.rent || 0), 0))}/mois</span>}>
+              <div className="overflow-x-auto"><table className="w-full text-sm">
+                <thead><tr className="text-left" style={{ color: "var(--muted)" }}>
+                  <th className="px-4 py-2.5 font-medium">Lot</th>
+                  <th className="px-3 py-2.5 font-medium">Locataire</th>
+                  <th className="px-3 py-2.5 font-medium">Téléphone</th>
+                  <th className="px-3 py-2.5 font-medium">Loyer</th>
+                  <th className="px-3 py-2.5 font-medium">Avance</th>
+                  <th className="px-3 py-2.5 font-medium">Dernier paiement</th>
+                </tr></thead>
+                <tbody>{grp.rows.map(({ u, pay }) => {
+                  const st = pay ? PAY_STATUS[pay.status] : null;
+                  return (
+                    <tr key={u.id} className="border-t" style={{ borderColor: "var(--line)" }}>
+                      <td className="px-4 py-2.5 font-medium">{u.label}</td>
+                      <td className="px-3 py-2.5">{u.tenantName}</td>
+                      <td className="px-3 py-2.5">{u.tenantPhone
+                        ? <a href={`tel:${u.tenantPhone}`} className="hover:underline" style={{ color: "#2E78A8" }}>{u.tenantPhone}</a>
+                        : <span style={{ color: "#D81F26" }}>à compléter</span>}</td>
+                      <td className="px-3 py-2.5 tabular-nums">{fcfa(u.rent)}</td>
+                      <td className="px-3 py-2.5">{Number(u.advanceMonths) > 0
+                        ? <Chip color="#2E78A8">{u.advanceMonths} mois</Chip>
+                        : <span className="text-xs" style={{ color: "var(--muted)" }}>—</span>}</td>
+                      <td className="px-3 py-2.5">{pay
+                        ? <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: st.bg, color: st.color }}>{st.label} · {pay.period}</span>
+                        : <span className="text-xs" style={{ color: "var(--muted)" }}>aucun relevé</span>}</td>
+                    </tr>
+                  );
+                })}</tbody>
+              </table></div>
+            </SectionCard>
+          ))}
 
           {myComplaints.length > 0 && (
             <SectionCard title={`Plaintes en cours (${myComplaints.length})`} icon={AlertTriangle} pad={false}>
