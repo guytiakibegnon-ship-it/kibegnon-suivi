@@ -515,6 +515,27 @@ function amountInWords(amount) {
 }
 
 
+
+/* Hauteur du vide à insérer avant le pied de page pour qu'il termine
+   exactement au bas de la dernière page. On complète la dernière page
+   entamée ; epsilon évite qu'un arrondi du navigateur ne renvoie le pied
+   sur une page supplémentaire. */
+function printSpacerHeight(contentH, usableH, epsilon = 6) {
+  if (!(contentH > 0) || !(usableH > 0)) return 0;
+  const reste = contentH % usableH;
+  if (reste === 0) return 0;
+  return Math.max(0, usableH - reste - epsilon);
+}
+
+/* Dimensions utiles d'une page A4, en pixels CSS (96 dpi) */
+function pageBox(orientation) {
+  const MM = 96 / 25.4;
+  const marge = orientation === "landscape" ? 8 : 12;      // identique au @page
+  const largeurMm = orientation === "landscape" ? 297 : 210;
+  const hauteurMm = orientation === "landscape" ? 210 : 297;
+  return { w: (largeurMm - 2 * marge) * MM, h: (hauteurMm - 2 * marge) * MM };
+}
+
 /* Impression : force l'orientation de la page (portrait ou paysage).
    @page ne pouvant pas être ciblé par une classe, on injecte la règle juste avant d'imprimer. */
 function printSheet(orientation = "portrait") {
@@ -525,9 +546,40 @@ function printSheet(orientation = "portrait") {
   el.media = "print";
   el.textContent = `@page { size: A4 ${orientation}; margin: ${orientation === "landscape" ? "8mm" : "12mm"}; }`;
   document.head.appendChild(el);
-  const cleanup = () => { document.getElementById(id)?.remove(); window.removeEventListener("afterprint", cleanup); };
+
+  /* On mesure le document à la largeur réelle d'impression, puis on insère
+     un vide juste avant le pied de page pour qu'il tombe au bas de la
+     dernière page — et non au milieu. */
+  const area = document.getElementById("print-area");
+  const box = pageBox(orientation);
+  let spacer = null;
+  if (area) {
+    document.getElementById("kb-spacer")?.remove();
+    const clone = area.cloneNode(true);
+    clone.style.cssText = `position:absolute;left:-10000px;top:0;width:${box.w}px;`
+      + "border:none;padding:0;margin:0;box-shadow:none;";
+    document.body.appendChild(clone);
+    const h = clone.scrollHeight;
+    document.body.removeChild(clone);
+
+    const gap = printSpacerHeight(h, box.h);
+    if (gap > 12) {
+      spacer = document.createElement("div");
+      spacer.id = "kb-spacer";
+      spacer.setAttribute("aria-hidden", "true");
+      spacer.style.cssText = `height:${gap}px;flex:none;`;
+      const foot = area.querySelector(".kb-foot");
+      if (foot) area.insertBefore(spacer, foot); else spacer = null;
+    }
+  }
+
+  const cleanup = () => {
+    document.getElementById(id)?.remove();
+    document.getElementById("kb-spacer")?.remove();
+    window.removeEventListener("afterprint", cleanup);
+  };
   window.addEventListener("afterprint", cleanup);
-  setTimeout(() => window.print(), 60);
+  setTimeout(() => window.print(), 80);
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -741,7 +793,7 @@ function PrintHead({ title, subtitle, extra }) {
 /* Pied de page légal, repris sur chaque document imprimé */
 function PrintFoot({ note }) {
   return (
-    <div className="mt-5 pt-2 border-t text-center" style={{ borderColor: "var(--line)" }}>
+    <div className="kb-foot mt-5 pt-2 border-t text-center" style={{ borderColor: "var(--line)" }}>
       {note && <p className="text-[10px] mb-1" style={{ color: "var(--muted)" }}>{note}</p>}
       <p className="text-[9px] leading-relaxed" style={{ color: "var(--muted)" }}>
         {AGENCY.name} — {AGENCY.form} — {AGENCY.address}<br />
@@ -1901,9 +1953,9 @@ Restant à votre disposition pour tout échange, veuillez agréer, Madame, Monsi
 
 /* ================= Fiche imprimable ================= */
 function DocSheet({ doc, property, owner, author, onBack }) {
-  const cfg = DOC_TYPES[doc.docType];
+  const cfg = DOC_TYPES[doc.docType] || DOC_TYPES.courrier;
   if (cfg.layout === "decharge") return <DechargeSheet doc={doc} author={author} onBack={onBack} />;
-  const st = DOC_STATUS[doc.status];
+  const st = DOC_STATUS[doc.status] || DOC_STATUS.brouillon;
   const isLetter = cfg.layout === "lettre";
   const body = doc.body?.trim() || (doc.docType === "relance" ? relanceBody(doc, property) : "");
 
@@ -1998,11 +2050,11 @@ function DocSheet({ doc, property, owner, author, onBack }) {
         {/* Signatures */}
         <div className="flex justify-between items-end pt-8 mt-6">
           <div className="text-center" style={{ minWidth: 180 }}>
-            <p className="text-xs font-semibold pb-10">Visa Client</p>
+            <p className="text-xs font-semibold pb-24">Visa Client</p>
             <div className="border-t" style={{ borderColor: "var(--ink)" }} />
           </div>
           <div className="text-center" style={{ minWidth: 180 }}>
-            <p className="text-xs font-semibold pb-10">Pour l'Agence</p>
+            <p className="text-xs font-semibold pb-24">Pour l'Agence</p>
             <div className="border-t" style={{ borderColor: "var(--ink)" }} />
             <p className="text-[10px] mt-1" style={{ color: "var(--muted)" }}>Entreprise Kibegnon</p>
           </div>
@@ -2135,7 +2187,7 @@ function Documents({ store, me }) {
 
       {list.length ? <div className="space-y-2">
         {list.map((d) => {
-          const cfg = DOC_TYPES[d.docType]; const st = DOC_STATUS[d.status];
+          const cfg = DOC_TYPES[d.docType] || DOC_TYPES.courrier; const st = DOC_STATUS[d.status] || DOC_STATUS.brouillon;
           const prop = propById[d.propertyId];
           return (
             <div key={d.id} className="bg-white rounded-xl border p-3 hover:shadow-md transition-shadow" style={{ borderColor: "var(--line)" }}>
@@ -3711,7 +3763,7 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
 /* ================= État imprimable ================= */
 function PeriodSheet({ period, property, owner, lines, charges, author, onBack }) {
   const t = periodTotals(lines, charges, period.rate);
-  const sc = RENT_SCOPE[period.scope];
+  const sc = RENT_SCOPE[period.scope] || RENT_SCOPE.commercial;
   const arrearsRows = lines
     .filter((l) => !isVacantLine(l))          // un lot vacant n'est pas un impayé
     .map((l) => ({ ...l, due: Math.max(0, (Number(l.expected) || 0) - (Number(l.collected) || 0)) }))
@@ -3840,9 +3892,9 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
           </p>
         )}
 
-        <div className="flex justify-end pt-8 mt-4">
+        <div className="kb-sign flex justify-end pt-10 mt-6">
           <div className="text-center" style={{ minWidth: 210 }}>
-            <p className="text-[11px] font-semibold pb-8">Pour l'Agence</p>
+            <p className="text-[11px] font-semibold pb-20">Pour l'Agence</p>
             <div className="border-t" style={{ borderColor: "var(--ink)" }} />
           </div>
         </div>
@@ -3928,9 +3980,9 @@ function ArrearsSheet({ period, property, owner, lines, author, onBack }) {
           Les lots vacants ne figurent pas dans cet état.
         </p>
 
-        <div className="flex justify-end pt-8">
+        <div className="kb-sign flex justify-end pt-10">
           <div className="text-center" style={{ minWidth: 210 }}>
-            <p className="text-[11px] font-semibold pb-8">Pour l'Agence</p>
+            <p className="text-[11px] font-semibold pb-20">Pour l'Agence</p>
             <div className="border-t" style={{ borderColor: "var(--ink)" }} />
           </div>
         </div>
@@ -4297,9 +4349,9 @@ function RecapSheet({ period, requests, members, properties, onBack }) {
           ))}</tbody>
         </table>
 
-        <div className="flex justify-between items-end pt-8">
-          <div className="text-center" style={{ minWidth: 170 }}><p className="text-[11px] font-semibold pb-8">La Comptabilité</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
-          <div className="text-center" style={{ minWidth: 170 }}><p className="text-[11px] font-semibold pb-8">La Direction</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
+        <div className="kb-sign flex justify-between items-end pt-10">
+          <div className="text-center" style={{ minWidth: 170 }}><p className="text-[11px] font-semibold pb-20">La Comptabilité</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
+          <div className="text-center" style={{ minWidth: 170 }}><p className="text-[11px] font-semibold pb-20">La Direction</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
         </div>
         <PrintFoot />
       </div>
@@ -5066,9 +5118,9 @@ function TaxSheet({ records, year, title, propById, unitById, ownerById, onBack 
           </div>
         )}
 
-        <div className="flex justify-between items-end pt-8 mt-2">
-          <div className="text-center" style={{ minWidth: 180 }}><p className="text-[11px] font-semibold pb-8">Le Propriétaire</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
-          <div className="text-center" style={{ minWidth: 180 }}><p className="text-[11px] font-semibold pb-8">Pour l'Agence</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
+        <div className="kb-sign flex justify-between items-end pt-10 mt-4">
+          <div className="text-center" style={{ minWidth: 180 }}><p className="text-[11px] font-semibold pb-20">Le Propriétaire</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
+          <div className="text-center" style={{ minWidth: 180 }}><p className="text-[11px] font-semibold pb-20">Pour l'Agence</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
         </div>
         <PrintFoot />
       </div>
@@ -5571,14 +5623,14 @@ function ReceiptSheet({ doc, unit, property, owner, author, onBack }) {
           </div>
         )}
 
-        <div className="flex justify-between items-start pt-6 gap-6" style={{ minHeight: 170 }}>
+        <div className="kb-sign flex justify-between items-start pt-8 gap-6" style={{ minHeight: 200 }}>
           <div style={{ minWidth: 250, paddingTop: 6 }}>
             {doc.paidStamp && doc.approval === "approuve" && (
               <PaidStamp date={doc.fields?.paidOn || doc.date} />
             )}
           </div>
           <div className="text-center shrink-0" style={{ minWidth: 190 }}>
-            <p className="text-[11px] font-semibold pb-12">Pour l'Agence</p>
+            <p className="text-[11px] font-semibold pb-24">Pour l'Agence</p>
             <div className="border-t" style={{ borderColor: "var(--ink)" }} />
             <p className="text-[10px] mt-1" style={{ color: "var(--muted)" }}>{author?.name || ""}</p>
           </div>
@@ -6353,17 +6405,17 @@ function DechargeSheet({ doc, author, onBack }) {
           Fait à {val(f.faitA || "Abidjan", "22%")}, le {doc.date ? <span style={{ fontWeight: 600 }}>{fr(doc.date + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" })}</span> : line("18%")}
         </p>
 
-        <div className="flex justify-between items-start mt-6 gap-6">
+        <div className="kb-sign flex justify-between items-start mt-8 gap-6">
           <div className="text-center" style={{ minWidth: 230 }}>
             <p className="text-sm font-bold">Le/La déclarant(e)</p>
             <p className="text-[11px] italic" style={{ color: "var(--muted)" }}>(mention « Lu et approuvé », nom et signature)</p>
-            <div style={{ height: 78 }} />
+            <div style={{ height: 130 }} />
             <div className="border-t mx-6" style={{ borderColor: "var(--ink)" }} />
           </div>
           <div className="text-center relative" style={{ minWidth: 230 }}>
             <p className="text-sm font-bold">Pour l'ENTREPRISE KIBEGNON</p>
             <p className="text-[11px] italic" style={{ color: "var(--muted)" }}>(nom, qualité, cachet et signature)</p>
-            <div style={{ height: 78 }}>
+            <div style={{ height: 130 }}>
               {doc.paidStamp && doc.approval === "approuve" && (
                 <div style={{ position: "absolute", left: 18, top: 26 }}>
                   <PaidStamp date={doc.fields?.paidOn || doc.date} scale={0.7} />
@@ -6671,7 +6723,11 @@ button{cursor:pointer}
   body{background:#fff}
   header,nav,.print\:hidden{display:none!important}
   main{padding:0!important;max-width:100%!important}
-  #print-area{border:none!important;box-shadow:none!important;padding:0!important;max-width:100%!important}
+  #print-area{border:none!important;box-shadow:none!important;padding:0!important;max-width:100%!important;
+    display:flex;flex-direction:column;min-height:100vh}
+  /* Le pied est repoussé en bas de page et n'est jamais coupé */
+  .kb-foot{margin-top:auto;break-inside:avoid;page-break-inside:avoid}
+  .kb-sign{break-inside:avoid;page-break-inside:avoid}
   table{page-break-inside:auto}tr{page-break-inside:avoid}
   /* L'en-tête se répète en haut de chaque page, mais les totaux ne doivent
      apparaître qu'une seule fois, à la fin réelle du tableau. */
