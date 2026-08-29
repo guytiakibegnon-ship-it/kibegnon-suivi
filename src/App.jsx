@@ -601,6 +601,88 @@ const STAMP_RED = "#C8322F";
    un aplat rouge, le fond blanc étant lui aussi noirci par le filtre. */
 const LOGO_STAMP = "data:image/png;base64,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";
 
+/* ══════════════════════════════════════════════════════════════════════
+   SITUATION DE PAIEMENT D'UN LOCATAIRE
+   Croise les tableaux de recouvrement et les quittances émises, afin que
+   l'état affiché soit le même partout : Locataires, portefeuille, dossier.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* Un mois est identifié par 'YYYY-MM'. On retient, pour chaque mois,
+   le montant attendu et le montant réellement encaissé. */
+function paymentHistory(unit, { rentPeriods, rentLines, documents }) {
+  if (!unit) return [];
+  const months = {};
+  const sameUnit = (l) => l.unitId === unit.id
+    || (l.unitLabel || "").toLowerCase() === (unit.label || "").toLowerCase()
+    || (unit.tenantName && (l.tenantName || "").toLowerCase() === unit.tenantName.toLowerCase());
+
+  /* 1. Tableaux de recouvrement — l'état comptable prime sur le suivi commercial */
+  ["commercial", "comptable"].forEach((scope) => {
+    rentPeriods.filter((p) => p.propertyId === unit.propertyId && p.scope === scope).forEach((p) => {
+      const line = rentLines.find((l) => l.periodId === p.id && sameUnit(l));
+      if (!line) return;
+      months[p.period] = {
+        period: p.period,
+        expected: Number(line.expected) || 0,
+        collected: Number(line.collected) || 0,
+        paidAt: line.paidAt || "",
+        source: scope === "comptable" ? "État comptable" : "Suivi commercial",
+        comment: line.comment || "",
+      };
+    });
+  });
+
+  /* 2. Quittances émises — une quittance validée fait foi du paiement */
+  (documents || []).filter((d) => d.docType === "quittance" && d.periodIso
+    && (d.unitId === unit.id
+      || (unit.tenantName && (d.clientName || "").toLowerCase() === unit.tenantName.toLowerCase())))
+    .forEach((d) => {
+      const prev = months[d.periodIso];
+      const collected = Math.max(Number(d.total) || 0, prev?.collected || 0);
+      months[d.periodIso] = {
+        period: d.periodIso,
+        expected: prev?.expected || unit.rent || Number(d.total) || 0,
+        collected,
+        paidAt: d.fields?.paidOn || d.date,
+        source: `Quittance ${d.ref}`,
+        comment: prev?.comment || "",
+      };
+    });
+
+  return Object.values(months).sort((a, b) => a.period.localeCompare(b.period));
+}
+
+/* Synthèse : arriérés (mois impayés), reliquats (mois partiellement réglés),
+   en incluant l'arriéré éventuellement repris à la main. */
+function arrearsOf(unit, data) {
+  const hist = paymentHistory(unit, data);
+  const unpaid = [], partial = [];
+  hist.forEach((m) => {
+    const due = (Number(m.expected) || 0) - (Number(m.collected) || 0);
+    if (due <= 0) return;
+    (m.collected > 0 ? partial : unpaid).push({ ...m, due });
+  });
+
+  const manualAmount = Number(unit?.arrearsAmount) || 0;
+  const manualMonths = Number(unit?.arrearsMonths) || 0;
+  const computed = [...unpaid, ...partial].reduce((a, m) => a + m.due, 0);
+
+  return {
+    history: hist,
+    unpaidMonths: unpaid,          // mois entièrement impayés
+    partialMonths: partial,        // reliquats à verser
+    months: unpaid.length + partial.length + manualMonths,
+    total: computed + manualAmount,
+    computed, manualAmount, manualMonths,
+    manualNote: unit?.arrearsNote || "",
+    last: hist.length ? hist[hist.length - 1] : null,
+    hasArrears: computed + manualAmount > 0,
+  };
+}
+
+/* Libellé court : « 3 mois · 240 000 F » */
+const arrearsLabel = (a) => `${a.months} mois · ${fcfa(a.total)}`;
+
 /* ---- Papier à en-tête de l'agence ---- */
 const AGENCY = {
   name: "ENTREPRISE KIBEGNON",
@@ -1154,7 +1236,9 @@ function useStore(userId) {
       lease_start: f.leaseStart || null, notes: f.notes || "",
       tenant_email: f.tenantEmail || "", lease_end: f.leaseEnd || null,
       due_day: Number(f.dueDay) || 5, deposit: Number(f.deposit) || 0,
-      advance_months: Number(f.advanceMonths) || 0, advance_start: f.advanceStart || null };
+      advance_months: Number(f.advanceMonths) || 0, advance_start: f.advanceStart || null,
+      arrears_amount: Number(f.arrearsAmount) || 0, arrears_months: Number(f.arrearsMonths) || 0,
+      arrears_note: f.arrearsNote || "" };
     if (f.id) {
       setUnits((p) => p.map((u) => (u.id === f.id ? { ...u, ...f } : u)));
       const { error } = await supabase.from("units").update(row).eq("id", f.id);
@@ -1940,7 +2024,8 @@ function Documents({ store, me }) {
 
   const sheet = documents.find((d) => d.id === sheetId);
   if (sheet) {
-    return <DocSheet doc={sheet} property={propById[sheet.propertyId]} owner={ownerById[sheet.ownerId]}
+    return <DocumentSheet doc={sheet} unit={store.units.find((u) => u.id === sheet.unitId)}
+      property={propById[sheet.propertyId]} owner={ownerById[sheet.ownerId]}
       author={memberById[sheet.createdBy]} onBack={() => setSheetId(null)} />;
   }
 
@@ -3497,8 +3582,9 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
       <div className="grid lg:grid-cols-2 gap-4 mb-3">
         <div className="rounded-xl border p-3" style={{ borderColor: "var(--line)" }}>
           <p className="text-xs font-bold mb-2">BILAN DU MOIS</p>
-          {[["Locataires", lines.length], ["Ayant payé intégralement", t.nPaid], ["Paiements partiels", t.nPartial],
-            ["Impayés", t.nUnpaid]].map(([k, v]) => (
+          {[["Locataires", lines.length], ["Ayant payé intégralement", t.nPaid],
+            ["Reliquats à verser", t.nPartial], ["Impayés", t.nUnpaid],
+            ["Locataires en arriéré", t.nPartial + t.nUnpaid]].map(([k, v]) => (
             <div key={k} className="flex justify-between text-xs py-1"><span style={{ color: "var(--muted)" }}>{k}</span><span className="font-semibold">{v}</span></div>
           ))}
           <div className="border-t my-1.5" style={{ borderColor: "var(--line)" }} />
@@ -3589,6 +3675,10 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
 function PeriodSheet({ period, property, owner, lines, charges, author, onBack }) {
   const t = periodTotals(lines, charges, period.rate);
   const sc = RENT_SCOPE[period.scope];
+  const arrearsRows = lines
+    .map((l) => ({ ...l, due: Math.max(0, (Number(l.expected) || 0) - (Number(l.collected) || 0)) }))
+    .filter((l) => l.due > 0)
+    .sort((a, b) => b.due - a.due);
   return (
     <div>
       <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
@@ -3705,6 +3795,44 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
 
         {t.netOwner > 0 && <p className="text-[11px] italic mt-3">Arrêté le présent état à la somme de <strong>{amountInWords(t.netOwner)}</strong> à verser au propriétaire.</p>}
 
+        {/* Les arriérés ne sont pas encaissés : ils sont présentés à part pour
+            ne jamais être confondus avec le montant réglé au propriétaire. */}
+        {arrearsRows.length > 0 && (
+          <div className="mt-4">
+            <p className="text-xs font-bold mb-1.5" style={{ color: "#B5171D" }}>
+              LOCATAIRES EN ARRIÉRÉ — {arrearsRows.length} sur {lines.length}
+            </p>
+            <table className="w-full text-[11px]">
+              <thead><tr style={{ background: "#FDEAEA" }}>
+                <th className="text-left px-2 py-1.5 font-semibold">Locataire</th>
+                <th className="text-left px-2 py-1.5 font-semibold">Lot</th>
+                <th className="text-right px-2 py-1.5 font-semibold">Loyer prévu</th>
+                <th className="text-right px-2 py-1.5 font-semibold">Encaissé</th>
+                <th className="text-right px-2 py-1.5 font-semibold">Reste dû</th>
+                <th className="text-left px-2 py-1.5 font-semibold">Situation</th>
+              </tr></thead>
+              <tbody>{arrearsRows.map((r, i) => (
+                <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
+                  <td className="px-2 py-1.5 font-medium">{r.tenantName || "—"}</td>
+                  <td className="px-2 py-1.5">{r.unitLabel}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(r.expected)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(r.collected)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums font-bold" style={{ color: "#D81F26" }}>{fcfa(r.due)}</td>
+                  <td className="px-2 py-1.5">{r.collected > 0 ? "Reliquat à verser" : "Impayé"}{r.comment ? ` — ${r.comment}` : ""}</td>
+                </tr>
+              ))}</tbody>
+              <tfoot><tr style={{ background: "#FDEAEA" }}>
+                <td colSpan={4} className="px-2 py-1.5 font-bold">TOTAL DES ARRIÉRÉS DU MOIS</td>
+                <td className="px-2 py-1.5 text-right font-bold tabular-nums" style={{ color: "#D81F26" }}>{fcfa(t.arrears)}</td>
+                <td />
+              </tr></tfoot>
+            </table>
+            <p className="text-[10px] mt-1.5 italic" style={{ color: "var(--muted)" }}>
+              Ces sommes ne sont pas encaissées : elles n'entrent pas dans le règlement ci-dessus et restent dues par les locataires.
+            </p>
+          </div>
+        )}
+
         <div className="flex justify-between items-end pt-8 mt-4">
           <div className="text-center" style={{ minWidth: 170 }}><p className="text-[11px] font-semibold pb-8">Le Propriétaire</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
           <div className="text-center" style={{ minWidth: 170 }}><p className="text-[11px] font-semibold pb-8">Pour l'Agence</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
@@ -3811,7 +3939,10 @@ function Recouvrement({ store, me, userId }) {
                     {!mine && <Chip color="#94A3B8"><Lock size={10} /> lecture</Chip>}
                   </div>
                   <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>
-                    {lines.length} locataire(s) · {t.nPaid} payé(s), {t.nPartial} partiel(s), {t.nUnpaid} impayé(s)
+                    {lines.length} locataire(s) · {t.nPaid} à jour ·{" "}
+                    <strong style={{ color: (t.nPartial + t.nUnpaid) > 0 ? "#D81F26" : "var(--muted)" }}>
+                      {t.nPartial + t.nUnpaid} en arriéré
+                    </strong>{t.nPartial > 0 ? ` (dont ${t.nPartial} reliquat(s))` : ""}
                     {" · "}établi par {memberById[p.createdBy]?.name || "—"}
                   </p>
                   <div className="flex flex-wrap gap-3 mt-2 text-xs">
@@ -5124,6 +5255,19 @@ function TenantModal({ unit, property, onSave, onClose }) {
           </p>
         )}
       </div>
+      <div className="rounded-xl border p-3 mb-3" style={{ borderColor: "#F5C6C7", background: "#FDF2F2" }}>
+        <p className="text-xs font-semibold mb-1" style={{ color: "#B5171D" }}>Arriérés antérieurs à l'outil</p>
+        <p className="text-[11px] mb-2" style={{ color: "var(--muted)" }}>
+          À ne remplir que pour une dette constituée <strong>avant</strong> l'utilisation de la plateforme.
+          Les arriérés nés dans l'outil se calculent tout seuls à partir des tableaux de recouvrement.
+        </p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <Field label="Montant repris (FCFA)"><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.arrearsAmount || 0} onChange={(e) => set("arrearsAmount", e.target.value)} /></Field>
+          <Field label="Nombre de mois concernés"><input type="number" min={0} max={60} className={inputCls} style={inputStyle} value={f.arrearsMonths || 0} onChange={(e) => set("arrearsMonths", e.target.value)} /></Field>
+        </div>
+        <Field label="Origine / accord d'échelonnement"><input className={inputCls} style={inputStyle} value={f.arrearsNote || ""} onChange={(e) => set("arrearsNote", e.target.value)} placeholder="Ex. Impayés janvier à mars 2026, échelonnement convenu le 12/04" /></Field>
+      </div>
+
       {err && <p className="text-xs text-red-600 mb-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
       <div className="flex justify-end gap-2">
         <button onClick={onClose} className="kb-btn kb-btn-ghost">Annuler</button>
@@ -5337,12 +5481,27 @@ function ReceiptSheet({ doc, unit, property, owner, author, onBack }) {
   );
 }
 
+
+/* Rendu d'un document : la mise en forme dépend de son type, jamais de
+   l'endroit d'où on l'ouvre (Documents, Locataires, dossier, portefeuille). */
+function DocumentSheet({ doc, unit, property, owner, author, onBack }) {
+  const cfg = DOC_TYPES[doc.docType] || DOC_TYPES.courrier;
+  if (doc.docType === "quittance") {
+    return <ReceiptSheet doc={doc} unit={unit} property={property} owner={owner} author={author} onBack={onBack} />;
+  }
+  if (cfg.layout === "decharge") {
+    return <DechargeSheet doc={doc} author={author} onBack={onBack} />;
+  }
+  return <DocSheet doc={doc} property={property} owner={owner} author={author} onBack={onBack} />;
+}
+
 /* ---------------- Module LOCATAIRES ---------------- */
 function Locataires({ store, me, userId }) {
   const { units, properties, owners, documents, members, rentPeriods, rentLines, actions } = store;
   const [search, setSearch] = useState("");
   const [filterProp, setFilterProp] = useState("all");
   const [onlyMine, setOnlyMine] = useState(false);
+  const [onlyArrears, setOnlyArrears] = useState(false);
   const [tenantModal, setTenantModal] = useState(null);
   const [receiptModal, setReceiptModal] = useState(null);
   const [sheetId, setSheetId] = useState(null);
@@ -5356,7 +5515,7 @@ function Locataires({ store, me, userId }) {
 
   const sheetDoc = documents.find((d) => d.id === sheetId);
   if (sheetDoc) {
-    return <ReceiptSheet doc={sheetDoc} unit={unitById[sheetDoc.unitId]} property={propById[sheetDoc.propertyId]}
+    return <DocumentSheet doc={sheetDoc} unit={unitById[sheetDoc.unitId]} property={propById[sheetDoc.propertyId]}
       owner={ownerById[sheetDoc.ownerId]} author={memberById[sheetDoc.createdBy]} onBack={() => setSheetId(null)} />;
   }
   if (dossier) {
@@ -5364,14 +5523,12 @@ function Locataires({ store, me, userId }) {
       property={dossier.property} onBack={() => setDossier(null)} onOpenDoc={(d) => { setDossier(null); setSheetId(d.id); }} />;
   }
 
-  /* Dernier état de paiement connu, tiré des tableaux de recouvrement */
+  /* Situation de paiement : tableaux de recouvrement + quittances émises */
+  const situation = (u) => arrearsOf(u, store);
   const lastPayment = (u) => {
-    const periods = rentPeriods.filter((p) => p.propertyId === u.propertyId).sort((a, b) => b.period.localeCompare(a.period));
-    for (const p of periods) {
-      const line = rentLines.find((l) => l.periodId === p.id && (l.unitId === u.id || (l.unitLabel || "").toLowerCase() === (u.label || "").toLowerCase()));
-      if (line) return { period: p.period, status: payStatusOf(line.expected, line.collected), collected: line.collected, expected: line.expected };
-    }
-    return null;
+    const last = situation(u).last;
+    return last ? { period: last.period, status: payStatusOf(last.expected, last.collected),
+      collected: last.collected, expected: last.expected } : null;
   };
 
   const tenants = units.filter((u) => (u.tenantName || "").trim() || u.status === "occupe");
@@ -5379,6 +5536,7 @@ function Locataires({ store, me, userId }) {
     const p = propById[u.propertyId];
     return (filterProp === "all" || u.propertyId === filterProp) &&
       (!onlyMine || p?.agentId === userId) &&
+      (!onlyArrears || situation(u).hasArrears) &&
       (!search || (u.tenantName || "").toLowerCase().includes(search.toLowerCase()) ||
         (u.tenantPhone || "").includes(search) || (u.label || "").toLowerCase().includes(search.toLowerCase()) ||
         (p?.name || "").toLowerCase().includes(search.toLowerCase()));
@@ -5397,7 +5555,9 @@ function Locataires({ store, me, userId }) {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <StatCard icon={Users} label="Locataires recensés" value={list.length} sub={`${units.length} lot(s) au total`} tint="#2E78A8" />
         <StatCard icon={Wallet} label="Loyer mensuel cumulé" value={fcfa(rentRoll)} tint="#4F9E2A" />
-        <StatCard icon={Phone} label="Sans numéro" value={withoutPhone} sub="à compléter" tint="#EA580C" />
+        <StatCard icon={AlertTriangle} label="Locataires en arriéré"
+          value={tenants.filter((u) => situation(u).hasArrears).length}
+          sub={fcfa(tenants.reduce((a, u) => a + situation(u).total, 0))} tint="#D81F26" />
         <StatCard icon={Receipt} label="Quittances émises" value={documents.filter((d) => d.docType === "quittance").length} tint="var(--brass)" />
       </div>
 
@@ -5413,6 +5573,10 @@ function Locataires({ store, me, userId }) {
         <button onClick={() => setOnlyMine((s) => !s)} className="kb-btn kb-btn-ghost text-sm" style={onlyMine ? { background: "var(--ink)", color: "#fff" } : undefined}>
           <BadgeCheck size={14} /> Mes biens
         </button>
+        <button onClick={() => setOnlyArrears((s) => !s)} className="kb-btn kb-btn-ghost text-sm"
+          style={onlyArrears ? { background: "#D81F26", color: "#fff" } : undefined}>
+          <AlertTriangle size={14} /> En arriéré ({tenants.filter((u) => situation(u).hasArrears).length})
+        </button>
       </div>
 
       {list.length ? (
@@ -5424,6 +5588,7 @@ function Locataires({ store, me, userId }) {
               <th className="px-3 py-2.5 font-medium">Bâtiment / lot</th>
               <th className="px-3 py-2.5 font-medium">Loyer</th>
               <th className="px-3 py-2.5 font-medium">Avance d'entrée</th>
+              <th className="px-3 py-2.5 font-medium">Arriérés / reliquats</th>
               <th className="px-3 py-2.5 font-medium">Dernier paiement</th>
               <th className="px-3 py-2.5 font-medium">Agent</th>
               <th />
@@ -5432,8 +5597,9 @@ function Locataires({ store, me, userId }) {
               const p = propById[u.propertyId];
               const pay = lastPayment(u);
               const st = pay ? PAY_STATUS[pay.status] : null;
+              const a = situation(u);
               return (
-                <tr key={u.id} className="border-t" style={{ borderColor: "var(--line)" }}>
+                <tr key={u.id} className="border-t" style={{ borderColor: a.hasArrears ? "#F5C6C7" : "var(--line)", background: a.hasArrears ? "#FEF7F7" : undefined }}>
                   <td className="px-4 py-2.5">
                     {u.tenantName
                       ? <button onClick={() => setDossier({ unit: u, property: p })} className="font-medium hover:underline text-left flex items-center gap-1.5" style={{ color: "#2E78A8" }}>
@@ -5453,6 +5619,20 @@ function Locataires({ store, me, userId }) {
                     {Number(u.advanceMonths) > 0
                       ? <Chip color="#2E78A8">{u.advanceMonths} mois{(u.advanceStart || u.leaseStart) ? ` dès ${fr((u.advanceStart || u.leaseStart) + "T00:00:00", { month: "short", year: "2-digit" })}` : ""}</Chip>
                       : <span className="text-xs" style={{ color: "var(--muted)" }}>—</span>}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    {a.hasArrears ? (
+                      <div>
+                        <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: "#FDEAEA", color: "#D81F26" }}>
+                          {arrearsLabel(a)}
+                        </span>
+                        {a.partialMonths.length > 0 && (
+                          <p className="text-[10px] mt-0.5" style={{ color: "#EA580C" }}>
+                            dont {a.partialMonths.length} reliquat(s) · {fcfa(a.partialMonths.reduce((x, m) => x + m.due, 0))}
+                          </p>
+                        )}
+                      </div>
+                    ) : <span className="text-xs" style={{ color: "#4F9E2A" }}>à jour</span>}
                   </td>
                   <td className="px-3 py-2.5">
                     {pay ? <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: st.bg, color: st.color }}>{st.label} · {pay.period}</span>
@@ -5781,16 +5961,14 @@ function Portefeuille({ store, me, userId }) {
   const myTenants = myUnits.filter((u) => (u.tenantName || "").trim());
   const myComplaints = complaints.filter((c) => mineIds.has(c.propertyId) && ["signale", "en_cours", "en_attente"].includes(c.status));
 
+  const situation = (u) => arrearsOf(u, store);
   const lastPayment = (u) => {
-    const periods = rentPeriods.filter((p) => p.propertyId === u.propertyId).sort((a, b) => b.period.localeCompare(a.period));
-    for (const p of periods) {
-      const line = rentLines.find((l) => l.periodId === p.id && (l.unitId === u.id || (l.unitLabel || "").toLowerCase() === (u.label || "").toLowerCase()));
-      if (line) return { period: p.period, status: payStatusOf(line.expected, line.collected), collected: line.collected, expected: line.expected };
-    }
-    return null;
+    const last = situation(u).last;
+    return last ? { period: last.period, status: payStatusOf(last.expected, last.collected),
+      collected: last.collected, expected: last.expected } : null;
   };
 
-  const payments = myTenants.map((u) => ({ u, pay: lastPayment(u) }));
+  const payments = myTenants.map((u) => ({ u, pay: lastPayment(u), arr: situation(u) }));
   const q = search.trim().toLowerCase();
   const filteredPayments = q
     ? payments.filter(({ u }) => (u.tenantName || "").toLowerCase().includes(q)
@@ -5802,7 +5980,7 @@ function Portefeuille({ store, me, userId }) {
   const byBuilding = mine
     .map((p) => ({ property: p, rows: filteredPayments.filter(({ u }) => u.propertyId === p.id) }))
     .filter((g) => g.rows.length > 0);
-  const unpaid = payments.filter((x) => x.pay && x.pay.status !== "paye");
+  const unpaid = payments.filter((x) => x.arr.hasArrears);
   const expectedTotal = myUnits.reduce((a, u) => a + (u.rent || 0), 0);
   const vacants = myUnits.filter((u) => u.status === "vacant");
 
@@ -5823,7 +6001,7 @@ function Portefeuille({ store, me, userId }) {
         <StatCard icon={Users} label="Locataires suivis" value={myTenants.length} tint="#4F9E2A" />
         <StatCard icon={Wallet} label="Loyer mensuel attendu" value={fcfa(expectedTotal)} tint="var(--brass)" />
         <StatCard icon={AlertTriangle} label="Points d'attention" value={unpaid.length + vacants.length + myComplaints.length}
-          sub={`${unpaid.length} impayé(s) · ${vacants.length} vacant(s) · ${myComplaints.length} plainte(s)`} tint="#D81F26" />
+          sub={`${unpaid.length} en arriéré · ${vacants.length} vacant(s) · ${myComplaints.length} plainte(s)`} tint="#D81F26" />
       </div>
 
       {mine.length === 0 ? (
@@ -5834,25 +6012,23 @@ function Portefeuille({ store, me, userId }) {
           {unpaid.length > 0 && (
             <SectionCard title={`À relancer (${unpaid.length})`} icon={AlertTriangle} pad={false}>
               <div className="divide-y" style={{ borderColor: "var(--line)" }}>
-                {unpaid.map(({ u, pay }) => {
-                  const st = PAY_STATUS[pay.status];
-                  return (
-                    <div key={u.id} className="flex items-center justify-between px-4 py-2.5 gap-2">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">{u.tenantName} · {u.label}</p>
-                        <p className="text-[11px]" style={{ color: "var(--muted)" }}>
-                          {properties.find((p) => p.id === u.propertyId)?.name} · {pay.period}
-                          {u.tenantPhone ? ` · ${u.tenantPhone}` : ""}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-xs tabular-nums" style={{ color: "var(--muted)" }}>{fcfa(pay.collected)} / {fcfa(pay.expected)}</span>
-                        <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: st.bg, color: st.color }}>{st.label}</span>
-                        {u.tenantPhone && <a href={`tel:${u.tenantPhone}`} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><Phone size={14} /></a>}
-                      </div>
+                {unpaid.map(({ u, arr }) => (
+                  <div key={u.id} className="flex items-center justify-between px-4 py-2.5 gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{u.tenantName} · {u.label}</p>
+                      <p className="text-[11px]" style={{ color: "var(--muted)" }}>
+                        {properties.find((p) => p.id === u.propertyId)?.name}
+                        {u.tenantPhone ? ` · ${u.tenantPhone}` : ""}
+                        {arr.unpaidMonths.length > 0 ? ` · impayés : ${arr.unpaidMonths.map((m) => m.period).join(", ")}` : ""}
+                        {arr.partialMonths.length > 0 ? ` · reliquats : ${arr.partialMonths.map((m) => m.period).join(", ")}` : ""}
+                      </p>
                     </div>
-                  );
-                })}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: "#FDEAEA", color: "#D81F26" }}>{arrearsLabel(arr)}</span>
+                      {u.tenantPhone && <a href={`tel:${u.tenantPhone}`} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><Phone size={14} /></a>}
+                    </div>
+                  </div>
+                ))}
               </div>
             </SectionCard>
           )}
@@ -5904,9 +6080,10 @@ function Portefeuille({ store, me, userId }) {
                   <th className="px-3 py-2.5 font-medium">Téléphone</th>
                   <th className="px-3 py-2.5 font-medium">Loyer</th>
                   <th className="px-3 py-2.5 font-medium">Avance</th>
+                  <th className="px-3 py-2.5 font-medium">Arriérés</th>
                   <th className="px-3 py-2.5 font-medium">Dernier paiement</th>
                 </tr></thead>
-                <tbody>{grp.rows.map(({ u, pay }) => {
+                <tbody>{grp.rows.map(({ u, pay, arr }) => {
                   const st = pay ? PAY_STATUS[pay.status] : null;
                   return (
                     <tr key={u.id} className="border-t" style={{ borderColor: "var(--line)" }}>
@@ -5919,6 +6096,9 @@ function Portefeuille({ store, me, userId }) {
                       <td className="px-3 py-2.5">{Number(u.advanceMonths) > 0
                         ? <Chip color="#2E78A8">{u.advanceMonths} mois</Chip>
                         : <span className="text-xs" style={{ color: "var(--muted)" }}>—</span>}</td>
+                      <td className="px-3 py-2.5">{arr.hasArrears
+                        ? <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: "#FDEAEA", color: "#D81F26" }}>{arrearsLabel(arr)}</span>
+                        : <span className="text-xs" style={{ color: "#4F9E2A" }}>à jour</span>}</td>
                       <td className="px-3 py-2.5">{pay
                         ? <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: st.bg, color: st.color }}>{st.label} · {pay.period}</span>
                         : <span className="text-xs" style={{ color: "var(--muted)" }}>aucun relevé</span>}</td>
@@ -5949,6 +6129,7 @@ function Portefeuille({ store, me, userId }) {
     </div>
   );
 }
+
 
 /* ══════════════════════════════════════════════════════════════════════
    TAMPON « PAYÉ » · DÉCHARGES · SÉLECTEUR DE PERSONNE · DOSSIERS NUMÉRIQUES
@@ -6108,11 +6289,20 @@ const FOLDER_CATEGORY = {
 
 function Dossier({ store, me, userId, scope, unit, owner, property, onBack, onOpenDoc }) {
   const { documents, folderFiles, members, actions } = store;
+  const [openDoc, setOpenDoc] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [category, setCategory] = useState("autre");
   const fileRef = useRef(null);
   const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
+  const arr = scope === "locataire" ? arrearsOf(unit, store) : null;
+
+  if (openDoc) {
+    return <DocumentSheet doc={openDoc} unit={unit}
+      property={property || store.properties.find((p) => p.id === openDoc.propertyId)}
+      owner={owner || store.owners.find((o) => o.id === openDoc.ownerId)}
+      author={memberById[openDoc.createdBy]} onBack={() => setOpenDoc(null)} />;
+  }
 
   const person = scope === "locataire"
     ? { name: unit?.tenantName || "Locataire", phone: unit?.tenantPhone, email: unit?.tenantEmail,
@@ -6175,6 +6365,56 @@ function Dossier({ store, me, userId, scope, unit, owner, property, onBack, onOp
         {err && <p className="text-xs text-red-600 mt-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
       </div>
 
+      {arr?.hasArrears && (
+        <div className="rounded-xl border p-3 mb-4" style={{ borderColor: "#F5C6C7", background: "#FDF2F2" }}>
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={16} style={{ color: "#D81F26" }} className="mt-0.5 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold" style={{ color: "#B5171D" }}>
+                Locataire en arriéré — {arrearsLabel(arr)}
+              </p>
+              <p className="text-xs mt-1" style={{ color: "#B5171D" }}>
+                {arr.unpaidMonths.length > 0 && `${arr.unpaidMonths.length} mois impayé(s) : ${arr.unpaidMonths.map((m) => m.period).join(", ")}. `}
+                {arr.partialMonths.length > 0 && `${arr.partialMonths.length} reliquat(s) à verser : ${arr.partialMonths.map((m) => `${m.period} (${fcfa(m.due)})`).join(", ")}. `}
+                {arr.manualAmount > 0 && `Arriéré repris manuellement : ${fcfa(arr.manualAmount)}${arr.manualMonths ? ` sur ${arr.manualMonths} mois` : ""}. `}
+              </p>
+              {arr.manualNote && <p className="text-[11px] mt-1 italic" style={{ color: "var(--muted)" }}>{arr.manualNote}</p>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {arr && arr.history.length > 0 && (
+        <SectionCard title="Historique des paiements" icon={Wallet} pad={false}>
+          <div className="overflow-x-auto"><table className="w-full text-sm">
+            <thead><tr className="text-left" style={{ color: "var(--muted)" }}>
+              <th className="px-4 py-2.5 font-medium">Mois</th>
+              <th className="px-3 py-2.5 font-medium">Loyer prévu</th>
+              <th className="px-3 py-2.5 font-medium">Encaissé</th>
+              <th className="px-3 py-2.5 font-medium">Reste dû</th>
+              <th className="px-3 py-2.5 font-medium">Source</th>
+            </tr></thead>
+            <tbody>{arr.history.map((m) => {
+              const due = m.expected - m.collected;
+              const stt = PAY_STATUS[payStatusOf(m.expected, m.collected)];
+              return (
+                <tr key={m.period} className="border-t" style={{ borderColor: "var(--line)" }}>
+                  <td className="px-4 py-2.5 font-medium">{m.period}</td>
+                  <td className="px-3 py-2.5 tabular-nums">{fcfa(m.expected)}</td>
+                  <td className="px-3 py-2.5 tabular-nums">{fcfa(m.collected)}</td>
+                  <td className="px-3 py-2.5 tabular-nums">
+                    {due > 0
+                      ? <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: stt.bg, color: stt.color }}>{fcfa(due)}</span>
+                      : <span style={{ color: "#4F9E2A" }}>soldé</span>}
+                  </td>
+                  <td className="px-3 py-2.5 text-xs" style={{ color: "var(--muted)" }}>{m.source}</td>
+                </tr>
+              );
+            })}</tbody>
+          </table></div>
+        </SectionCard>
+      )}
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <StatCard icon={FileText} label="Documents émis" value={docs.length} sub="depuis l'outil" tint="var(--brass)" />
         <StatCard icon={Paperclip} label="Pièces importées" value={files.length} tint="#2E78A8" />
@@ -6198,7 +6438,7 @@ function Dossier({ store, me, userId, scope, unit, owner, property, onBack, onOp
                   {d.paidStamp && d.approval === "approuve" && <Chip color={STAMP_RED} bg="#FDEAEA">PAYÉ</Chip>}
                   {d.approval === "en_attente" && <Chip color="#C58A1B" dot>à valider</Chip>}
                   {d.total > 0 && <span className="text-sm font-semibold tabular-nums">{fcfa(d.total)}</span>}
-                  <button onClick={() => onOpenDoc(d)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Ouvrir"><Printer size={14} /></button>
+                  <button onClick={() => setOpenDoc(d)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Ouvrir"><Printer size={14} /></button>
                 </div>
               </div>
             );
