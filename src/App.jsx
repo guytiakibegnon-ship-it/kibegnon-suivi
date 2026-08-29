@@ -6,7 +6,7 @@
  * ==========================================================================*/
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
-  AlertTriangle, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, BarChart3, Bell, BellOff, Briefcase, Building2, CalendarDays, CalendarOff, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, DoorOpen, Download, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, Hammer, Home, Image, Inbox, KeyRound, Landmark, Layers, LayoutDashboard, ListChecks, Lock, LogOut, Mail, MapPin, MessageCircle, MessageCircleWarning, MessageSquare, Package, Paperclip, Pause, Pencil, Phone, Play, Plus, Printer, Receipt, RotateCcw, Search, Send, Settings, ShieldCheck, SprayCan, Square, Store, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, UserPlus, UserRound, Users, Wallet, X, Zap,
+  AlertTriangle, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, BarChart3, Bell, BellOff, Briefcase, Building2, CalendarDays, CalendarOff, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, DoorOpen, Download, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Home, Image, Inbox, KeyRound, Landmark, Layers, LayoutDashboard, ListChecks, Lock, LogOut, Mail, MapPin, MessageCircle, MessageCircleWarning, MessageSquare, Package, Paperclip, Pause, Pencil, Phone, Play, Plus, Printer, Receipt, RotateCcw, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, UserPlus, UserRound, Users, Wallet, X, Zap,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, CartesianGrid,
@@ -198,6 +198,18 @@ const DOC_TYPES = {
       { label: "Charges", qty: 1, unit: "mois", price: 0 },
     ],
   },
+  decharge: {
+    label: "Décharge de fonds",
+    short: "Décharge",
+    prefix: "DC",
+    dept: "Comptabilité & Recouvrement",
+    layout: "decharge",
+    title: "DÉCHARGE",
+    color: "#B91C1C",
+    desc: "Remise ou versement de fonds : atteste qu'une personne a reçu ou versé une somme entre les mains de l'agence.",
+    clientLabel: "Déclarant(e)",
+    preset: [],
+  },
   courrier: {
     label: "Courrier libre",
     short: "Courrier",
@@ -223,7 +235,7 @@ const DOC_TYPES = {
     preset: [{ label: "Loyer impayé", qty: 1, unit: "mois", price: 0 }],
   },
 };
-const DOC_TYPE_ORDER = ["decompte_entree", "prestation", "facture_impayes", "quittance", "relance", "courrier"];
+const DOC_TYPE_ORDER = ["decompte_entree", "prestation", "facture_impayes", "quittance", "decharge", "relance", "courrier"];
 
 const DOC_STATUS = {
   brouillon: { label: "Brouillon", color: "#94A3B8" },
@@ -231,6 +243,12 @@ const DOC_STATUS = {
   envoye:    { label: "Envoyé",    color: "#C58A1B" },
   regle:     { label: "Réglé",     color: "#4F9E2A" },
   annule:    { label: "Annulé",    color: "#D81F26" },
+};
+const DOC_APPROVAL = {
+  non_requise: { label: "—",                  color: "#94A3B8" },
+  en_attente:  { label: "En attente de validation", color: "#C58A1B" },
+  approuve:    { label: "Validée",            color: "#4F9E2A" },
+  refuse:      { label: "Refusée",            color: "#D81F26" },
 };
 const DOC_STATUS_ORDER = ["brouillon", "emis", "envoye", "regle", "annule"];
 
@@ -576,6 +594,10 @@ const SectionCard = ({ title, icon: Icon, action, children, pad = true }) => (
   </section>
 );
 
+/* Rend n'importe quelle image en rouge encre, pour l'effet tampon */
+const STAMP_RED = "#C8322F";
+const STAMP_FILTER = "brightness(0) saturate(100%) invert(24%) sepia(72%) saturate(3200%) hue-rotate(348deg) brightness(92%) contrast(96%)";
+
 /* ---- Papier à en-tête de l'agence ---- */
 const AGENCY = {
   name: "ENTREPRISE KIBEGNON",
@@ -690,10 +712,11 @@ const mUnit    = (r) => ({ id: r.id, propertyId: r.property_id, label: r.label, 
 const mPeriod  = (r) => ({ id: r.id, propertyId: r.property_id, period: r.period, scope: r.scope, rate: Number(r.agency_rate), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
 const mRLine   = (r) => ({ id: r.id, periodId: r.period_id, unitId: r.unit_id, unitLabel: r.unit_label, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, expected: Number(r.expected), collected: Number(r.collected), paidAt: r.paid_at, charges: Number(r.charges), comment: r.comment, position: r.position });
 const mRCharge = (r) => ({ id: r.id, periodId: r.period_id, label: r.label, amount: Number(r.amount), observation: r.observation, position: r.position, kind: r.kind || "charge" });
+const mFolderFile = (r) => ({ id: r.id, scope: r.scope, unitId: r.unit_id, ownerId: r.owner_id, propertyId: r.property_id, category: r.category, label: r.label, fileUrl: r.file_url, fileName: r.file_name, fileType: r.file_type, fileSize: Number(r.file_size) || 0, notes: r.notes, uploadedBy: r.uploaded_by, createdAt: Date.parse(r.created_at) });
 const mComplaint = (r) => ({ id: r.id, ref: r.ref, propertyId: r.property_id, unitId: r.unit_id, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, category: r.category, cause: r.cause, priority: r.priority, description: r.description, reportedAt: r.reported_at, channel: r.channel, status: r.status, assignedTo: r.assigned_to, quoteId: r.quote_id, cost: Number(r.cost) || 0, resolution: r.resolution, resolvedAt: r.resolved_at, createdBy: r.created_by });
 const mTax     = (r) => ({ id: r.id, propertyId: r.property_id, unitId: r.unit_id, customLabel: r.custom_label, ownerId: r.owner_id, ownerLabel: r.owner_label, taxYear: r.tax_year, noticeNumber: r.notice_number, taxedAmount: Number(r.taxed_amount), installments: r.installments || [], receipts: r.receipts, declarationNext: r.declaration_next, notes: r.notes, createdBy: r.created_by, ncc: r.ncc || "", declarationDate: r.declaration_date, nextBase: r.next_base });
 const mReq     = (r) => ({ id: r.id, reqType: r.req_type, userId: r.user_id, date: r.req_date, amount: Number(r.amount), destination: r.destination, mode: r.transport_mode, propertyId: r.property_id, startDate: r.start_date, endDate: r.end_date, absenceType: r.absence_type, motif: r.motif, status: r.status, decidedBy: r.decided_by, decidedAt: r.decided_at, decisionNote: r.decision_note, createdAt: Date.parse(r.created_at) });
-const mDoc     = (r) => ({ id: r.id, ref: r.ref, docType: r.doc_type, date: r.doc_date, propertyId: r.property_id, ownerId: r.owner_id, clientName: r.client_name, clientPhone: r.client_phone, clientEmail: r.client_email, clientAddr: r.client_addr, object: r.object, body: r.body, lines: r.lines || [], fields: r.fields || {}, total: Number(r.total_amount), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at), unitId: r.unit_id, paidStamp: !!r.paid_stamp, stampedBy: r.stamped_by, period: r.period || "" });
+const mDoc     = (r) => ({ id: r.id, ref: r.ref, docType: r.doc_type, date: r.doc_date, propertyId: r.property_id, ownerId: r.owner_id, clientName: r.client_name, clientPhone: r.client_phone, clientEmail: r.client_email, clientAddr: r.client_addr, object: r.object, body: r.body, lines: r.lines || [], fields: r.fields || {}, total: Number(r.total_amount), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at), unitId: r.unit_id, paidStamp: !!r.paid_stamp, stampedBy: r.stamped_by, period: r.period || "", approval: r.approval || "non_requise", approvedBy: r.approved_by, approvedAt: r.approved_at, approvalNote: r.approval_note || "", periodIso: r.period_iso || "" });
 const mTpl     = (r) => ({ id: r.id, label: r.label, nature: r.nature, deptId: r.dept_id, urgency: r.urgency, estMin: r.est_min, sortOrder: r.sort_order, active: r.active });
 
 const upsertBy = (key, map) => (setter) => (row) =>
@@ -727,13 +750,14 @@ function useStore(userId) {
   const [requests, setRequests] = useState([]);
   const [taxRecords, setTaxRecords] = useState([]);
   const [complaints, setComplaints] = useState([]);
+  const [folderFiles, setFolderFiles] = useState([]);
 
   /* Référence vivante des membres, utilisée par les notifications */
   const membersRef = useRef([]);
   useEffect(() => { membersRef.current = members; }, [members]);
 
   const load = useCallback(async () => {
-    const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc, un, rp, rlin, rch, rq, tax, cp] = await Promise.all([
+    const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc, un, rp, rlin, rch, rq, tax, cp, ff] = await Promise.all([
       supabase.from("departments").select("*").order("created_at"),
       supabase.from("profiles").select("*").order("created_at"),
       supabase.from("tasks").select("*"),
@@ -759,6 +783,7 @@ function useStore(userId) {
       supabase.from("requests").select("*").order("req_date", { ascending: false }),
       supabase.from("tax_records").select("*").order("tax_year", { ascending: false }),
       supabase.from("complaints").select("*").order("reported_at", { ascending: false }),
+      supabase.from("folder_files").select("*").order("created_at", { ascending: false }),
     ]);
     setDepartments((dep.data || []).map(mDept));
     setMembers((prof.data || []).map(mProfile));
@@ -785,6 +810,7 @@ function useStore(userId) {
     setRequests((rq.data || []).map(mReq));
     setTaxRecords((tax.data || []).map(mTax));
     setComplaints((cp.data || []).map(mComplaint));
+    setFolderFiles((ff.data || []).map(mFolderFile));
     setLoading(false);
   }, []);
 
@@ -815,6 +841,7 @@ function useStore(userId) {
     const upReq = upsertBy("id", mReq)(setRequests), rmReq = removeBy("id")(setRequests);
     const upTax = upsertBy("id", mTax)(setTaxRecords), rmTax = removeBy("id")(setTaxRecords);
     const upCp = upsertBy("id", mComplaint)(setComplaints), rmCp = removeBy("id")(setComplaints);
+    const upFf = upsertBy("id", mFolderFile)(setFolderFiles), rmFf = removeBy("id")(setFolderFiles);
     const h = (up, rm, key = "id") => (p) => p.eventType === "DELETE" ? rm(p.old[key]) : up(p.new);
 
     const ch = supabase.channel("kibegnon-rt")
@@ -854,6 +881,16 @@ function useStore(userId) {
       .on("postgres_changes", { event: "*", schema: "public", table: "requests" }, h(upReq, rmReq))
       .on("postgres_changes", { event: "*", schema: "public", table: "tax_records" }, h(upTax, rmTax))
       .on("postgres_changes", { event: "*", schema: "public", table: "complaints" }, h(upCp, rmCp))
+      .on("postgres_changes", { event: "*", schema: "public", table: "folder_files" }, h(upFf, rmFf))
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "documents" }, (p) => {
+        /* L'auteur est prévenu dès qu'un administrateur valide sa quittance */
+        if (p.new.created_by === userId && p.old?.approval !== "approuve" && p.new.approval === "approuve") {
+          notify("Quittance validée", `${p.new.ref} approuvée — vous pouvez l'imprimer et la remettre au client.`);
+        }
+        if (p.new.created_by === userId && p.old?.approval !== "refuse" && p.new.approval === "refuse") {
+          notify("Quittance refusée", `${p.new.ref} : ${p.new.approval_note || "voir le motif dans Documents"}`);
+        }
+      })
       .subscribe();
 
     return () => { supabase.removeChannel(ch); };
@@ -1217,6 +1254,88 @@ function useStore(userId) {
     return { error: error?.message };
   };
 
+  /* ================= ACTIONS : DOSSIERS NUMÉRIQUES ================= */
+  const uploadFolderFile = async (file, meta) => {
+    if (!file) return { error: "Aucun fichier" };
+    if (file.size > 20 * 1024 * 1024) return { error: "Fichier trop volumineux (20 Mo maximum)." };
+    const safe = file.name.replace(/[^\w.\-]/g, "_");
+    const folder = meta.unitId || meta.ownerId || meta.propertyId || "divers";
+    const path = `${folder}/${Date.now()}-${safe}`;
+    const up = await supabase.storage.from("dossiers").upload(path, file, { upsert: false });
+    if (up.error) return { error: up.error.message };
+    const { data: pub } = supabase.storage.from("dossiers").getPublicUrl(path);
+    const { data, error } = await supabase.from("folder_files").insert({
+      scope: meta.scope, unit_id: meta.unitId || null, owner_id: meta.ownerId || null,
+      property_id: meta.propertyId || null, category: meta.category || "autre",
+      label: meta.label || file.name, file_url: pub.publicUrl, file_name: file.name,
+      file_type: file.type, file_size: file.size, uploaded_by: userId,
+    }).select().single();
+    if (data) setFolderFiles((p) => (p.some((x) => x.id === data.id) ? p : [mFolderFile(data), ...p]));
+    return { error: error?.message };
+  };
+  const deleteFolderFile = async (id) => {
+    setFolderFiles((p) => p.filter((f) => f.id !== id));
+    const { error } = await supabase.from("folder_files").delete().eq("id", id);
+    return { error: error?.message };
+  };
+
+  /* ---- Report d'une quittance validée dans le tableau de recouvrement ----
+     Le montant est inscrit sur la ligne du locataire pour le mois quittancé.
+     La saisie manuelle reste possible : on n'écrase jamais un encaissement
+     déjà supérieur, et le tableau demeure entièrement modifiable. */
+  const applyReceiptToRent = async (doc) => {
+    if (!doc?.periodIso || !doc.propertyId) return { skipped: "période ou bien non précisé" };
+    const period = rentPeriods.find((p) => p.propertyId === doc.propertyId
+      && p.period === doc.periodIso && p.scope === "comptable");
+    if (!period) return { skipped: `aucun état comptable pour ${doc.periodIso}` };
+
+    const unit = units.find((u) => u.id === doc.unitId);
+    const line = rentLines.find((l) => l.periodId === period.id
+      && (l.unitId === doc.unitId
+        || (unit && (l.unitLabel || "").toLowerCase() === (unit.label || "").toLowerCase())
+        || (l.tenantName || "").toLowerCase() === (doc.clientName || "").toLowerCase()));
+    const paidOn = doc.fields?.paidOn || doc.date;
+
+    if (line) {
+      const already = Number(line.collected) || 0;
+      if (already >= Number(doc.total)) return { skipped: "encaissement déjà enregistré" };
+      const { error } = await supabase.from("rent_lines")
+        .update({ collected: Number(doc.total), paid_at: paidOn,
+          comment: `Quittance ${doc.ref}` }).eq("id", line.id);
+      if (error) return { error: error.message };
+    } else {
+      const { error } = await supabase.from("rent_lines").insert({
+        period_id: period.id, unit_id: doc.unitId || null,
+        unit_label: unit?.label || "", tenant_name: doc.clientName || "",
+        tenant_phone: doc.clientPhone || "", expected: unit?.rent || Number(doc.total),
+        collected: Number(doc.total), paid_at: paidOn, charges: 0,
+        comment: `Quittance ${doc.ref}`, position: 999,
+      });
+      if (error) return { error: error.message };
+    }
+    const { data } = await supabase.from("rent_lines").select("*").order("position");
+    if (data) setRentLines(data.map(mRLine));
+    return { ok: true };
+  };
+
+  /* Validation d'une quittance par un administrateur */
+  const approveDocument = async (id, approve, note = "") => {
+    const doc = documents.find((d) => d.id === id);
+    const row = approve
+      ? { approval: "approuve", paid_stamp: true, approved_by: userId,
+          approved_at: new Date().toISOString(), approval_note: note,
+          stamped_by: userId, stamped_at: new Date().toISOString() }
+      : { approval: "refuse", paid_stamp: false, approved_by: userId,
+          approved_at: new Date().toISOString(), approval_note: note };
+    setDocuments((p) => p.map((d) => (d.id === id ? { ...d, ...(approve
+      ? { approval: "approuve", paidStamp: true, approvedBy: userId, approvalNote: note }
+      : { approval: "refuse", paidStamp: false, approvedBy: userId, approvalNote: note }) } : d)));
+    const { error } = await supabase.from("documents").update(row).eq("id", id);
+    if (error) return { error: error.message };
+    if (approve && doc?.docType === "quittance") return await applyReceiptToRent(doc);
+    return {};
+  };
+
   /* ================= ACTIONS : PLAINTES ================= */
   const saveComplaint = async (f) => {
     const row = { property_id: f.propertyId || null, unit_id: f.unitId || null,
@@ -1274,8 +1393,11 @@ function useStore(userId) {
       client_addr: f.clientAddr || "", object: f.object || "", body: f.body || "",
       lines: f.lines || [], fields: f.fields || {}, total_amount: total,
       status: f.status || "brouillon", notes: f.notes || "",
-      unit_id: f.unitId || null, paid_stamp: !!f.paidStamp, period: f.period || "",
-      stamped_by: f.paidStamp ? userId : null, stamped_at: f.paidStamp ? new Date().toISOString() : null,
+      unit_id: f.unitId || null, period: f.period || "", period_iso: f.periodIso || "",
+      approval: f.approval || "non_requise",
+      paid_stamp: f.approval === "approuve" ? !!f.paidStamp : false,
+      stamped_by: f.approval === "approuve" && f.paidStamp ? userId : null,
+      stamped_at: f.approval === "approuve" && f.paidStamp ? new Date().toISOString() : null,
     };
     if (f.id) {
       const { error } = await supabase.from("documents").update(row).eq("id", f.id);
@@ -1299,7 +1421,7 @@ function useStore(userId) {
   return {
     loading, departments, members, tasks, timeEntries, activeTimers, channels, channelMembers, messages,
     owners, properties, products, stockEntries, releases, releaseLines, quotes, quoteLines, templates, documents,
-    units, rentPeriods, rentLines, rentCharges, requests, taxRecords, complaints,
+    units, rentPeriods, rentLines, rentCharges, requests, taxRecords, complaints, folderFiles,
     actions: {
       createTask, updateTask, deleteTask, startTimer, stopTimer, pauseTask, finishTask, addManualTime, deleteEntry,
       ensureDm, sendMessage, markRead, saveDept, deleteDept, updateProfile, adminUsers,
@@ -1310,7 +1432,8 @@ function useStore(userId) {
       saveUnit, deleteUnit, bulkCreateUnits,
       savePeriod, deletePeriod, savePeriodContent, setPeriodStatus,
       saveRequest, decideRequest, deleteRequest,
-      saveTaxRecord, deleteTaxRecord, saveComplaint, deleteComplaint, uploadAttachment, reload: load,
+      saveTaxRecord, deleteTaxRecord, saveComplaint, deleteComplaint, uploadAttachment,
+      uploadFolderFile, deleteFolderFile, approveDocument, applyReceiptToRent, reload: load,
     },
   };
 }
@@ -1437,7 +1560,7 @@ function LineEditor({ lines, setLines, labelPlaceholder = "Désignation de la pr
 }
 
 /* ================= Modale de saisie ================= */
-function DocModal({ initial, properties, owners, onSave, onClose }) {
+function DocModal({ initial, properties, owners, units, onSave, onClose }) {
   const cfg = DOC_TYPES[initial.docType];
   const [f, setF] = useState(() => ({
     docType: initial.docType, date: isoDate(new Date()), propertyId: "", ownerId: "",
@@ -1470,8 +1593,20 @@ function DocModal({ initial, properties, owners, onSave, onClose }) {
     }
   };
 
+  const tenantOptions = useMemo(() => (units || [])
+    .filter((u) => (u.tenantName || "").trim())
+    .map((u) => {
+      const p = properties.find((x) => x.id === u.propertyId);
+      return { key: u.id, name: u.tenantName, phone: u.tenantPhone, email: u.tenantEmail,
+        unitId: u.id, propertyId: u.propertyId, ownerId: p?.ownerId,
+        detail: `${p?.name || ""} — ${u.label}` };
+    }), [units, properties]);
+  const ownerOptions = useMemo(() => owners.map((o) => ({ key: o.id, name: o.name, phone: o.phone,
+    email: o.email, ownerId: o.id, detail: OWNER_KIND[o.kind] || "" })), [owners]);
+
   const total = linesTotal(lines);
   const isLetter = cfg.layout === "lettre";
+  const isDecharge = cfg.layout === "decharge";
   const valid = f.clientName.trim();
   const submit = async () => {
     setBusy(true);
@@ -1487,7 +1622,11 @@ function DocModal({ initial, properties, owners, onSave, onClose }) {
       </div>
 
       <div className="grid sm:grid-cols-2 gap-3">
-        <Field label={cfg.clientLabel}><input className={inputCls} style={inputStyle} value={f.clientName} autoFocus onChange={(e) => set("clientName", e.target.value)} placeholder="Ex. Mme SAKOUA BADE" /></Field>
+        <PersonPicker label={cfg.clientLabel} hint="Choisissez un locataire connu ou saisissez un nom libre"
+          value={f.clientName} options={tenantOptions} placeholder="Ex. Mme SAKOUA BADE"
+          onPick={(v, hit) => setF((p) => ({ ...p, clientName: v,
+            ...(hit ? { clientPhone: hit.phone || p.clientPhone, clientEmail: hit.email || p.clientEmail,
+              unitId: hit.unitId, propertyId: hit.propertyId || p.propertyId, ownerId: hit.ownerId || p.ownerId } : {}) }))} />
         <Field label="Téléphone"><input className={inputCls} style={inputStyle} value={f.clientPhone} onChange={(e) => set("clientPhone", e.target.value)} placeholder="+225 07 ..." /></Field>
       </div>
 
@@ -1504,6 +1643,17 @@ function DocModal({ initial, properties, owners, onSave, onClose }) {
       <Field label="Objet"><input className={inputCls} style={inputStyle} value={f.object} onChange={(e) => set("object", e.target.value)} placeholder={f.docType === "decompte_entree" ? "Ex. DÉCOMPTE ENTRÉE APPARTEMENT DJOROGOBITÉ" : "Objet du document"} /></Field>
 
       {/* Champs spécifiques */}
+      {f.docType === "quittance" && (
+        <Field label="Mois quittancé" hint="Sert au report automatique dans le tableau de recouvrement">
+          <input type="month" className={inputCls} style={inputStyle} value={f.periodIso || ""}
+            onChange={(e) => {
+              const iso = e.target.value;
+              const [y, mo] = iso.split("-");
+              setF((p) => ({ ...p, periodIso: iso, period: iso ? `${MONTHS_FR[Number(mo) - 1]} ${y}` : p.period }));
+            }} />
+        </Field>
+      )}
+
       {(f.docType === "quittance" || f.docType === "facture_impayes") && (
         <div className="grid sm:grid-cols-2 gap-3">
           <Field label="Période concernée"><input className={inputCls} style={inputStyle} value={f.fields.periode || ""} onChange={(e) => setField("periode", e.target.value)} placeholder="Ex. Janvier à Mars 2026" /></Field>
@@ -1541,8 +1691,36 @@ function DocModal({ initial, properties, owners, onSave, onClose }) {
         </>
       )}
 
+      {isDecharge && (
+        <div className="rounded-xl border p-3 mb-3" style={{ borderColor: "var(--line)", background: "#FAFBFC" }}>
+          <p className="text-xs font-semibold mb-2">Identité du déclarant</p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Field label="Agissant en qualité de"><input className={inputCls} style={inputStyle} value={f.fields.qualite || ""} onChange={(e) => setField("qualite", e.target.value)} placeholder="Ex. Gérant, mandataire, locataire…" /></Field>
+            <Field label="Pour le compte de"><input className={inputCls} style={inputStyle} value={f.fields.pourCompte || ""} onChange={(e) => setField("pourCompte", e.target.value)} /></Field>
+            <Field label="Demeurant à"><input className={inputCls} style={inputStyle} value={f.fields.demeurant || ""} onChange={(e) => setField("demeurant", e.target.value)} /></Field>
+            <Field label="Type de pièce d'identité"><input className={inputCls} style={inputStyle} value={f.fields.pieceType || ""} onChange={(e) => setField("pieceType", e.target.value)} placeholder="CNI, passeport, attestation…" /></Field>
+            <Field label="N° de la pièce"><input className={inputCls} style={inputStyle} value={f.fields.pieceNum || ""} onChange={(e) => setField("pieceNum", e.target.value)} /></Field>
+            <Field label="Délivrée le"><input className={inputCls} style={inputStyle} value={f.fields.pieceDate || ""} onChange={(e) => setField("pieceDate", e.target.value)} placeholder="jj/mm/aaaa" /></Field>
+            <Field label="Délivrée à"><input className={inputCls} style={inputStyle} value={f.fields.pieceLieu || ""} onChange={(e) => setField("pieceLieu", e.target.value)} /></Field>
+            <Field label="Par (autorité)"><input className={inputCls} style={inputStyle} value={f.fields.pieceAutorite || ""} onChange={(e) => setField("pieceAutorite", e.target.value)} /></Field>
+          </div>
+          <Field label="Sens de l'opération">
+            <div className="flex gap-2">
+              {[["recu", "A REÇU des mains de l'agence"], ["verse", "A VERSÉ entre les mains de l'agence"]].map(([k, l]) => (
+                <button key={k} onClick={() => setField("sens", k)} className="flex-1 py-2 rounded-lg text-xs font-medium"
+                  style={{ background: f.fields.sens === k ? "#B91C1C" : "#fff", color: f.fields.sens === k ? "#fff" : "#B91C1C", border: "1px solid #B91C1C55" }}>{l}</button>
+              ))}
+            </div>
+          </Field>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Field label="Période / référence concernée"><input className={inputCls} style={inputStyle} value={f.fields.reference || ""} onChange={(e) => setField("reference", e.target.value)} placeholder="Ex. Loyer août 2026 — Appt A1" /></Field>
+            <Field label="Fait à"><input className={inputCls} style={inputStyle} value={f.fields.faitA || "Abidjan"} onChange={(e) => setField("faitA", e.target.value)} /></Field>
+          </div>
+        </div>
+      )}
+
       <p className="text-xs font-semibold mb-2 mt-1" style={{ color: "var(--ink)" }}>
-        {isLetter ? "Sommes réclamées" : "Détail du document"}
+        {isDecharge ? "Montant de la décharge" : isLetter ? "Sommes réclamées" : "Détail du document"}
       </p>
       <LineEditor lines={lines} setLines={setLines} showUnit={f.docType !== "decompte_entree"}
         labelPlaceholder={f.docType === "decompte_entree" ? "Ex. 2 MOIS D'AVANCE" : "Désignation"} />
@@ -1624,6 +1802,7 @@ Restant à votre disposition pour tout échange, veuillez agréer, Madame, Monsi
 /* ================= Fiche imprimable ================= */
 function DocSheet({ doc, property, owner, author, onBack }) {
   const cfg = DOC_TYPES[doc.docType];
+  if (cfg.layout === "decharge") return <DechargeSheet doc={doc} author={author} onBack={onBack} />;
   const st = DOC_STATUS[doc.status];
   const isLetter = cfg.layout === "lettre";
   const body = doc.body?.trim() || (doc.docType === "relance" ? relanceBody(doc, property) : "");
@@ -1753,6 +1932,8 @@ function Documents({ store, me }) {
   const ownerById = useMemo(() => Object.fromEntries(owners.map((o) => [o.id, o])), [owners]);
   const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
   const sup = canSupervise(me.role);
+  /* Quittances et décharges en attente de validation par un administrateur */
+  const pendingApproval = documents.filter((d) => d.approval === "en_attente");
 
   const sheet = documents.find((d) => d.id === sheetId);
   if (sheet) {
@@ -1819,6 +2000,38 @@ function Documents({ store, me }) {
         </select>
       </div>
 
+      {pendingApproval.length > 0 && (
+        <SectionCard title={`En attente de validation (${pendingApproval.length})`} icon={ShieldAlert} pad={false}>
+          <div className="divide-y" style={{ borderColor: "var(--line)" }}>
+            {pendingApproval.map((d) => (
+              <div key={d.id} className="flex items-center justify-between px-4 py-3 gap-2 flex-wrap">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{d.ref} · {d.clientName} · {d.period || "—"}</p>
+                  <p className="text-[11px]" style={{ color: "var(--muted)" }}>
+                    {DOC_TYPES[d.docType]?.short} de {fcfa(d.total)} — établie par {memberById[d.createdBy]?.name || "—"}
+                    {" le "}{fr(d.date + "T00:00:00", { day: "numeric", month: "short", year: "numeric" })}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button onClick={() => setSheetId(d.id)} className="kb-btn kb-btn-ghost text-xs"><Eye size={13} /> Vérifier</button>
+                  {isAdmin(me.role) ? <>
+                    <button onClick={async () => {
+                      const r = await actions.approveDocument(d.id, true);
+                      if (r?.error) alert(r.error);
+                      else if (r?.skipped) alert(`Quittance validée. Report dans le recouvrement non effectué : ${r.skipped}.`);
+                    }} className="kb-btn text-xs px-2.5 py-1.5" style={{ background: "#4F9E2A", color: "#fff" }}><ThumbsUp size={13} /> Valider</button>
+                    <button onClick={async () => {
+                      const note = prompt("Motif du refus :", "");
+                      if (note !== null) await actions.approveDocument(d.id, false, note);
+                    }} className="kb-btn text-xs px-2.5 py-1.5" style={{ background: "#fff", color: "#D81F26", border: "1px solid #D81F2655" }}><ThumbsDown size={13} /> Refuser</button>
+                  </> : <Chip color="#C58A1B" dot>en attente</Chip>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      )}
+
       {list.length ? <div className="space-y-2">
         {list.map((d) => {
           const cfg = DOC_TYPES[d.docType]; const st = DOC_STATUS[d.status];
@@ -1838,7 +2051,12 @@ function Documents({ store, me }) {
                   {prop && <div className="mt-2"><Chip color="#2E78A8"><Building2 size={10} /> {prop.name}</Chip></div>}
                 </div>
                 <div className="flex flex-col items-end gap-2 shrink-0">
-                  <span className="text-base font-bold tabular-nums" style={{ color: cfg.color }}>{fcfa(d.total)}</span>
+                  <div className="flex items-center gap-1.5">
+                    {d.approval === "approuve" && d.paidStamp && <Chip color={STAMP_RED} bg="#FDEAEA">PAYÉ</Chip>}
+                    {d.approval === "en_attente" && <Chip color="#C58A1B" dot>à valider</Chip>}
+                    {d.approval === "refuse" && <Chip color="#D81F26">refusée</Chip>}
+                    <span className="text-base font-bold tabular-nums" style={{ color: cfg.color }}>{fcfa(d.total)}</span>
+                  </div>
                   <select value={d.status} onChange={(e) => actions.setDocumentStatus(d.id, e.target.value)}
                     className="text-xs px-2 py-1 rounded-lg border bg-white" style={{ borderColor: st.color + "55", color: st.color }}>
                     {DOC_STATUS_ORDER.map((k) => <option key={k} value={k}>{DOC_STATUS[k].label}</option>)}
@@ -1878,7 +2096,7 @@ function Documents({ store, me }) {
         </Modal>
       )}
 
-      {modal && <DocModal initial={modal} properties={properties} owners={owners}
+      {modal && <DocModal initial={modal} properties={properties} owners={owners} units={store.units}
         onSave={actions.saveDocument} onClose={() => setModal(null)} />}
     </div>
   );
@@ -2466,6 +2684,7 @@ function Patrimoine({ store, me }) {
   const [ownerModal, setOwnerModal] = useState(null);
   const [detailId, setDetailId] = useState(null);
   const [register, setRegister] = useState(null);
+  const [ownerFolder, setOwnerFolder] = useState(null);
 
   const ownerById = useMemo(() => Object.fromEntries(owners.map((o) => [o.id, o])), [owners]);
   const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
@@ -2498,6 +2717,11 @@ function Patrimoine({ store, me }) {
     });
     return rows;
   }, [units, properties, memberById]);
+
+  if (ownerFolder) {
+    return <Dossier store={store} me={me} userId={me.id} scope="proprietaire" owner={ownerFolder}
+      onBack={() => setOwnerFolder(null)} onOpenDoc={() => setOwnerFolder(null)} />;
+  }
 
   if (register === "biens") {
     return <Register title="REGISTRE DES BIENS" subtitle={`${properties.length} bien(s) en gestion`} onBack={() => setRegister(null)}
@@ -2656,7 +2880,9 @@ function Patrimoine({ store, me }) {
               <div className="flex items-center gap-2.5 min-w-0">
                 <span className="w-9 h-9 rounded-full flex items-center justify-center text-white shrink-0" style={{ background: "#2E78A8" }}><UserRound size={16} /></span>
                 <div className="min-w-0">
-                  <p className="text-sm font-medium truncate">{o.name}</p>
+                  <button onClick={() => setOwnerFolder(o)} className="text-sm font-medium truncate hover:underline flex items-center gap-1.5" style={{ color: "#2E78A8" }}>
+                    <FolderOpen size={13} /> {o.name}
+                  </button>
                   <p className="text-[11px] flex items-center gap-2 flex-wrap" style={{ color: "var(--muted)" }}>
                     <span>{OWNER_KIND[o.kind]}</span>
                     {o.phone && <span className="flex items-center gap-0.5"><Phone size={10} />{o.phone}</span>}
@@ -4905,7 +5131,7 @@ function TenantModal({ unit, property, onSave, onClose }) {
 }
 
 /* ---------------- Quittance de loyer (modèle soigné + tampon PAYÉ) ---------------- */
-function ReceiptModal({ initial, unit, property, owner, onSave, onClose }) {
+function ReceiptModal({ initial, unit, property, owner, isAdminUser, onSave, onClose }) {
   const now = new Date();
   const [f, setF] = useState(() => ({
     docType: "quittance", date: isoDate(now),
@@ -4913,6 +5139,7 @@ function ReceiptModal({ initial, unit, property, owner, onSave, onClose }) {
     propertyId: property?.id || "", unitId: unit?.id || "", ownerId: property?.ownerId || "",
     object: "", period: `${MONTHS_FR[now.getMonth()]} ${now.getFullYear()}`,
     fields: { mode: "Espèces", paidOn: isoDate(now), dueOn: "" },
+    periodIso: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`,
     status: "emis", notes: "", paidStamp: true, ...initial,
   }));
   const [lines, setLines] = useState(() => initial?.lines?.length ? initial.lines : [
@@ -4925,7 +5152,8 @@ function ReceiptModal({ initial, unit, property, owner, onSave, onClose }) {
   const total = linesTotal(lines);
   const submit = async () => {
     setBusy(true);
-    const r = await onSave({ ...f, lines });
+    const approval = f.paidStamp ? (isAdminUser ? "approuve" : "en_attente") : "non_requise";
+    const r = await onSave({ ...f, lines, approval });
     setBusy(false);
     if (r?.error) setErr(r.error); else onClose();
   };
@@ -4936,7 +5164,13 @@ function ReceiptModal({ initial, unit, property, owner, onSave, onClose }) {
         <Field label="Téléphone"><input className={inputCls} style={inputStyle} value={f.clientPhone} onChange={(e) => set("clientPhone", e.target.value)} /></Field>
       </div>
       <div className="grid sm:grid-cols-3 gap-3">
-        <Field label="Période quittancée"><input className={inputCls} style={inputStyle} value={f.period} onChange={(e) => set("period", e.target.value)} placeholder="Ex. décembre 2026" /></Field>
+        <Field label="Mois quittancé" hint="Reporté dans le recouvrement">
+          <input type="month" className={inputCls} style={inputStyle} value={f.periodIso || ""}
+            onChange={(e) => {
+              const iso = e.target.value; const [y, mo] = iso.split("-");
+              setF((p) => ({ ...p, periodIso: iso, period: iso ? `${MONTHS_FR[Number(mo) - 1]} ${y}` : p.period }));
+            }} />
+        </Field>
         <Field label="Date d'échéance"><input type="date" className={inputCls} style={inputStyle} value={f.fields.dueOn || ""} onChange={(e) => setField("dueOn", e.target.value)} /></Field>
         <Field label="Date de paiement"><input type="date" className={inputCls} style={inputStyle} value={f.fields.paidOn || ""} onChange={(e) => setField("paidOn", e.target.value)} /></Field>
       </div>
@@ -4952,10 +5186,17 @@ function ReceiptModal({ initial, unit, property, owner, onSave, onClose }) {
       <p className="text-xs font-semibold mb-2 mt-1" style={{ color: "var(--ink)" }}>Détail encaissé</p>
       <LineEditor lines={lines} setLines={setLines} labelPlaceholder="Ex. Loyer" />
 
-      <label className="flex items-center gap-2 text-sm mt-4 mb-3 cursor-pointer p-2.5 rounded-lg" style={{ background: f.paidStamp ? "#FDEAEA" : "#F6F8FA" }}>
-        <input type="checkbox" checked={!!f.paidStamp} onChange={(e) => set("paidStamp", e.target.checked)} />
-        <span>Apposer la mention <strong style={{ color: "var(--brass)" }}>PAYÉ</strong> (tampon rouge) sur la quittance</span>
-      </label>
+      <div className="rounded-lg p-3 mt-4 mb-3" style={{ background: isAdminUser ? "#FDEAEA" : "#FFF8EC" }}>
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" checked={!!f.paidStamp} onChange={(e) => set("paidStamp", e.target.checked)} />
+          <span>Apposer la mention <strong style={{ color: STAMP_RED }}>PAYÉ</strong> (tampon de l'agence)</span>
+        </label>
+        <p className="text-[11px] mt-1.5" style={{ color: isAdminUser ? "#B5171D" : "#8A6212" }}>
+          {isAdminUser
+            ? "Vous êtes administrateur : le tampon sera apposé dès l'enregistrement, et le paiement reporté dans le tableau de recouvrement du mois."
+            : "La quittance partira en attente de validation. Un administrateur vérifiera puis apposera le tampon ; vous serez notifié et pourrez alors l'imprimer."}
+        </p>
+      </div>
 
       <Field label="Message au locataire"><textarea className={inputCls} style={inputStyle} rows={2} value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Merci pour votre paiement. Veuillez conserver cette quittance." /></Field>
       {err && <p className="text-xs text-red-600 mb-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
@@ -4980,6 +5221,22 @@ function ReceiptSheet({ doc, unit, property, owner, author, onBack }) {
         <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
         <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
       </div>
+
+      {doc.approval === "en_attente" && (
+        <div className="print:hidden rounded-xl border p-3 mb-3 max-w-3xl mx-auto flex items-start gap-2" style={{ borderColor: "#FCD9A6", background: "#FFF8EC" }}>
+          <ShieldAlert size={16} style={{ color: "#C58A1B" }} className="mt-0.5 shrink-0" />
+          <p className="text-xs" style={{ color: "#8A6212" }}>
+            Quittance <strong>en attente de validation</strong> par un administrateur. Le tampon « PAYÉ » n'apparaîtra
+            qu'après approbation : ne la remettez pas au client avant.
+          </p>
+        </div>
+      )}
+      {doc.approval === "refuse" && (
+        <div className="print:hidden rounded-xl border p-3 mb-3 max-w-3xl mx-auto flex items-start gap-2" style={{ borderColor: "#F5C6C7", background: "#FDF2F2" }}>
+          <AlertTriangle size={16} style={{ color: "#D81F26" }} className="mt-0.5 shrink-0" />
+          <p className="text-xs" style={{ color: "#B5171D" }}>Quittance refusée{doc.approvalNote ? ` : ${doc.approvalNote}` : ""}.</p>
+        </div>
+      )}
 
       <div id="print-area" className="bg-white rounded-xl border p-6 max-w-3xl mx-auto relative overflow-hidden" style={{ borderColor: "var(--line)" }}>
         <PrintHead title={doc.ref} subtitle="Reçu de paiement de loyer" extra={
@@ -5059,19 +5316,10 @@ function ReceiptSheet({ doc, unit, property, owner, author, onBack }) {
         )}
 
         <div className="flex justify-between items-end pt-6">
-          <div className="relative" style={{ minWidth: 200 }}>
-            {doc.paidStamp && (
-              <div className="absolute" style={{ left: 0, top: -18, transform: "rotate(-14deg)" }}>
-                <div style={{
-                  border: "4px double #D81F26", color: "#D81F26", padding: "6px 22px",
-                  borderRadius: 8, fontWeight: 900, fontSize: 30, letterSpacing: 4,
-                  fontFamily: "Inter, sans-serif", opacity: 0.85, textAlign: "center", lineHeight: 1.1,
-                }}>
-                  PAYÉ
-                  <div style={{ fontSize: 9, letterSpacing: 1, fontWeight: 700 }}>
-                    {doc.fields?.paidOn ? fr(doc.fields.paidOn + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" }) : ""}
-                  </div>
-                </div>
+          <div className="relative" style={{ minWidth: 230 }}>
+            {doc.paidStamp && doc.approval === "approuve" && (
+              <div className="absolute" style={{ left: 0, top: -20 }}>
+                <PaidStamp date={doc.fields?.paidOn || doc.date} />
               </div>
             )}
           </div>
@@ -5097,6 +5345,7 @@ function Locataires({ store, me, userId }) {
   const [tenantModal, setTenantModal] = useState(null);
   const [receiptModal, setReceiptModal] = useState(null);
   const [sheetId, setSheetId] = useState(null);
+  const [dossier, setDossier] = useState(null);
 
   const propById = useMemo(() => Object.fromEntries(properties.map((p) => [p.id, p])), [properties]);
   const ownerById = useMemo(() => Object.fromEntries(owners.map((o) => [o.id, o])), [owners]);
@@ -5108,6 +5357,10 @@ function Locataires({ store, me, userId }) {
   if (sheetDoc) {
     return <ReceiptSheet doc={sheetDoc} unit={unitById[sheetDoc.unitId]} property={propById[sheetDoc.propertyId]}
       owner={ownerById[sheetDoc.ownerId]} author={memberById[sheetDoc.createdBy]} onBack={() => setSheetId(null)} />;
+  }
+  if (dossier) {
+    return <Dossier store={store} me={me} userId={userId} scope="locataire" unit={dossier.unit}
+      property={dossier.property} onBack={() => setDossier(null)} onOpenDoc={(d) => { setDossier(null); setSheetId(d.id); }} />;
   }
 
   /* Dernier état de paiement connu, tiré des tableaux de recouvrement */
@@ -5181,7 +5434,11 @@ function Locataires({ store, me, userId }) {
               return (
                 <tr key={u.id} className="border-t" style={{ borderColor: "var(--line)" }}>
                   <td className="px-4 py-2.5">
-                    <p className="font-medium">{u.tenantName || <span style={{ color: "#B6BEC9" }}>non renseigné</span>}</p>
+                    {u.tenantName
+                      ? <button onClick={() => setDossier({ unit: u, property: p })} className="font-medium hover:underline text-left flex items-center gap-1.5" style={{ color: "#2E78A8" }}>
+                          <FolderOpen size={13} /> {u.tenantName}
+                        </button>
+                      : <span style={{ color: "#B6BEC9" }}>non renseigné</span>}
                     {u.tenantEmail && <p className="text-[11px]" style={{ color: "var(--muted)" }}>{u.tenantEmail}</p>}
                   </td>
                   <td className="px-3 py-2.5">
@@ -5241,7 +5498,7 @@ function Locataires({ store, me, userId }) {
         onSave={actions.saveUnit} onClose={() => setTenantModal(null)} />}
 
       {receiptModal && <ReceiptModal initial={receiptModal.doc} unit={receiptModal.unit} property={receiptModal.property}
-        owner={ownerById[receiptModal.property?.ownerId]}
+        owner={ownerById[receiptModal.property?.ownerId]} isAdminUser={isAdmin(me.role)}
         onSave={async (f) => { const r = await actions.saveDocument(f); if (!r.error && r.id) setSheetId(r.id); return r; }}
         onClose={() => setReceiptModal(null)} />}
     </div>
@@ -5688,6 +5945,292 @@ function Portefeuille({ store, me, userId }) {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   TAMPON « PAYÉ » · DÉCHARGES · SÉLECTEUR DE PERSONNE · DOSSIERS NUMÉRIQUES
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* Tampon encreur reprenant celui de l'agence : PAYÉ · logo · téléphone · date */
+function PaidStamp({ date, angle = -12, scale = 1 }) {
+  return (
+    <div style={{ transform: `rotate(${angle}deg) scale(${scale})`, transformOrigin: "left top", display: "inline-block" }}>
+      <div style={{
+        border: `3px solid ${STAMP_RED}`, borderRadius: 10, padding: "8px 18px 6px",
+        color: STAMP_RED, textAlign: "center", opacity: 0.88, minWidth: 210,
+        boxShadow: `inset 0 0 0 1px ${STAMP_RED}22`,
+      }}>
+        <div style={{ fontSize: 34, fontWeight: 900, letterSpacing: 6, lineHeight: 1, marginBottom: 2 }}>PAYÉ</div>
+        <div style={{ borderTop: `1.5px solid ${STAMP_RED}`, margin: "4px 0 3px" }} />
+        <img src={LOGO} alt="" style={{ height: 26, width: "auto", filter: STAMP_FILTER, opacity: 0.95, display: "block", margin: "0 auto" }} />
+        <div style={{ borderTop: `1.5px solid ${STAMP_RED}`, margin: "3px 0 3px" }} />
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4 }}>Tél : 01 51 96 60 67</div>
+        {date && <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1, marginTop: 3 }}>
+          {fr(date + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" })}
+        </div>}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Sélecteur de personne (locataire / propriétaire) ----------------
+   Propose les noms connus au fil de la frappe, sans empêcher la saisie libre. */
+function PersonPicker({ label, hint, value, onPick, options, placeholder }) {
+  const listId = useRef("pp-" + Math.random().toString(36).slice(2, 9)).current;
+  return (
+    <Field label={label} hint={hint}>
+      <input list={listId} className={inputCls} style={inputStyle} value={value || ""}
+        onChange={(e) => {
+          const v = e.target.value;
+          const hit = options.find((o) => o.name.toLowerCase() === v.toLowerCase());
+          onPick(v, hit || null);
+        }}
+        placeholder={placeholder} />
+      <datalist id={listId}>
+        {options.map((o) => <option key={o.key} value={o.name}>{o.detail}</option>)}
+      </datalist>
+    </Field>
+  );
+}
+
+/* ---------------- Décharge (remise ou versement de fonds) ---------------- */
+function DechargeSheet({ doc, author, onBack }) {
+  const f = doc.fields || {};
+  const line = (w = "100%") => (
+    <span style={{ display: "inline-block", borderBottom: "1px dotted #94A3B8", minWidth: w, verticalAlign: "bottom" }}>&nbsp;</span>
+  );
+  const val = (v, w) => v
+    ? <span style={{ fontWeight: 600 }}>{v}</span>
+    : line(w);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
+        <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
+        <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+      </div>
+
+      <div id="print-area" className="bg-white rounded-xl border p-7 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
+        <PrintHead extra={
+          <p className="text-[10px] leading-snug" style={{ color: "var(--muted)" }}>
+            Par l'État suivant arrêté<br />ministériel n° AB 0005262<br />du 15 JAN. 2026
+          </p>
+        } />
+
+        <div className="text-center py-5">
+          <h2 className="text-2xl font-bold tracking-wide" style={{ color: "var(--ink)" }}>DÉCHARGE</h2>
+          <p className="text-sm italic" style={{ color: "var(--muted)" }}>(Remise ou versement de fonds)</p>
+          <p className="text-sm mt-1">N° {doc.ref || "…"} / {new Date(doc.date + "T00:00:00").getFullYear()}</p>
+        </div>
+
+        <div className="text-sm leading-8" style={{ color: "var(--ink)" }}>
+          <p>Je soussigné(e), M./Mme {val(f.declarant || doc.clientName, "62%")}</p>
+          <p>Agissant en qualité de {val(f.qualite, "68%")}</p>
+          <p>Agissant, le cas échéant, pour le compte de {val(f.pourCompte, "52%")}</p>
+          <p>Demeurant à {val(f.demeurant || doc.clientAddr, "34%")} &nbsp; Téléphone : {val(f.telephone || doc.clientPhone, "30%")}</p>
+          <p>Pièce d'identité — Type : {val(f.pieceType, "24%")} &nbsp; N° : {val(f.pieceNum, "30%")}</p>
+          <p>Délivrée le {val(f.pieceDate, "18%")} à {val(f.pieceLieu, "22%")} par {val(f.pieceAutorite, "26%")}</p>
+
+          <p className="mt-3 font-semibold">
+            reconnais avoir :&nbsp;
+            <span style={{ marginRight: 14 }}>{f.sens === "recu" ? "☑" : "☐"} REÇU des mains de</span>
+            <span>{f.sens === "verse" ? "☑" : "☐"} VERSÉ entre les mains de</span> l'agence
+          </p>
+          <p className="font-semibold">ENTREPRISE KIBEGNON, la somme de :</p>
+
+          <p>En chiffres : {doc.total ? <span style={{ fontWeight: 700 }}>{Number(doc.total).toLocaleString("fr-FR")}</span> : line("40%")} F CFA</p>
+          <p>En lettres : {doc.total ? <span style={{ fontWeight: 600, fontStyle: "italic" }}>{amountInWords(doc.total)}</span> : line("72%")}</p>
+          <p>Au titre de (motif) : {val(doc.object, "60%")}</p>
+          <p>Période / référence concernée : {val(f.reference, "50%")}</p>
+        </div>
+
+        <div className="border p-2 my-4 text-center" style={{ borderColor: "var(--ink)" }}>
+          <p className="text-xs italic font-medium">La photocopie de la pièce d'identité présentée est annexée au dos de la présente décharge.</p>
+        </div>
+
+        <p className="text-sm leading-7">
+          En foi de quoi, la présente décharge est établie pour servir et valoir ce que de droit, et vaut
+          quittance définitive à concurrence du montant ci-dessus.
+        </p>
+
+        <p className="text-sm mt-4">
+          Fait à {val(f.faitA || "Abidjan", "22%")}, le {doc.date ? <span style={{ fontWeight: 600 }}>{fr(doc.date + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" })}</span> : line("18%")}
+        </p>
+
+        <div className="flex justify-between items-start mt-6 gap-6">
+          <div className="text-center" style={{ minWidth: 230 }}>
+            <p className="text-sm font-bold">Le/La déclarant(e)</p>
+            <p className="text-[11px] italic" style={{ color: "var(--muted)" }}>(mention « Lu et approuvé », nom et signature)</p>
+            <div style={{ height: 78 }} />
+            <div className="border-t mx-6" style={{ borderColor: "var(--ink)" }} />
+          </div>
+          <div className="text-center relative" style={{ minWidth: 230 }}>
+            <p className="text-sm font-bold">Pour l'ENTREPRISE KIBEGNON</p>
+            <p className="text-[11px] italic" style={{ color: "var(--muted)" }}>(nom, qualité, cachet et signature)</p>
+            <div style={{ height: 78 }}>
+              {doc.paidStamp && doc.approval === "approuve" && (
+                <div style={{ position: "absolute", left: 18, top: 26 }}>
+                  <PaidStamp date={doc.fields?.paidOn || doc.date} scale={0.7} />
+                </div>
+              )}
+            </div>
+            <div className="border-t mx-6" style={{ borderColor: "var(--ink)" }} />
+          </div>
+        </div>
+
+        <p className="text-[11px] italic text-center mt-5" style={{ color: "var(--muted)" }}>
+          Décharge à conserver par l'ENTREPRISE KIBEGNON SARL — photocopie de la pièce au dos.
+        </p>
+        <PrintFoot note={author ? `Établie par ${author.name}` : undefined} />
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Dossier numérique d'une personne ---------------- */
+const FOLDER_CATEGORY = {
+  contrat:          "Contrat / bail",
+  piece_identite:   "Pièce d'identité",
+  etat_des_lieux:   "État des lieux",
+  justificatif:     "Justificatif",
+  correspondance:   "Correspondance",
+  photo:            "Photo",
+  titre_propriete:  "Titre de propriété",
+  fiscal:           "Document fiscal",
+  autre:            "Autre",
+};
+
+function Dossier({ store, me, userId, scope, unit, owner, property, onBack, onOpenDoc }) {
+  const { documents, folderFiles, members, actions } = store;
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [category, setCategory] = useState("autre");
+  const fileRef = useRef(null);
+  const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
+
+  const person = scope === "locataire"
+    ? { name: unit?.tenantName || "Locataire", phone: unit?.tenantPhone, email: unit?.tenantEmail,
+        sub: `${property?.name || ""}${unit ? ` — ${unit.label}` : ""}` }
+    : { name: owner?.name || "Propriétaire", phone: owner?.phone, email: owner?.email,
+        sub: `${OWNER_KIND[owner?.kind] || ""}` };
+
+  /* Documents produits dans l'outil */
+  const docs = documents.filter((d) => scope === "locataire"
+    ? (unit && (d.unitId === unit.id || (d.clientName || "").toLowerCase() === (unit.tenantName || "").toLowerCase()))
+    : (owner && d.ownerId === owner.id));
+
+  /* Pièces importées depuis l'appareil */
+  const files = folderFiles.filter((f) => scope === "locataire" ? f.unitId === unit?.id : f.ownerId === owner?.id);
+
+  const upload = async (file) => {
+    if (!file) return;
+    setBusy(true); setErr("");
+    const r = await actions.uploadFolderFile(file, {
+      scope, unitId: scope === "locataire" ? unit?.id : null,
+      ownerId: scope === "proprietaire" ? owner?.id : null,
+      propertyId: property?.id || null, category,
+    });
+    setBusy(false);
+    if (r?.error) setErr(r.error);
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  return (
+    <div>
+      <button onClick={onBack} className="kb-btn kb-btn-ghost mb-3 text-sm"><ArrowLeft size={15} /> Retour</button>
+
+      <div className="bg-white rounded-xl border p-4 mb-4" style={{ borderColor: "var(--line)" }}>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <span className="w-11 h-11 rounded-full flex items-center justify-center text-white shrink-0"
+              style={{ background: scope === "locataire" ? "#2E78A8" : "var(--brass)" }}>
+              {scope === "locataire" ? <Users size={20} /> : <UserRound size={20} />}
+            </span>
+            <div>
+              <h1 className="text-xl font-bold">{person.name}</h1>
+              <p className="text-sm" style={{ color: "var(--muted)" }}>
+                Dossier {scope === "locataire" ? "locataire" : "propriétaire"}{person.sub ? ` · ${person.sub}` : ""}
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>
+                {person.phone || "téléphone non renseigné"}{person.email ? ` · ${person.email}` : ""}
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2 items-center flex-wrap">
+            <select value={category} onChange={(e) => setCategory(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+              {Object.entries(FOLDER_CATEGORY).map(([k, v]) => <option key={k} value={v === "" ? k : k}>{v}</option>)}
+            </select>
+            <input ref={fileRef} type="file" className="hidden" onChange={(e) => upload(e.target.files?.[0])} />
+            <button onClick={() => fileRef.current?.click()} disabled={busy} className="kb-btn kb-btn-primary disabled:opacity-40">
+              <FileUp size={16} /> {busy ? "Import…" : "Importer une pièce"}
+            </button>
+          </div>
+        </div>
+        {err && <p className="text-xs text-red-600 mt-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <StatCard icon={FileText} label="Documents émis" value={docs.length} sub="depuis l'outil" tint="var(--brass)" />
+        <StatCard icon={Paperclip} label="Pièces importées" value={files.length} tint="#2E78A8" />
+        <StatCard icon={Receipt} label="Quittances" value={docs.filter((d) => d.docType === "quittance").length} tint="#4F9E2A" />
+        <StatCard icon={Wallet} label="Montant des pièces" value={fcfa(docs.reduce((a, d) => a + (d.total || 0), 0))} tint="#7C3AED" />
+      </div>
+
+      <SectionCard title={`Documents établis par l'agence (${docs.length})`} icon={FileText} pad={false}>
+        {docs.length ? <div className="divide-y" style={{ borderColor: "var(--line)" }}>
+          {docs.map((d) => {
+            const cfg = DOC_TYPES[d.docType] || DOC_TYPES.courrier;
+            return (
+              <div key={d.id} className="flex items-center justify-between px-4 py-2.5 gap-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{d.object || cfg.label}</p>
+                  <p className="text-[11px]" style={{ color: "var(--muted)" }}>
+                    {d.ref} · {cfg.short} · {fr(d.date + "T00:00:00", { day: "numeric", month: "short", year: "numeric" })}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {d.paidStamp && d.approval === "approuve" && <Chip color={STAMP_RED} bg="#FDEAEA">PAYÉ</Chip>}
+                  {d.approval === "en_attente" && <Chip color="#C58A1B" dot>à valider</Chip>}
+                  {d.total > 0 && <span className="text-sm font-semibold tabular-nums">{fcfa(d.total)}</span>}
+                  <button onClick={() => onOpenDoc(d)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Ouvrir"><Printer size={14} /></button>
+                </div>
+              </div>
+            );
+          })}
+        </div> : <p className="text-sm text-center py-6" style={{ color: "var(--muted)" }}>Aucun document établi pour cette personne.</p>}
+      </SectionCard>
+
+      <SectionCard title={`Pièces du dossier (${files.length})`} icon={Paperclip} pad={false}>
+        {files.length ? <div className="divide-y" style={{ borderColor: "var(--line)" }}>
+          {files.map((f) => (
+            <div key={f.id} className="flex items-center justify-between px-4 py-2.5 gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#F1F3F5", color: "var(--muted)" }}>
+                  {/^image\//.test(f.fileType) ? <Image size={16} /> : <FileText size={16} />}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{f.label || f.fileName}</p>
+                  <p className="text-[11px]" style={{ color: "var(--muted)" }}>
+                    {FOLDER_CATEGORY[f.category]} · {Math.round(f.fileSize / 1024)} Ko ·
+                    {" "}importée par {memberById[f.uploadedBy]?.name || "—"} le {fr(f.createdAt, { day: "numeric", month: "short", year: "numeric" })}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <a href={f.fileUrl} target="_blank" rel="noreferrer" className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Ouvrir"><Download size={14} /></a>
+                {(f.uploadedBy === userId || canSupervise(me.role)) && (
+                  <button onClick={async () => { if (confirm(`Supprimer « ${f.label || f.fileName} » ?`)) await actions.deleteFolderFile(f.id); }}
+                    className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div> : <p className="text-sm text-center py-6" style={{ color: "var(--muted)" }}>
+          Aucune pièce importée. Utilisez « Importer une pièce » pour ajouter un contrat scanné, une pièce d'identité, un état des lieux…
+        </p>}
+      </SectionCard>
     </div>
   );
 }
