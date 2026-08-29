@@ -311,9 +311,19 @@ const PAY_STATUS = {
   paye:    { label: "PAYÉ",    color: "#4F9E2A", bg: "#EAF6E3" },
   partiel: { label: "PARTIEL", color: "#EA580C", bg: "#FFF0E6" },
   impaye:  { label: "IMPAYÉ",  color: "#D81F26", bg: "#FDEAEA" },
+  vacant:  { label: "VACANT",  color: "#64748B", bg: "#F1F5F9" },
 };
-const payStatusOf = (expected, collected) => {
+/* Un lot vacant n'est pas un impayé : il n'a ni locataire ni loyer attendu.
+   Il est donc écarté des compteurs, des arriérés et du taux de recouvrement. */
+const isVacantLine = (line) => {
+  if (line?.vacant) return true;
+  const e = Number(line?.expected) || 0;
+  return e === 0 && !((line?.tenantName || "").trim());
+};
+const payStatusOf = (expected, collected, vacant = false) => {
+  if (vacant) return "vacant";
   const e = Number(expected) || 0, c = Number(collected) || 0;
+  if (e === 0 && c === 0) return "vacant";
   if (c <= 0) return "impaye";
   if (c >= e) return "paye";
   return "partiel";
@@ -621,6 +631,7 @@ function paymentHistory(unit, { rentPeriods, rentLines, documents }) {
     rentPeriods.filter((p) => p.propertyId === unit.propertyId && p.scope === scope).forEach((p) => {
       const line = rentLines.find((l) => l.periodId === p.id && sameUnit(l));
       if (!line) return;
+      if (isVacantLine(line)) { delete months[p.period]; return; }   // lot vacant ce mois-là
       months[p.period] = {
         period: p.period,
         expected: Number(line.expected) || 0,
@@ -3380,9 +3391,11 @@ const currentPeriod = () => { const d = new Date(); return `${d.getFullYear()}-$
 
 /* Totaux d'une période, à l'identique du fichier Excel */
 function periodTotals(lines, charges, rate) {
-  const expected = lines.reduce((a, l) => a + (Number(l.expected) || 0), 0);
-  const collected = lines.reduce((a, l) => a + (Number(l.collected) || 0), 0);
-  const arrears = lines.reduce((a, l) => a + Math.max(0, (Number(l.expected) || 0) - (Number(l.collected) || 0)), 0);
+  const vacantLines = lines.filter(isVacantLine);
+  const active = lines.filter((l) => !isVacantLine(l));   // lots réellement loués
+  const expected = active.reduce((a, l) => a + (Number(l.expected) || 0), 0);
+  const collected = active.reduce((a, l) => a + (Number(l.collected) || 0), 0);
+  const arrears = active.reduce((a, l) => a + Math.max(0, (Number(l.expected) || 0) - (Number(l.collected) || 0)), 0);
   const deducted = lines.reduce((a, l) => a + (Number(l.charges) || 0), 0);
   const netAfter = collected - deducted;
   const chargeRows = charges.filter((c) => (c.kind || "charge") === "charge");
@@ -3398,11 +3411,13 @@ function periodTotals(lines, charges, rate) {
        − prestation de l'agence
        + sommes à verser en plus (caution, reliquat, remboursement…) */
   const netOwner = collected - deducted - chargesTotal - fee + supplementsTotal;
-  const nPaid = lines.filter((l) => payStatusOf(l.expected, l.collected) === "paye" && Number(l.expected) > 0).length;
-  const nPartial = lines.filter((l) => payStatusOf(l.expected, l.collected) === "partiel").length;
-  const nUnpaid = lines.filter((l) => payStatusOf(l.expected, l.collected) === "impaye" && Number(l.expected) > 0).length;
+  const nPaid = active.filter((l) => payStatusOf(l.expected, l.collected) === "paye").length;
+  const nPartial = active.filter((l) => payStatusOf(l.expected, l.collected) === "partiel").length;
+  const nUnpaid = active.filter((l) => payStatusOf(l.expected, l.collected) === "impaye").length;
+  const nVacant = vacantLines.length;
+  const nActive = active.length;
   const rateCollected = expected > 0 ? collected / expected : 0;
-  return { expected, collected, arrears, deducted, netAfter, chargesTotal, supplementsTotal, chargeRows, supplementRows, fee, netOwner, nPaid, nPartial, nUnpaid, rateCollected };
+  return { expected, collected, arrears, deducted, netAfter, chargesTotal, supplementsTotal, chargeRows, supplementRows, fee, netOwner, nPaid, nPartial, nUnpaid, nVacant, nActive, rateCollected, vacantLines, activeLines: active };
 }
 
 
@@ -3448,10 +3463,15 @@ function seedPeriod({ period, rentPeriods, rentLines, rentCharges, units }) {
       .map((l) => {
         const u = findUnit(l);
         const arrear = Math.max(0, (Number(l.expected) || 0) - (Number(l.collected) || 0));
-        const base = { unitId: l.unitId || u?.id || null, unitLabel: l.unitLabel, tenantName: l.tenantName,
-          tenantPhone: l.tenantPhone, expected: l.expected, collected: 0, paidAt: "",
-          charges: l.charges, comment: arrear > 0 ? `Arriéré ${prev.period} : ${fcfa(arrear)}` : "" };
-        return u ? applyAdvance(base, u) : base;
+        /* Un lot devenu vacant repart sans loyer attendu ; un lot reloué reprend le sien */
+        const vacantNow = u ? (u.status === "vacant" || !(u.tenantName || "").trim()) : isVacantLine(l);
+        const base = { unitId: l.unitId || u?.id || null, unitLabel: l.unitLabel,
+          tenantName: vacantNow ? (u ? "" : l.tenantName) : (u?.tenantName || l.tenantName),
+          tenantPhone: vacantNow ? "" : (u?.tenantPhone || l.tenantPhone),
+          expected: vacantNow ? 0 : (u?.rent || l.expected), collected: 0, paidAt: "",
+          charges: vacantNow ? 0 : l.charges,
+          comment: vacantNow ? "Lot vacant" : (arrear > 0 ? `Arriéré ${prev.period} : ${fcfa(arrear)}` : "") };
+        return (u && !vacantNow) ? applyAdvance(base, u) : base;
       });
     const charges = rentCharges.filter((c) => c.periodId === prev.id && (c.kind || "charge") === "charge")
       .sort((a, b) => a.position - b.position)
@@ -3460,10 +3480,13 @@ function seedPeriod({ period, rentPeriods, rentLines, rentCharges, units }) {
   }
 
   const us = units.filter((u) => u.propertyId === period.propertyId);
-  const lines = us.map((u) => applyAdvance({
-    unitId: u.id, unitLabel: u.label, tenantName: u.tenantName || "", tenantPhone: u.tenantPhone || "",
-    expected: u.rent || 0, collected: 0, paidAt: "", charges: 0, comment: "",
-  }, u));
+  const lines = us.map((u) => {
+    const vacant = u.status === "vacant" || !(u.tenantName || "").trim();
+    const base = { unitId: u.id, unitLabel: u.label, tenantName: u.tenantName || "", tenantPhone: u.tenantPhone || "",
+      expected: vacant ? 0 : (u.rent || 0), collected: 0, paidAt: "", charges: 0,
+      comment: vacant ? "Lot vacant" : "" };
+    return vacant ? base : applyAdvance(base, u);
+  });
   return { lines, charges: DEFAULT_CHARGES.map((label) => ({ label, amount: 0, observation: "", kind: "charge" })),
     source: us.length ? "lots du bâtiment" : "" };
 }
@@ -3489,8 +3512,11 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
     const us = units.filter((u) => u.propertyId === period.propertyId);
     if (!us.length) { setErr("Aucun lot enregistré pour ce bâtiment. Ajoutez-les dans Patrimoine."); return; }
     setLines(us.map((u) => {
+      const vacant = u.status === "vacant" || !(u.tenantName || "").trim();
       const base = { unitId: u.id, unitLabel: u.label, tenantName: u.tenantName || "", tenantPhone: u.tenantPhone || "",
-        expected: u.rent || 0, collected: 0, paidAt: "", charges: 0, comment: "" };
+        expected: vacant ? 0 : (u.rent || 0), collected: 0, paidAt: "", charges: 0,
+        comment: vacant ? "Lot vacant" : "" };
+      if (vacant) return base;
       const rank = advanceRank(u, period.period);
       if (!rank) return base;
       return { ...base, collected: base.expected, paidAt: (u.advanceStart || u.leaseStart || "").slice(0, 10),
@@ -3557,8 +3583,9 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
             {!readOnly && <th className="w-8" />}
           </tr></thead>
           <tbody>{lines.map((l, i) => {
-            const st = PAY_STATUS[payStatusOf(l.expected, l.collected)];
-            const arr = Math.max(0, (Number(l.expected) || 0) - (Number(l.collected) || 0));
+            const vacant = isVacantLine(l);
+            const st = PAY_STATUS[payStatusOf(l.expected, l.collected, vacant)];
+            const arr = vacant ? 0 : Math.max(0, (Number(l.expected) || 0) - (Number(l.collected) || 0));
             return (
               <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
                 <td className="px-1 py-1"><input disabled={readOnly} className="w-full px-2 py-1.5 rounded border text-xs" style={inputStyle} value={l.tenantName} onChange={(e) => setLine(i, "tenantName", e.target.value)} placeholder="Nom du locataire" /></td>
@@ -3582,7 +3609,8 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
       <div className="grid lg:grid-cols-2 gap-4 mb-3">
         <div className="rounded-xl border p-3" style={{ borderColor: "var(--line)" }}>
           <p className="text-xs font-bold mb-2">BILAN DU MOIS</p>
-          {[["Locataires", lines.length], ["Ayant payé intégralement", t.nPaid],
+          {[["Lots du bâtiment", lines.length], ["Lots vacants (non comptés)", t.nVacant],
+            ["Locataires concernés", t.nActive], ["Ayant payé intégralement", t.nPaid],
             ["Reliquats à verser", t.nPartial], ["Impayés", t.nUnpaid],
             ["Locataires en arriéré", t.nPartial + t.nUnpaid]].map(([k, v]) => (
             <div key={k} className="flex justify-between text-xs py-1"><span style={{ color: "var(--muted)" }}>{k}</span><span className="font-semibold">{v}</span></div>
@@ -3676,6 +3704,7 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
   const t = periodTotals(lines, charges, period.rate);
   const sc = RENT_SCOPE[period.scope];
   const arrearsRows = lines
+    .filter((l) => !isVacantLine(l))          // un lot vacant n'est pas un impayé
     .map((l) => ({ ...l, due: Math.max(0, (Number(l.expected) || 0) - (Number(l.collected) || 0)) }))
     .filter((l) => l.due > 0)
     .sort((a, b) => b.due - a.due);
@@ -3695,7 +3724,7 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
           <div><p style={{ color: "var(--muted)" }}>Propriétaire</p><p className="font-semibold">{owner?.name || "—"}</p></div>
           <div><p style={{ color: "var(--muted)" }}>Immeuble</p><p className="font-semibold">{property?.name || "—"}</p></div>
           <div><p style={{ color: "var(--muted)" }}>Adresse</p><p className="font-semibold">{[property?.quartier, property?.commune].filter(Boolean).join(", ") || "—"}</p></div>
-          <div><p style={{ color: "var(--muted)" }}>Locataires</p><p className="font-semibold">{lines.length}</p></div>
+          <div><p style={{ color: "var(--muted)" }}>Locataires</p><p className="font-semibold">{t.nActive}{t.nVacant > 0 ? ` (+${t.nVacant} vacant${t.nVacant > 1 ? "s" : ""})` : ""}</p></div>
         </div>
 
         <table className="w-full text-[11px] mb-4">
@@ -3712,18 +3741,19 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
             <th className="text-right px-2 py-1.5 font-semibold">Net</th>
           </tr></thead>
           <tbody>{lines.map((l, i) => {
-            const st = PAY_STATUS[payStatusOf(l.expected, l.collected)];
-            const arr = Math.max(0, (Number(l.expected) || 0) - (Number(l.collected) || 0));
+            const vacant = isVacantLine(l);
+            const st = PAY_STATUS[payStatusOf(l.expected, l.collected, vacant)];
+            const arr = vacant ? 0 : Math.max(0, (Number(l.expected) || 0) - (Number(l.collected) || 0));
             return (
               <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
                 <td className="px-2 py-1.5">{i + 1}</td>
-                <td className="px-2 py-1.5 font-medium">{l.tenantName || "—"}</td>
+                <td className="px-2 py-1.5 font-medium">{l.tenantName || (vacant ? "— lot vacant —" : "—")}</td>
                 <td className="px-2 py-1.5">{l.unitLabel}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(l.expected)}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(l.collected)}</td>
                 <td className="px-2 py-1.5">{l.paidAt ? fr(l.paidAt + "T00:00:00", { day: "2-digit", month: "2-digit" }) : "—"}</td>
                 <td className="px-2 py-1.5 text-center"><span className="font-bold" style={{ color: st.color }}>{st.label}</span></td>
-                <td className="px-2 py-1.5 text-right tabular-nums" style={{ color: arr > 0 ? "#D81F26" : "inherit" }}>{fcfa(arr)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums" style={{ color: arr > 0 ? "#D81F26" : "inherit" }}>{vacant ? "—" : fcfa(arr)}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(l.charges)}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fcfa((Number(l.collected) || 0) - (Number(l.charges) || 0))}</td>
               </tr>
@@ -3800,7 +3830,7 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
         {arrearsRows.length > 0 && (
           <div className="mt-4">
             <p className="text-xs font-bold mb-1.5" style={{ color: "#B5171D" }}>
-              LOCATAIRES EN ARRIÉRÉ — {arrearsRows.length} sur {lines.length}
+              LOCATAIRES EN ARRIÉRÉ — {arrearsRows.length} sur {t.nActive}
             </p>
             <table className="w-full text-[11px]">
               <thead><tr style={{ background: "#FDEAEA" }}>
@@ -3939,7 +3969,7 @@ function Recouvrement({ store, me, userId }) {
                     {!mine && <Chip color="#94A3B8"><Lock size={10} /> lecture</Chip>}
                   </div>
                   <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>
-                    {lines.length} locataire(s) · {t.nPaid} à jour ·{" "}
+                    {t.nActive} locataire(s){t.nVacant > 0 ? ` · ${t.nVacant} lot(s) vacant(s)` : ""} · {t.nPaid} à jour ·{" "}
                     <strong style={{ color: (t.nPartial + t.nUnpaid) > 0 ? "#D81F26" : "var(--muted)" }}>
                       {t.nPartial + t.nUnpaid} en arriéré
                     </strong>{t.nPartial > 0 ? ` (dont ${t.nPartial} reliquat(s))` : ""}
