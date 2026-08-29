@@ -316,9 +316,8 @@ const PAY_STATUS = {
 /* Un lot vacant n'est pas un impayé : il n'a ni locataire ni loyer attendu.
    Il est donc écarté des compteurs, des arriérés et du taux de recouvrement. */
 const isVacantLine = (line) => {
-  if (line?.vacant) return true;
-  const e = Number(line?.expected) || 0;
-  return e === 0 && !((line?.tenantName || "").trim());
+  if (line?.vacant) return true;                       // marqué à la main
+  return !((line?.tenantName || "").trim());           // aucun locataire = lot vacant
 };
 const payStatusOf = (expected, collected, vacant = false) => {
   if (vacant) return "vacant";
@@ -806,7 +805,7 @@ const mQuote   = (r) => ({ id: r.id, ref: r.ref, artisanName: r.artisan_name, tr
 const mQLine   = (r) => ({ id: r.id, quoteId: r.quote_id, label: r.label, qty: Number(r.qty), unit: r.unit, price: Number(r.unit_price), position: r.position });
 const mUnit    = (r) => ({ id: r.id, propertyId: r.property_id, label: r.label, kind: r.kind, floor: r.floor, rooms: r.rooms, surface: r.surface_m2, rent: Number(r.rent_amount), charges: Number(r.charges_amount), status: r.status, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, leaseStart: r.lease_start, notes: r.notes, tenantEmail: r.tenant_email || "", leaseEnd: r.lease_end, dueDay: r.due_day || 5, deposit: Number(r.deposit) || 0 });
 const mPeriod  = (r) => ({ id: r.id, propertyId: r.property_id, period: r.period, scope: r.scope, rate: Number(r.agency_rate), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
-const mRLine   = (r) => ({ id: r.id, periodId: r.period_id, unitId: r.unit_id, unitLabel: r.unit_label, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, expected: Number(r.expected), collected: Number(r.collected), paidAt: r.paid_at, charges: Number(r.charges), comment: r.comment, position: r.position });
+const mRLine   = (r) => ({ id: r.id, periodId: r.period_id, unitId: r.unit_id, unitLabel: r.unit_label, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, expected: Number(r.expected), collected: Number(r.collected), paidAt: r.paid_at, charges: Number(r.charges), comment: r.comment, position: r.position, vacant: !!r.vacant });
 const mRCharge = (r) => ({ id: r.id, periodId: r.period_id, label: r.label, amount: Number(r.amount), observation: r.observation, position: r.position, kind: r.kind || "charge" });
 const mFolderFile = (r) => ({ id: r.id, scope: r.scope, unitId: r.unit_id, ownerId: r.owner_id, propertyId: r.property_id, category: r.category, label: r.label, fileUrl: r.file_url, fileName: r.file_name, fileType: r.file_type, fileSize: Number(r.file_size) || 0, notes: r.notes, uploadedBy: r.uploaded_by, createdAt: Date.parse(r.created_at) });
 const mComplaint = (r) => ({ id: r.id, ref: r.ref, propertyId: r.property_id, unitId: r.unit_id, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, category: r.category, cause: r.cause, priority: r.priority, description: r.description, reportedAt: r.reported_at, channel: r.channel, status: r.status, assignedTo: r.assigned_to, quoteId: r.quote_id, cost: Number(r.cost) || 0, resolution: r.resolution, resolvedAt: r.resolved_at, createdBy: r.created_by });
@@ -1299,11 +1298,14 @@ function useStore(userId) {
   const savePeriodContent = async (periodId, lines, charges) => {
     await supabase.from("rent_lines").delete().eq("period_id", periodId);
     await supabase.from("rent_charges").delete().eq("period_id", periodId);
-    const lPayload = lines.filter((l) => (l.tenantName || l.unitLabel || "").trim()).map((l, i) => ({
-      period_id: periodId, unit_id: l.unitId || null, unit_label: l.unitLabel || "",
-      tenant_name: l.tenantName || "", tenant_phone: l.tenantPhone || "",
-      expected: Number(l.expected) || 0, collected: Number(l.collected) || 0,
-      paid_at: l.paidAt || null, charges: Number(l.charges) || 0, comment: l.comment || "", position: i }));
+    const lPayload = lines.filter((l) => (l.tenantName || l.unitLabel || "").trim()).map((l, i) => {
+      const vac = !!l.vacant || !((l.tenantName || "").trim());
+      return { period_id: periodId, unit_id: l.unitId || null, unit_label: l.unitLabel || "",
+        tenant_name: l.tenantName || "", tenant_phone: l.tenantPhone || "",
+        expected: vac ? 0 : (Number(l.expected) || 0), collected: vac ? 0 : (Number(l.collected) || 0),
+        paid_at: vac ? null : (l.paidAt || null), charges: vac ? 0 : (Number(l.charges) || 0),
+        comment: l.comment || "", position: i, vacant: vac };
+    });
     const cPayload = charges.filter((c) => (c.label || "").trim()).map((c, i) => ({
       period_id: periodId, label: c.label, amount: Number(c.amount) || 0,
       observation: c.observation || "", position: i, kind: c.kind || "charge" }));
@@ -3469,7 +3471,7 @@ function seedPeriod({ period, rentPeriods, rentLines, rentCharges, units }) {
           tenantName: vacantNow ? (u ? "" : l.tenantName) : (u?.tenantName || l.tenantName),
           tenantPhone: vacantNow ? "" : (u?.tenantPhone || l.tenantPhone),
           expected: vacantNow ? 0 : (u?.rent || l.expected), collected: 0, paidAt: "",
-          charges: vacantNow ? 0 : l.charges,
+          charges: vacantNow ? 0 : l.charges, vacant: vacantNow,
           comment: vacantNow ? "Lot vacant" : (arrear > 0 ? `Arriéré ${prev.period} : ${fcfa(arrear)}` : "") };
         return (u && !vacantNow) ? applyAdvance(base, u) : base;
       });
@@ -3484,7 +3486,7 @@ function seedPeriod({ period, rentPeriods, rentLines, rentCharges, units }) {
     const vacant = u.status === "vacant" || !(u.tenantName || "").trim();
     const base = { unitId: u.id, unitLabel: u.label, tenantName: u.tenantName || "", tenantPhone: u.tenantPhone || "",
       expected: vacant ? 0 : (u.rent || 0), collected: 0, paidAt: "", charges: 0,
-      comment: vacant ? "Lot vacant" : "" };
+      vacant, comment: vacant ? "Lot vacant" : "" };
     return vacant ? base : applyAdvance(base, u);
   });
   return { lines, charges: DEFAULT_CHARGES.map((label) => ({ label, amount: 0, observation: "", kind: "charge" })),
@@ -3515,7 +3517,7 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
       const vacant = u.status === "vacant" || !(u.tenantName || "").trim();
       const base = { unitId: u.id, unitLabel: u.label, tenantName: u.tenantName || "", tenantPhone: u.tenantPhone || "",
         expected: vacant ? 0 : (u.rent || 0), collected: 0, paidAt: "", charges: 0,
-        comment: vacant ? "Lot vacant" : "" };
+        vacant, comment: vacant ? "Lot vacant" : "" };
       if (vacant) return base;
       const rank = advanceRank(u, period.period);
       if (!rank) return base;
@@ -3590,10 +3592,17 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
               <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
                 <td className="px-1 py-1"><input disabled={readOnly} className="w-full px-2 py-1.5 rounded border text-xs" style={inputStyle} value={l.tenantName} onChange={(e) => setLine(i, "tenantName", e.target.value)} placeholder="Nom du locataire" /></td>
                 <td className="px-1 py-1"><input disabled={readOnly} className="w-full px-2 py-1.5 rounded border text-xs" style={inputStyle} value={l.unitLabel} onChange={(e) => setLine(i, "unitLabel", e.target.value)} placeholder="Appt A1" /></td>
-                <td className="px-1 py-1"><input disabled={readOnly} type="number" min={0} step={5000} className="w-full px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={l.expected} onChange={(e) => setLine(i, "expected", e.target.value)} /></td>
-                <td className="px-1 py-1"><input disabled={readOnly} type="number" min={0} step={5000} className="w-full px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={l.collected} onChange={(e) => setLine(i, "collected", e.target.value)} /></td>
+                <td className="px-1 py-1"><input disabled={readOnly || vacant} type="number" min={0} step={5000} className="w-full px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={vacant ? 0 : l.expected} onChange={(e) => setLine(i, "expected", e.target.value)} /></td>
+                <td className="px-1 py-1"><input disabled={readOnly || vacant} type="number" min={0} step={5000} className="w-full px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={vacant ? 0 : l.collected} onChange={(e) => setLine(i, "collected", e.target.value)} /></td>
                 <td className="px-1 py-1"><input disabled={readOnly} type="date" className="w-full px-2 py-1.5 rounded border text-xs" style={inputStyle} value={l.paidAt || ""} onChange={(e) => setLine(i, "paidAt", e.target.value)} /></td>
-                <td className="px-1 py-1 text-center"><span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: st.bg, color: st.color }}>{st.label}</span></td>
+                <td className="px-1 py-1 text-center">
+                  <button disabled={readOnly} title={readOnly ? "" : "Cliquer pour basculer entre lot vacant et lot loué"}
+                    onClick={() => setLines((p) => p.map((x, j) => (j === i
+                      ? { ...x, vacant: !isVacantLine(x), ...(isVacantLine(x) ? {} : { expected: 0, collected: 0, paidAt: "", charges: 0, comment: "Lot vacant" }) }
+                      : x)))}
+                    className="rounded-full px-2 py-0.5 text-[10px] font-bold"
+                    style={{ background: st.bg, color: st.color, border: "none" }}>{st.label}</button>
+                </td>
                 <td className="px-2 py-1 text-right font-medium tabular-nums" style={{ color: arr > 0 ? "#D81F26" : "var(--muted)" }}>{fcfa(arr)}</td>
                 <td className="px-1 py-1"><input disabled={readOnly} type="number" min={0} step={1000} className="w-full px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={l.charges} onChange={(e) => setLine(i, "charges", e.target.value)} /></td>
                 <td className="px-1 py-1"><input disabled={readOnly} className="w-full px-2 py-1.5 rounded border text-xs" style={inputStyle} value={l.comment} onChange={(e) => setLine(i, "comment", e.target.value)} /></td>
@@ -3825,49 +3834,107 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
 
         {t.netOwner > 0 && <p className="text-[11px] italic mt-3">Arrêté le présent état à la somme de <strong>{amountInWords(t.netOwner)}</strong> à verser au propriétaire.</p>}
 
-        {/* Les arriérés ne sont pas encaissés : ils sont présentés à part pour
-            ne jamais être confondus avec le montant réglé au propriétaire. */}
         {arrearsRows.length > 0 && (
-          <div className="mt-4">
-            <p className="text-xs font-bold mb-1.5" style={{ color: "#B5171D" }}>
-              LOCATAIRES EN ARRIÉRÉ — {arrearsRows.length} sur {t.nActive}
-            </p>
-            <table className="w-full text-[11px]">
-              <thead><tr style={{ background: "#FDEAEA" }}>
-                <th className="text-left px-2 py-1.5 font-semibold">Locataire</th>
-                <th className="text-left px-2 py-1.5 font-semibold">Lot</th>
-                <th className="text-right px-2 py-1.5 font-semibold">Loyer prévu</th>
-                <th className="text-right px-2 py-1.5 font-semibold">Encaissé</th>
-                <th className="text-right px-2 py-1.5 font-semibold">Reste dû</th>
-                <th className="text-left px-2 py-1.5 font-semibold">Situation</th>
-              </tr></thead>
-              <tbody>{arrearsRows.map((r, i) => (
-                <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
-                  <td className="px-2 py-1.5 font-medium">{r.tenantName || "—"}</td>
-                  <td className="px-2 py-1.5">{r.unitLabel}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(r.expected)}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(r.collected)}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums font-bold" style={{ color: "#D81F26" }}>{fcfa(r.due)}</td>
-                  <td className="px-2 py-1.5">{r.collected > 0 ? "Reliquat à verser" : "Impayé"}{r.comment ? ` — ${r.comment}` : ""}</td>
-                </tr>
-              ))}</tbody>
-              <tfoot><tr style={{ background: "#FDEAEA" }}>
-                <td colSpan={4} className="px-2 py-1.5 font-bold">TOTAL DES ARRIÉRÉS DU MOIS</td>
-                <td className="px-2 py-1.5 text-right font-bold tabular-nums" style={{ color: "#D81F26" }}>{fcfa(t.arrears)}</td>
-                <td />
-              </tr></tfoot>
-            </table>
-            <p className="text-[10px] mt-1.5 italic" style={{ color: "var(--muted)" }}>
-              Ces sommes ne sont pas encaissées : elles n'entrent pas dans le règlement ci-dessus et restent dues par les locataires.
-            </p>
-          </div>
+          <p className="text-[11px] italic mt-3 print:hidden" style={{ color: "var(--muted)" }}>
+            {arrearsRows.length} locataire(s) en arriéré pour {fcfa(t.arrears)} — l'état des arriérés s'édite séparément.
+          </p>
         )}
 
-        <div className="flex justify-between items-end pt-8 mt-4">
-          <div className="text-center" style={{ minWidth: 170 }}><p className="text-[11px] font-semibold pb-8">Le Propriétaire</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
-          <div className="text-center" style={{ minWidth: 170 }}><p className="text-[11px] font-semibold pb-8">Pour l'Agence</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
+        <div className="flex justify-end pt-8 mt-4">
+          <div className="text-center" style={{ minWidth: 210 }}>
+            <p className="text-[11px] font-semibold pb-8">Pour l'Agence</p>
+            <div className="border-t" style={{ borderColor: "var(--ink)" }} />
+          </div>
         </div>
         <PrintFoot note={`État établi par ${author?.name || "—"} · Taux de recouvrement du mois : ${(t.rateCollected * 100).toFixed(1)} %`} />
+      </div>
+    </div>
+  );
+}
+
+
+/* ---------------- État des arriérés (document distinct, à la demande) ---------------- */
+function ArrearsSheet({ period, property, owner, lines, author, onBack }) {
+  const rows = lines
+    .filter((l) => !isVacantLine(l))
+    .map((l) => ({ ...l, due: Math.max(0, (Number(l.expected) || 0) - (Number(l.collected) || 0)) }))
+    .filter((l) => l.due > 0)
+    .sort((a, b) => b.due - a.due);
+  const total = rows.reduce((a, r) => a + r.due, 0);
+  const nPartial = rows.filter((r) => Number(r.collected) > 0).length;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
+        <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
+        <button onClick={() => printSheet("landscape")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF (paysage)</button>
+      </div>
+
+      <div id="print-area" className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
+        <PrintHead title="ÉTAT DES ARRIÉRÉS" subtitle={periodLabel(period.period)} extra={
+          <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
+        } />
+
+        <div className="grid sm:grid-cols-4 gap-3 py-3 text-xs">
+          <div><p style={{ color: "var(--muted)" }}>Propriétaire</p><p className="font-semibold">{owner?.name || "—"}</p></div>
+          <div><p style={{ color: "var(--muted)" }}>Immeuble</p><p className="font-semibold">{property?.name || "—"}</p></div>
+          <div><p style={{ color: "var(--muted)" }}>Adresse</p><p className="font-semibold">{[property?.quartier, property?.commune].filter(Boolean).join(", ") || "—"}</p></div>
+          <div><p style={{ color: "var(--muted)" }}>Locataires en arriéré</p><p className="font-semibold">{rows.length}{nPartial > 0 ? ` (dont ${nPartial} reliquat${nPartial > 1 ? "s" : ""})` : ""}</p></div>
+        </div>
+
+        {rows.length ? (
+          <table className="w-full text-[11px]">
+            <thead><tr style={{ background: "#FDEAEA" }}>
+              <th className="text-left px-2 py-1.5 font-semibold">N°</th>
+              <th className="text-left px-2 py-1.5 font-semibold">Locataire</th>
+              <th className="text-left px-2 py-1.5 font-semibold">Lot</th>
+              <th className="text-left px-2 py-1.5 font-semibold">Contact</th>
+              <th className="text-right px-2 py-1.5 font-semibold">Loyer prévu</th>
+              <th className="text-right px-2 py-1.5 font-semibold">Encaissé</th>
+              <th className="text-right px-2 py-1.5 font-semibold">Reste dû</th>
+              <th className="text-left px-2 py-1.5 font-semibold">Situation</th>
+              <th className="text-left px-2 py-1.5 font-semibold">Observation</th>
+            </tr></thead>
+            <tbody>{rows.map((r, i) => (
+              <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
+                <td className="px-2 py-1.5">{i + 1}</td>
+                <td className="px-2 py-1.5 font-medium">{r.tenantName || "—"}</td>
+                <td className="px-2 py-1.5">{r.unitLabel}</td>
+                <td className="px-2 py-1.5">{r.tenantPhone || "—"}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(r.expected)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(r.collected)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums font-bold" style={{ color: "#D81F26" }}>{fcfa(r.due)}</td>
+                <td className="px-2 py-1.5">{Number(r.collected) > 0 ? "Reliquat à verser" : "Impayé"}</td>
+                <td className="px-2 py-1.5">{r.comment || ""}</td>
+              </tr>
+            ))}</tbody>
+            <tfoot><tr style={{ background: "#FDEAEA" }}>
+              <td colSpan={6} className="px-2 py-2 font-bold">TOTAL DES ARRIÉRÉS</td>
+              <td className="px-2 py-2 text-right font-bold tabular-nums" style={{ color: "#D81F26" }}>{fcfa(total)}</td>
+              <td colSpan={2} />
+            </tr></tfoot>
+          </table>
+        ) : (
+          <p className="text-sm text-center py-10" style={{ color: "#3d7d20" }}>
+            Aucun arriéré sur la période : tous les loyers dus ont été encaissés.
+          </p>
+        )}
+
+        {total > 0 && <p className="text-[11px] italic mt-3">
+          Arrêté le présent état des arriérés à la somme de <strong>{amountInWords(total)}</strong>, restant due par les locataires.
+        </p>}
+        <p className="text-[10px] mt-2" style={{ color: "var(--muted)" }}>
+          Ces sommes ne sont pas encaissées : elles n'entrent pas dans le règlement du propriétaire.
+          Les lots vacants ne figurent pas dans cet état.
+        </p>
+
+        <div className="flex justify-end pt-8">
+          <div className="text-center" style={{ minWidth: 210 }}>
+            <p className="text-[11px] font-semibold pb-8">Pour l'Agence</p>
+            <div className="border-t" style={{ borderColor: "var(--ink)" }} />
+          </div>
+        </div>
+        <PrintFoot note={author ? `État établi par ${author.name}` : undefined} />
       </div>
     </div>
   );
@@ -3881,6 +3948,7 @@ function Recouvrement({ store, me, userId }) {
   const [filterPeriod, setFilterPeriod] = useState(currentPeriod());
   const [editor, setEditor] = useState(null);
   const [sheetId, setSheetId] = useState(null);
+  const [arrearsId, setArrearsId] = useState(null);
   const [creator, setCreator] = useState(false);
 
   const propById = useMemo(() => Object.fromEntries(properties.map((p) => [p.id, p])), [properties]);
@@ -3891,6 +3959,14 @@ function Recouvrement({ store, me, userId }) {
   const canEditPeriod = (p) => p.scope === "comptable"
     ? isAdmin(me.role)
     : (p.createdBy === userId || isAdmin(me.role));
+
+  const arrSheet = rentPeriods.find((p) => p.id === arrearsId);
+  if (arrSheet) {
+    return <ArrearsSheet period={arrSheet} property={propById[arrSheet.propertyId]}
+      owner={ownerById[propById[arrSheet.propertyId]?.ownerId]}
+      lines={rentLines.filter((l) => l.periodId === arrSheet.id)}
+      author={memberById[arrSheet.createdBy]} onBack={() => setArrearsId(null)} />;
+  }
 
   const sheet = rentPeriods.find((p) => p.id === sheetId);
   if (sheet) {
@@ -3991,7 +4067,10 @@ function Recouvrement({ store, me, userId }) {
                     {Object.entries(RENT_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                   </select>}
                   <div className="flex gap-1">
-                    <button onClick={() => setSheetId(p.id)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Imprimer / PDF"><Printer size={14} /></button>
+                    <button onClick={() => setSheetId(p.id)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="État de recouvrement (PDF)"><Printer size={14} /></button>
+                    {(t.nPartial + t.nUnpaid) > 0 && (
+                      <button onClick={() => setArrearsId(p.id)} className="p-1.5 rounded-lg hover:bg-red-50" style={{ color: "#D81F26" }} title="État des arriérés (document séparé)"><AlertTriangle size={14} /></button>
+                    )}
                     <button onClick={() => setEditor({ period: p, readOnly: !mine })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title={mine ? "Modifier" : "Consulter"}>{mine ? <Pencil size={14} /> : <Eye size={14} />}</button>
                     {isAdmin(me.role) && <button onClick={async () => { if (confirm("Supprimer ce tableau ?")) await actions.deletePeriod(p.id); }} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>}
                   </div>
@@ -6594,6 +6673,10 @@ button{cursor:pointer}
   main{padding:0!important;max-width:100%!important}
   #print-area{border:none!important;box-shadow:none!important;padding:0!important;max-width:100%!important}
   table{page-break-inside:auto}tr{page-break-inside:avoid}
+  /* L'en-tête se répète en haut de chaque page, mais les totaux ne doivent
+     apparaître qu'une seule fois, à la fin réelle du tableau. */
+  thead{display:table-header-group}
+  tfoot{display:table-row-group}
   @page{margin:12mm;size:A4}
 }
 `;
