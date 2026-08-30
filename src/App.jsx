@@ -6,7 +6,7 @@
  * ==========================================================================*/
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
-  AlertTriangle, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, BarChart3, Bell, BellOff, Briefcase, Building2, CalendarDays, CalendarOff, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, DoorOpen, Download, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Home, Image, Inbox, KeyRound, Landmark, Layers, LayoutDashboard, ListChecks, Lock, LogOut, Mail, MapPin, MessageCircle, MessageCircleWarning, MessageSquare, Package, Paperclip, Pause, Pencil, Phone, Play, Plus, Printer, Receipt, RotateCcw, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, UserPlus, UserRound, Users, Wallet, X, Zap,
+  AlertTriangle, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, Banknote, BarChart3, Bell, BellOff, BellRing, Briefcase, Building2, CalendarClock, CalendarDays, CalendarOff, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, DoorClosed, DoorOpen, Download, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Home, Image, Inbox, KeyRound, Landmark, Layers, LayoutDashboard, ListChecks, Lock, LogOut, Mail, MapPin, MessageCircle, MessageCircleWarning, MessageSquare, Package, Paperclip, Pause, Pencil, Phone, Play, Plus, Printer, Receipt, RotateCcw, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, UserPlus, UserRound, Users, Wallet, X, Zap,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, CartesianGrid,
@@ -198,6 +198,18 @@ const DOC_TYPES = {
       { label: "Charges", qty: 1, unit: "mois", price: 0 },
     ],
   },
+  recu_charge: {
+    label: "Reçu de paiement de charges",
+    short: "Reçu charges",
+    prefix: "RC",
+    dept: "Comptabilité & Recouvrement",
+    layout: "facture",
+    title: "REÇU DE PAIEMENT DE CHARGES",
+    color: "#0891B2",
+    desc: "Facture réglée par l'agence pour un bien : CIE, SODECI, parties communes, entretien pendant une vacance. Sert de preuve au propriétaire.",
+    clientLabel: "Payé à (fournisseur)",
+    preset: [{ label: "Facture CIE", qty: 1, unit: "u", price: 0 }],
+  },
   decharge: {
     label: "Décharge de fonds",
     short: "Décharge",
@@ -235,7 +247,7 @@ const DOC_TYPES = {
     preset: [{ label: "Loyer impayé", qty: 1, unit: "mois", price: 0 }],
   },
 };
-const DOC_TYPE_ORDER = ["decompte_entree", "prestation", "facture_impayes", "quittance", "decharge", "relance", "courrier"];
+const DOC_TYPE_ORDER = ["decompte_entree", "prestation", "facture_impayes", "quittance", "recu_charge", "decharge", "relance", "courrier"];
 
 const DOC_STATUS = {
   brouillon: { label: "Brouillon", color: "#94A3B8" },
@@ -520,11 +532,18 @@ function amountInWords(amount) {
    exactement au bas de la dernière page. On complète la dernière page
    entamée ; epsilon évite qu'un arrondi du navigateur ne renvoie le pied
    sur une page supplémentaire. */
-function printSpacerHeight(contentH, usableH, epsilon = 6) {
+function printSpacerHeight(contentH, usableH, footH = 0, epsilon = 8) {
   if (!(contentH > 0) || !(usableH > 0)) return 0;
   const reste = contentH % usableH;
-  if (reste === 0) return 0;
-  return Math.max(0, usableH - reste - epsilon);
+  if (reste === 0) return 0;                     // finit déjà en bas de page
+  const gap = usableH - reste - epsilon;         // vide pour finir la page pile
+  if (gap <= 12) return 0;                       // trop peu : on ne touche à rien
+  /* Sécurité : le pied doit rester sur la page qui porte déjà du texte.
+     Si le contenu hors pied ne tient pas sur cette page, on n'ajoute rien —
+     mieux vaut un pied un peu haut qu'un pied seul sur une page blanche. */
+  const texteAvantPied = reste - footH;
+  if (texteAvantPied <= 0) return 0;
+  return gap;
 }
 
 /* Dimensions utiles d'une page A4, en pixels CSS (96 dpi) */
@@ -560,9 +579,11 @@ function printSheet(orientation = "portrait") {
       + "border:none;padding:0;margin:0;box-shadow:none;";
     document.body.appendChild(clone);
     const h = clone.scrollHeight;
-    document.body.removeChild(clone);
 
-    const gap = printSpacerHeight(h, box.h);
+    const footEl = clone.querySelector(".kb-foot");
+    const footH = footEl ? footEl.getBoundingClientRect().height : 0;
+    const gap = printSpacerHeight(h, box.h, footH);
+    document.body.removeChild(clone);
     if (gap > 12) {
       spacer = document.createElement("div");
       spacer.id = "kb-spacer";
@@ -623,14 +644,17 @@ const Field = ({ label, children, hint }) => (
   </label>
 );
 
-const StatCard = ({ icon: Icon, label, value, sub, tint = "var(--brass)" }) => (
-  <div className="bg-white rounded-xl border p-4" style={{ borderColor: "var(--line)" }}>
+const StatCard = ({ icon: Icon, label, value, sub, tint = "var(--brass)", onClick, hint }) => (
+  <div onClick={onClick} title={onClick ? (hint || "Voir le détail") : undefined}
+    className={`bg-white rounded-xl border p-4 ${onClick ? "cursor-pointer hover:shadow-md transition-shadow" : ""}`}
+    style={{ borderColor: "var(--line)" }}>
     <div className="flex items-center gap-2 mb-2">
       <span className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: tint + "1A", color: tint }}><Icon size={15} /></span>
       <span className="text-xs font-medium" style={{ color: "var(--muted)" }}>{label}</span>
     </div>
     <p className="text-2xl font-bold" style={{ color: "var(--ink)" }}>{value}</p>
     {sub && <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>{sub}</p>}
+    {onClick && <p className="text-[11px] mt-1.5 font-medium flex items-center gap-0.5" style={{ color: tint }}>Voir <ChevronRight size={11} /></p>}
   </div>
 );
 
@@ -822,10 +846,41 @@ async function askNotifications() {
 function notify(title, body, onClick) {
   if (!notifAllowed()) return;
   try {
-    const n = new Notification(title, { body, icon: LOGO, badge: LOGO, tag: "kibegnon-msg", renotify: true });
+    /* Un tag unique par notification : sans cela, les navigateurs
+       remplacent silencieusement la précédente et on croit n'avoir rien reçu. */
+    const n = new Notification(title, {
+      body, icon: LOGO, badge: LOGO,
+      tag: "kb-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+      requireInteraction: false,
+    });
     n.onclick = () => { window.focus(); n.close(); onClick?.(); };
+    setTimeout(() => { try { n.close(); } catch {} }, 15000);
   } catch { /* certaines plateformes exigent un service worker */ }
 }
+/* Bandeau d'activation présent dans toute l'application, pas seulement
+   dans la messagerie : une seule autorisation couvre messages, rappels de
+   tâches, validations de quittances et remises de caisse. */
+function NotifBanner() {
+  const [perm, setPerm] = useState(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
+  const [hidden, setHidden] = useState(() => localStorage.getItem("kb_notif_hidden") === "1");
+  if (perm !== "default" || hidden) return null;
+  return (
+    <div className="rounded-xl border p-3 mb-4 flex items-center justify-between gap-3 flex-wrap"
+      style={{ borderColor: "#BFDBFE", background: "#EFF6FF" }}>
+      <p className="text-xs" style={{ color: "#1F5C82" }}>
+        <BellRing size={13} className="inline mb-0.5" /> Activez les notifications sur cet appareil : messages de l'équipe,
+        rappels de tâches, quittances à valider et remises de caisse vous parviendront même dans un autre onglet.
+      </p>
+      <div className="flex gap-2">
+        <button onClick={() => { setHidden(true); localStorage.setItem("kb_notif_hidden", "1"); }} className="kb-btn kb-btn-ghost text-sm">Plus tard</button>
+        <button onClick={async () => setPerm(await askNotifications())} className="kb-btn kb-btn-primary text-sm">
+          <Bell size={14} /> Activer
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* Pastille de non-lus dans le titre de l'onglet */
 function useTitleBadge(count) {
   useEffect(() => {
@@ -840,7 +895,7 @@ function useTitleBadge(count) {
 /* ---- mappers DB (snake_case) -> UI (camelCase) ---- */
 const mProfile = (r) => ({ id: r.id, name: r.full_name, username: r.username, role: r.role, deptId: r.dept_id, color: r.color, active: r.active });
 const mDept    = (r) => ({ id: r.id, name: r.name, color: r.color });
-const mTask    = (r) => ({ id: r.id, title: r.title, description: r.description, deptId: r.dept_id, assigneeId: r.assignee_id, urgency: r.urgency, status: r.status, estMin: r.est_min, weekStart: r.week_start, day: r.day, dueDate: r.due_date, createdBy: r.created_by, createdAt: Date.parse(r.created_at), propertyId: r.property_id, ownerId: r.owner_id, nature: r.nature || "autre" });
+const mTask    = (r) => ({ id: r.id, title: r.title, description: r.description, deptId: r.dept_id, assigneeId: r.assignee_id, urgency: r.urgency, status: r.status, estMin: r.est_min, weekStart: r.week_start, day: r.day, dueDate: r.due_date, createdBy: r.created_by, createdAt: Date.parse(r.created_at), propertyId: r.property_id, ownerId: r.owner_id, nature: r.nature || "autre", assigneeIds: r.assignee_ids || [], startTime: r.start_time || "", reminderMin: Number(r.reminder_min) || 0 });
 const mEntry   = (r) => ({ id: r.id, taskId: r.task_id, userId: r.user_id, start: Date.parse(r.start_at), end: Date.parse(r.end_at), durationSeconds: r.duration_seconds, note: r.note });
 const mTimer   = (r) => ({ userId: r.user_id, taskId: r.task_id, startedAt: Date.parse(r.started_at) });
 const mChannel = (r) => ({ id: r.id, type: r.type, name: r.name });
@@ -859,11 +914,13 @@ const mUnit    = (r) => ({ id: r.id, propertyId: r.property_id, label: r.label, 
 const mPeriod  = (r) => ({ id: r.id, propertyId: r.property_id, period: r.period, scope: r.scope, rate: Number(r.agency_rate), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
 const mRLine   = (r) => ({ id: r.id, periodId: r.period_id, unitId: r.unit_id, unitLabel: r.unit_label, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, expected: Number(r.expected), collected: Number(r.collected), paidAt: r.paid_at, charges: Number(r.charges), comment: r.comment, position: r.position, vacant: !!r.vacant });
 const mRCharge = (r) => ({ id: r.id, periodId: r.period_id, label: r.label, amount: Number(r.amount), observation: r.observation, position: r.position, kind: r.kind || "charge" });
+const mCash     = (r) => ({ id: r.id, date: r.entry_date, direction: r.direction, amount: Number(r.amount), label: r.label, category: r.category, method: r.method, propertyId: r.property_id, ownerId: r.owner_id, reference: r.reference, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
+const mHandover = (r) => ({ id: r.id, date: r.handover_date, amount: Number(r.amount), fromUser: r.from_user, toUser: r.to_user, status: r.status, approvedAt: r.approved_at, note: r.note, responseNote: r.response_note, createdAt: Date.parse(r.created_at) });
 const mFolderFile = (r) => ({ id: r.id, scope: r.scope, unitId: r.unit_id, ownerId: r.owner_id, propertyId: r.property_id, category: r.category, label: r.label, fileUrl: r.file_url, fileName: r.file_name, fileType: r.file_type, fileSize: Number(r.file_size) || 0, notes: r.notes, uploadedBy: r.uploaded_by, createdAt: Date.parse(r.created_at) });
 const mComplaint = (r) => ({ id: r.id, ref: r.ref, propertyId: r.property_id, unitId: r.unit_id, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, category: r.category, cause: r.cause, priority: r.priority, description: r.description, reportedAt: r.reported_at, channel: r.channel, status: r.status, assignedTo: r.assigned_to, quoteId: r.quote_id, cost: Number(r.cost) || 0, resolution: r.resolution, resolvedAt: r.resolved_at, createdBy: r.created_by });
 const mTax     = (r) => ({ id: r.id, propertyId: r.property_id, unitId: r.unit_id, customLabel: r.custom_label, ownerId: r.owner_id, ownerLabel: r.owner_label, taxYear: r.tax_year, noticeNumber: r.notice_number, taxedAmount: Number(r.taxed_amount), installments: r.installments || [], receipts: r.receipts, declarationNext: r.declaration_next, notes: r.notes, createdBy: r.created_by, ncc: r.ncc || "", declarationDate: r.declaration_date, nextBase: r.next_base });
 const mReq     = (r) => ({ id: r.id, reqType: r.req_type, userId: r.user_id, date: r.req_date, amount: Number(r.amount), destination: r.destination, mode: r.transport_mode, propertyId: r.property_id, startDate: r.start_date, endDate: r.end_date, absenceType: r.absence_type, motif: r.motif, status: r.status, decidedBy: r.decided_by, decidedAt: r.decided_at, decisionNote: r.decision_note, createdAt: Date.parse(r.created_at) });
-const mDoc     = (r) => ({ id: r.id, ref: r.ref, docType: r.doc_type, date: r.doc_date, propertyId: r.property_id, ownerId: r.owner_id, clientName: r.client_name, clientPhone: r.client_phone, clientEmail: r.client_email, clientAddr: r.client_addr, object: r.object, body: r.body, lines: r.lines || [], fields: r.fields || {}, total: Number(r.total_amount), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at), unitId: r.unit_id, paidStamp: !!r.paid_stamp, stampedBy: r.stamped_by, period: r.period || "", approval: r.approval || "non_requise", approvedBy: r.approved_by, approvedAt: r.approved_at, approvalNote: r.approval_note || "", periodIso: r.period_iso || "" });
+const mDoc     = (r) => ({ id: r.id, ref: r.ref, docType: r.doc_type, date: r.doc_date, propertyId: r.property_id, ownerId: r.owner_id, clientName: r.client_name, clientPhone: r.client_phone, clientEmail: r.client_email, clientAddr: r.client_addr, object: r.object, body: r.body, lines: r.lines || [], fields: r.fields || {}, total: Number(r.total_amount), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at), unitId: r.unit_id, paidStamp: !!r.paid_stamp, stampedBy: r.stamped_by, period: r.period || "", approval: r.approval || "non_requise", approvedBy: r.approved_by, approvedAt: r.approved_at, approvalNote: r.approval_note || "", periodIso: r.period_iso || "", direction: r.direction || "encaissement" });
 const mTpl     = (r) => ({ id: r.id, label: r.label, nature: r.nature, deptId: r.dept_id, urgency: r.urgency, estMin: r.est_min, sortOrder: r.sort_order, active: r.active });
 
 const upsertBy = (key, map) => (setter) => (row) =>
@@ -898,13 +955,15 @@ function useStore(userId) {
   const [taxRecords, setTaxRecords] = useState([]);
   const [complaints, setComplaints] = useState([]);
   const [folderFiles, setFolderFiles] = useState([]);
+  const [cashEntries, setCashEntries] = useState([]);
+  const [handovers, setHandovers] = useState([]);
 
   /* Référence vivante des membres, utilisée par les notifications */
   const membersRef = useRef([]);
   useEffect(() => { membersRef.current = members; }, [members]);
 
   const load = useCallback(async () => {
-    const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc, un, rp, rlin, rch, rq, tax, cp, ff] = await Promise.all([
+    const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc, un, rp, rlin, rch, rq, tax, cp, ff, ce, ho] = await Promise.all([
       supabase.from("departments").select("*").order("created_at"),
       supabase.from("profiles").select("*").order("created_at"),
       supabase.from("tasks").select("*"),
@@ -931,6 +990,8 @@ function useStore(userId) {
       supabase.from("tax_records").select("*").order("tax_year", { ascending: false }),
       supabase.from("complaints").select("*").order("reported_at", { ascending: false }),
       supabase.from("folder_files").select("*").order("created_at", { ascending: false }),
+      supabase.from("cash_entries").select("*").order("entry_date", { ascending: false }),
+      supabase.from("cash_handovers").select("*").order("handover_date", { ascending: false }),
     ]);
     setDepartments((dep.data || []).map(mDept));
     setMembers((prof.data || []).map(mProfile));
@@ -958,6 +1019,8 @@ function useStore(userId) {
     setTaxRecords((tax.data || []).map(mTax));
     setComplaints((cp.data || []).map(mComplaint));
     setFolderFiles((ff.data || []).map(mFolderFile));
+    setCashEntries((ce.data || []).map(mCash));
+    setHandovers((ho.data || []).map(mHandover));
     setLoading(false);
   }, []);
 
@@ -989,6 +1052,8 @@ function useStore(userId) {
     const upTax = upsertBy("id", mTax)(setTaxRecords), rmTax = removeBy("id")(setTaxRecords);
     const upCp = upsertBy("id", mComplaint)(setComplaints), rmCp = removeBy("id")(setComplaints);
     const upFf = upsertBy("id", mFolderFile)(setFolderFiles), rmFf = removeBy("id")(setFolderFiles);
+    const upCe = upsertBy("id", mCash)(setCashEntries), rmCe = removeBy("id")(setCashEntries);
+    const upHo = upsertBy("id", mHandover)(setHandovers), rmHo = removeBy("id")(setHandovers);
     const h = (up, rm, key = "id") => (p) => p.eventType === "DELETE" ? rm(p.old[key]) : up(p.new);
 
     const ch = supabase.channel("kibegnon-rt")
@@ -1029,6 +1094,16 @@ function useStore(userId) {
       .on("postgres_changes", { event: "*", schema: "public", table: "tax_records" }, h(upTax, rmTax))
       .on("postgres_changes", { event: "*", schema: "public", table: "complaints" }, h(upCp, rmCp))
       .on("postgres_changes", { event: "*", schema: "public", table: "folder_files" }, h(upFf, rmFf))
+      .on("postgres_changes", { event: "*", schema: "public", table: "cash_entries" }, h(upCe, rmCe))
+      .on("postgres_changes", { event: "*", schema: "public", table: "cash_handovers" }, (p) => {
+        if (p.eventType === "DELETE") return rmHo(p.old.id);
+        /* Le gardien du solde est prévenu dès qu'une remise lui est adressée */
+        if (p.eventType === "INSERT" && p.new.to_user === userId) {
+          notify("Remise de caisse à certifier",
+            `${fcfa(Number(p.new.amount))} du ${p.new.handover_date} — à confirmer dans l'onglet Caisse.`);
+        }
+        upHo(p.new);
+      })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "documents" }, (p) => {
         /* L'auteur est prévenu dès qu'un administrateur valide sa quittance */
         if (p.new.created_by === userId && p.old?.approval !== "approuve" && p.new.approval === "approuve") {
@@ -1040,8 +1115,23 @@ function useStore(userId) {
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(ch); };
-  }, []);
+    /* Filet de sécurité : si la connexion temps réel se coupe (veille du
+       téléphone, perte de réseau, onglet en arrière-plan), on resynchronise
+       au retour sur l'application et périodiquement. Plus besoin d'actualiser. */
+    const resync = () => { if (document.visibilityState === "visible") load(); };
+    document.addEventListener("visibilitychange", resync);
+    window.addEventListener("online", resync);
+    window.addEventListener("focus", resync);
+    const timer = setInterval(resync, 60000);
+
+    return () => {
+      supabase.removeChannel(ch);
+      document.removeEventListener("visibilitychange", resync);
+      window.removeEventListener("online", resync);
+      window.removeEventListener("focus", resync);
+      clearInterval(timer);
+    };
+  }, [load]);
 
   /* ================= ACTIONS : TÂCHES ================= */
   const createTask = async (f) => {
@@ -1050,6 +1140,8 @@ function useStore(userId) {
       urgency: f.urgency, status: f.status || "a_faire", est_min: f.estMin, week_start: f.weekStart,
       day: f.day ?? null, due_date: f.dueDate || null, created_by: userId,
       property_id: f.propertyId || null, owner_id: f.ownerId || null, nature: f.nature || "autre",
+      assignee_ids: f.assigneeIds || [], start_time: f.startTime || null,
+      reminder_min: Number(f.reminderMin) || 0,
     }).select().single();
     // Affichage immédiat sans attendre l'écho temps réel
     if (data) setTasks((p) => (p.some((t) => t.id === data.id) ? p : [...p, mTask(data)]));
@@ -1058,7 +1150,8 @@ function useStore(userId) {
   const updateTask = async (id, patch) => {
     const map = { title: "title", description: "description", deptId: "dept_id", assigneeId: "assignee_id",
       urgency: "urgency", status: "status", estMin: "est_min", weekStart: "week_start", day: "day",
-      dueDate: "due_date", propertyId: "property_id", ownerId: "owner_id", nature: "nature" };
+      dueDate: "due_date", propertyId: "property_id", ownerId: "owner_id", nature: "nature",
+      assigneeIds: "assignee_ids", startTime: "start_time", reminderMin: "reminder_min" };
     const row = {};
     Object.entries(map).forEach(([k, col]) => { if (k in patch) row[col] = patch[k] === "" ? null : patch[k]; });
     setTasks((p) => p.map((t) => (t.id === id ? { ...t, ...patch } : t)));  // immédiat
@@ -1292,7 +1385,7 @@ function useStore(userId) {
   /* ================= ACTIONS : LOTS ================= */
   const saveUnit = async (f) => {
     const row = { property_id: f.propertyId, label: f.label, kind: f.kind, floor: f.floor || "",
-      rooms: f.rooms ? Number(f.rooms) : null, surface_m2: f.surface ? Number(f.surface) : null,
+      rooms: (f.rooms === "" || f.rooms === null || f.rooms === undefined) ? null : Number(f.rooms), surface_m2: f.surface ? Number(f.surface) : null,
       rent_amount: Number(f.rent) || 0, charges_amount: Number(f.charges) || 0, status: f.status,
       tenant_name: f.tenantName || "", tenant_phone: f.tenantPhone || "",
       lease_start: f.leaseStart || null, notes: f.notes || "",
@@ -1403,6 +1496,43 @@ function useStore(userId) {
   const deleteRequest = async (id) => {
     setRequests((p) => p.filter((x) => x.id !== id));
     const { error } = await supabase.from("requests").delete().eq("id", id);
+    return { error: error?.message };
+  };
+
+  /* ================= ACTIONS : CAISSE ================= */
+  const saveCashEntry = async (f) => {
+    const row = { entry_date: f.date, direction: f.direction, amount: Number(f.amount) || 0,
+      label: f.label || "", category: f.category, method: f.method,
+      property_id: f.propertyId || null, owner_id: f.ownerId || null,
+      reference: f.reference || "", notes: f.notes || "" };
+    if (f.id) {
+      setCashEntries((p) => p.map((x) => (x.id === f.id ? { ...x, ...f } : x)));
+      const { error } = await supabase.from("cash_entries").update(row).eq("id", f.id);
+      return { error: error?.message };
+    }
+    const { data, error } = await supabase.from("cash_entries")
+      .insert({ ...row, created_by: userId }).select().single();
+    if (data) setCashEntries((p) => (p.some((x) => x.id === data.id) ? p : [mCash(data), ...p]));
+    return { error: error?.message, id: data?.id };
+  };
+  const deleteCashEntry = async (id) => {
+    setCashEntries((p) => p.filter((x) => x.id !== id));
+    const { error } = await supabase.from("cash_entries").delete().eq("id", id);
+    return { error: error?.message };
+  };
+  /* Remise du solde journalier : le gardien désigné devra la certifier */
+  const createHandover = async (f) => {
+    const { data, error } = await supabase.from("cash_handovers").insert({
+      handover_date: f.date, amount: Number(f.amount) || 0,
+      from_user: userId, to_user: f.toUser, note: f.note || "", status: "en_attente",
+    }).select().single();
+    if (data) setHandovers((p) => (p.some((x) => x.id === data.id) ? p : [mHandover(data), ...p]));
+    return { error: error?.message };
+  };
+  const answerHandover = async (id, ok, responseNote = "") => {
+    const row = { status: ok ? "approuve" : "conteste", approved_at: new Date().toISOString(), response_note: responseNote };
+    setHandovers((p) => p.map((x) => (x.id === id ? { ...x, ...row, status: row.status, responseNote } : x)));
+    const { error } = await supabase.from("cash_handovers").update(row).eq("id", id);
     return { error: error?.message };
   };
 
@@ -1546,7 +1676,7 @@ function useStore(userId) {
       lines: f.lines || [], fields: f.fields || {}, total_amount: total,
       status: f.status || "brouillon", notes: f.notes || "",
       unit_id: f.unitId || null, period: f.period || "", period_iso: f.periodIso || "",
-      approval: f.approval || "non_requise",
+      approval: f.approval || "non_requise", direction: f.direction || "encaissement",
       paid_stamp: f.approval === "approuve" ? !!f.paidStamp : false,
       stamped_by: f.approval === "approuve" && f.paidStamp ? userId : null,
       stamped_at: f.approval === "approuve" && f.paidStamp ? new Date().toISOString() : null,
@@ -1574,6 +1704,7 @@ function useStore(userId) {
     loading, departments, members, tasks, timeEntries, activeTimers, channels, channelMembers, messages,
     owners, properties, products, stockEntries, releases, releaseLines, quotes, quoteLines, templates, documents,
     units, rentPeriods, rentLines, rentCharges, requests, taxRecords, complaints, folderFiles,
+    cashEntries, handovers,
     actions: {
       createTask, updateTask, deleteTask, startTimer, stopTimer, pauseTask, finishTask, addManualTime, deleteEntry,
       ensureDm, sendMessage, markRead, saveDept, deleteDept, updateProfile, adminUsers,
@@ -1585,7 +1716,8 @@ function useStore(userId) {
       savePeriod, deletePeriod, savePeriodContent, setPeriodStatus,
       saveRequest, decideRequest, deleteRequest,
       saveTaxRecord, deleteTaxRecord, saveComplaint, deleteComplaint, uploadAttachment,
-      uploadFolderFile, deleteFolderFile, approveDocument, applyReceiptToRent, reload: load,
+      uploadFolderFile, deleteFolderFile, approveDocument, applyReceiptToRent,
+      saveCashEntry, deleteCashEntry, createHandover, answerHandover, reload: load,
     },
   };
 }
@@ -1712,10 +1844,12 @@ function LineEditor({ lines, setLines, labelPlaceholder = "Désignation de la pr
 }
 
 /* ================= Modale de saisie ================= */
-function DocModal({ initial, properties, owners, units, onSave, onClose }) {
+function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onClose }) {
   const cfg = DOC_TYPES[initial.docType];
+  const defaultDirection = ["recu_charge"].includes(initial.docType) ? "decaissement"
+    : ["relance", "courrier"].includes(initial.docType) ? "neutre" : "encaissement";
   const [f, setF] = useState(() => ({
-    docType: initial.docType, date: isoDate(new Date()), propertyId: "", ownerId: "",
+    docType: initial.docType, date: isoDate(new Date()), direction: defaultDirection, propertyId: "", ownerId: "",
     clientName: "", clientPhone: "", clientEmail: "", clientAddr: "", object: "", body: "",
     fields: {}, status: "brouillon", notes: "", ...initial,
   }));
@@ -1762,7 +1896,10 @@ function DocModal({ initial, properties, owners, units, onSave, onClose }) {
   const valid = f.clientName.trim();
   const submit = async () => {
     setBusy(true);
-    const r = await onSave({ ...f, lines });
+    const approval = (f.docType === "recu_charge" && f.paidStamp)
+      ? (isAdminUser ? "approuve" : "en_attente")
+      : (f.approval || "non_requise");
+    const r = await onSave({ ...f, lines, approval });
     setBusy(false);
     if (r?.error) setErr(r.error); else onClose();
   };
@@ -1876,6 +2013,28 @@ function DocModal({ initial, properties, owners, units, onSave, onClose }) {
       </p>
       <LineEditor lines={lines} setLines={setLines} showUnit={f.docType !== "decompte_entree"}
         labelPlaceholder={f.docType === "decompte_entree" ? "Ex. 2 MOIS D'AVANCE" : "Désignation"} />
+
+      {f.docType === "recu_charge" && (
+        <div className="rounded-xl border p-3 mb-3" style={{ borderColor: "#BAE6FD", background: "#F0F9FF" }}>
+          <p className="text-xs font-semibold mb-2" style={{ color: "#0369A1" }}>Règlement effectué par l'agence</p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Field label="Date du règlement"><input type="date" className={inputCls} style={inputStyle} value={f.fields.paidOn || ""} onChange={(e) => setField("paidOn", e.target.value)} /></Field>
+            <Field label="Moyen de paiement">
+              <select className={inputCls} style={inputStyle} value={f.fields.mode || "Espèces"} onChange={(e) => setField("mode", e.target.value)}>
+                {["Espèces", "Chèque", "Virement", "Mobile Money"].map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </Field>
+          </div>
+          <Field label="Référence de la facture"><input className={inputCls} style={inputStyle} value={f.fields.reference || ""} onChange={(e) => setField("reference", e.target.value)} placeholder="Ex. Facture CIE n° 4478521 — compteur 021456" /></Field>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" checked={!!f.paidStamp} onChange={(e) => set("paidStamp", e.target.checked)} />
+            <span>Apposer la mention <strong style={{ color: STAMP_RED }}>PAYÉ</strong></span>
+          </label>
+          <p className="text-[11px] mt-1.5" style={{ color: "#0369A1" }}>
+            Comme pour les quittances, le tampon n'apparaîtra qu'après validation par un administrateur.
+          </p>
+        </div>
+      )}
 
       <button onClick={() => setMore((s) => !s)} className="flex items-center gap-1 text-xs font-medium mt-4 mb-2" style={{ color: "var(--brass)" }}>
         {more ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Coordonnées et options
@@ -2091,7 +2250,8 @@ function Documents({ store, me }) {
   if (sheet) {
     return <DocumentSheet doc={sheet} unit={store.units.find((u) => u.id === sheet.unitId)}
       property={propById[sheet.propertyId]} owner={ownerById[sheet.ownerId]}
-      author={memberById[sheet.createdBy]} onBack={() => setSheetId(null)} />;
+      author={memberById[sheet.createdBy]} validator={memberById[sheet.approvedBy]}
+      onBack={() => setSheetId(null)} />;
   }
 
   const list = documents.filter((d) =>
@@ -2101,7 +2261,9 @@ function Documents({ store, me }) {
       (d.ref || "").toLowerCase().includes(search.toLowerCase()) ||
       (d.object || "").toLowerCase().includes(search.toLowerCase())));
 
-  const encaisse = documents.filter((d) => d.status === "regle").reduce((a, d) => a + d.total, 0);
+  const regles = documents.filter((d) => d.status === "regle");
+  const encaisse = regles.filter((d) => d.direction === "encaissement").reduce((a, d) => a + d.total, 0);
+  const decaisse = regles.filter((d) => d.direction === "decaissement").reduce((a, d) => a + d.total, 0);
   const attente = documents.filter((d) => ["emis", "envoye"].includes(d.status));
 
   return (
@@ -2114,9 +2276,10 @@ function Documents({ store, me }) {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <StatCard icon={FileText} label="Documents établis" value={documents.length} tint="var(--brass)" />
-        <StatCard icon={Wallet} label="Montants réglés" value={fcfa(encaisse)} tint="#4F9E2A" />
+        <StatCard icon={ArrowDownToLine} label="Encaissé des clients" value={fcfa(encaisse)} sub="quittances, décomptes, prestations" tint="#4F9E2A" onClick={() => setFilterStatus("regle")} />
+        <StatCard icon={ArrowUpFromLine} label="Déboursé par l'agence" value={fcfa(decaisse)} sub="charges, CIE, SODECI, artisans" tint="#D81F26" onClick={() => setFilterType("recu_charge")} />
         <StatCard icon={AlertTriangle} label="En attente de règlement" value={attente.length} sub={fcfa(attente.reduce((a, d) => a + d.total, 0))} tint="#EA580C" />
-        <StatCard icon={Receipt} label="Brouillons" value={documents.filter((d) => d.status === "brouillon").length} tint="#94A3B8" />
+        <StatCard icon={Wallet} label="Solde des documents" value={fcfa(encaisse - decaisse)} sub={`${documents.filter((d) => d.status === "brouillon").length} brouillon(s)`} tint="var(--brass)" onClick={() => setFilterStatus("brouillon")} />
       </div>
 
       {/* Modèles disponibles */}
@@ -2208,6 +2371,11 @@ function Documents({ store, me }) {
                     {d.approval === "approuve" && d.paidStamp && <Chip color={STAMP_RED} bg="#FDEAEA">PAYÉ</Chip>}
                     {d.approval === "en_attente" && <Chip color="#C58A1B" dot>à valider</Chip>}
                     {d.approval === "refuse" && <Chip color="#D81F26">refusée</Chip>}
+                    {d.total > 0 && d.direction !== "neutre" && (
+                      <Chip color={d.direction === "encaissement" ? "#4F9E2A" : "#D81F26"}>
+                        {d.direction === "encaissement" ? "encaissé" : "déboursé"}
+                      </Chip>
+                    )}
                     <span className="text-base font-bold tabular-nums" style={{ color: cfg.color }}>{fcfa(d.total)}</span>
                   </div>
                   <select value={d.status} onChange={(e) => actions.setDocumentStatus(d.id, e.target.value)}
@@ -2250,7 +2418,7 @@ function Documents({ store, me }) {
       )}
 
       {modal && <DocModal initial={modal} properties={properties} owners={owners} units={store.units}
-        onSave={actions.saveDocument} onClose={() => setModal(null)} />}
+        isAdminUser={isAdmin(me.role)} onSave={actions.saveDocument} onClose={() => setModal(null)} />}
     </div>
   );
 }
@@ -2562,7 +2730,7 @@ function PropertyModal({ initial, owners, members, units, onSave, onSaveUnits, o
 
   const isMulti = f.kind === "immeuble";
   const [lots, setLots] = useState(() => (initial?.id ? units.filter((u) => u.propertyId === initial.id).map((u) => ({ ...u })) : []));
-  const [gen, setGen] = useState({ prefix: "Appt A", count: 4, kind: "appartement", rent: "" });
+  const [gen, setGen] = useState({ prefix: "Appt A", count: 4, kind: "appartement", rent: "", rooms: "" });
 
   const setLot = (i, k, v) => setLots((p) => p.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
   const addLot = () => setLots((p) => [...p, { label: "", kind: isMulti ? "appartement" : (f.kind === "villa" ? "villa" : "appartement"), rent: f.rent || 0, status: "vacant", tenantName: "" }]);
@@ -2570,7 +2738,7 @@ function PropertyModal({ initial, owners, members, units, onSave, onSaveUnits, o
     const n = Math.max(1, Math.min(60, Number(gen.count) || 1));
     setLots((p) => [...p, ...Array.from({ length: n }, (_, i) => ({
       label: `${gen.prefix}${i + 1}`, kind: gen.kind, rent: Number(gen.rent) || Number(f.rent) || 0,
-      status: "vacant", tenantName: "",
+      rooms: gen.rooms ? Number(gen.rooms) : null, status: "vacant", tenantName: "",
     }))]);
   };
 
@@ -2635,6 +2803,7 @@ function PropertyModal({ initial, owners, members, units, onSave, onSaveUnits, o
         <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
           <p className="text-xs font-semibold flex items-center gap-1.5"><Layers size={13} style={{ color: "var(--brass)" }} />
             {isMulti ? "Lots de l'immeuble (appartements, magasins…)" : "Lot unique (facultatif)"}
+            <span className="font-normal" style={{ color: "var(--muted)" }}>— pièces = chambres + salons</span>
           </p>
           <button onClick={addLot} className="kb-btn kb-btn-ghost text-xs"><Plus size={12} /> Ajouter un lot</button>
         </div>
@@ -2649,6 +2818,8 @@ function PropertyModal({ initial, owners, members, units, onSave, onSaveUnits, o
               <select className="px-2 py-1.5 rounded border text-xs" style={inputStyle} value={gen.kind} onChange={(e) => setGen((p) => ({ ...p, kind: e.target.value }))}>
                 {Object.entries(UNIT_KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select></div>
+            <div><span className="block text-[11px] mb-1" style={{ color: "var(--muted)" }}>Pièces</span>
+              <input type="number" min={0} max={20} className="px-2 py-1.5 rounded border text-xs w-16" style={inputStyle} value={gen.rooms} onChange={(e) => setGen((p) => ({ ...p, rooms: e.target.value }))} placeholder="3" /></div>
             <div><span className="block text-[11px] mb-1" style={{ color: "var(--muted)" }}>Loyer</span>
               <input type="number" min={0} step={5000} className="px-2 py-1.5 rounded border text-xs w-24" style={inputStyle} value={gen.rent} onChange={(e) => setGen((p) => ({ ...p, rent: e.target.value }))} placeholder={f.rent || "0"} /></div>
             <button onClick={generate} className="kb-btn kb-btn-ghost text-xs">Générer la série</button>
@@ -2662,6 +2833,7 @@ function PropertyModal({ initial, owners, members, units, onSave, onSaveUnits, o
               <select className="px-2 py-1.5 rounded border text-xs w-28" style={inputStyle} value={l.kind} onChange={(e) => setLot(i, "kind", e.target.value)}>
                 {Object.entries(UNIT_KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
+              <input type="number" min={0} max={20} className="px-2 py-1.5 rounded border text-xs w-16 text-center" style={inputStyle} value={l.rooms ?? ""} onChange={(e) => setLot(i, "rooms", e.target.value)} title="Nombre de pièces (chambres + salons)" placeholder="pièces" />
               <input type="number" min={0} step={5000} className="px-2 py-1.5 rounded border text-xs w-24 text-right" style={inputStyle} value={l.rent} onChange={(e) => setLot(i, "rent", e.target.value)} title="Loyer" />
               <select className="px-2 py-1.5 rounded border text-xs w-24" style={inputStyle} value={l.status} onChange={(e) => setLot(i, "status", e.target.value)}>
                 {Object.entries(UNIT_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
@@ -2767,6 +2939,7 @@ function PropertyDetail({ property, owner, agent, units, tasks, quotes, releases
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead><tr className="text-left" style={{ color: "var(--muted)" }}>
               <th className="px-4 py-2.5 font-medium">Lot</th><th className="px-3 py-2.5 font-medium">Type</th>
+              <th className="px-3 py-2.5 font-medium">Pièces</th>
               <th className="px-3 py-2.5 font-medium">Locataire</th><th className="px-3 py-2.5 font-medium">Loyer</th>
               <th className="px-3 py-2.5 font-medium">Avance</th>
               <th className="px-3 py-2.5 font-medium">Statut</th></tr></thead>
@@ -2775,6 +2948,7 @@ function PropertyDetail({ property, owner, agent, units, tasks, quotes, releases
               return <tr key={u.id} className="border-t" style={{ borderColor: "var(--line)" }}>
                 <td className="px-4 py-2.5 font-medium">{u.label}</td>
                 <td className="px-3 py-2.5">{UNIT_KIND[u.kind]}</td>
+                <td className="px-3 py-2.5">{u.rooms ? `${u.rooms} pièce${u.rooms > 1 ? "s" : ""}` : <span style={{ color: "var(--muted)" }}>—</span>}</td>
                 <td className="px-3 py-2.5" style={{ color: u.tenantName ? "var(--ink)" : "var(--muted)" }}>{u.tenantName || "—"}</td>
                 <td className="px-3 py-2.5 tabular-nums">{fcfa(u.rent)}</td>
                 <td className="px-3 py-2.5">{Number(u.advanceMonths) > 0
@@ -2859,12 +3033,12 @@ function Patrimoine({ store, me }) {
     units.filter((u) => u.status === "vacant").forEach((u) => {
       const p = properties.find((x) => x.id === u.propertyId);
       if (!p) return;
-      rows.push({ key: u.id, property: p, label: u.label, kind: UNIT_KIND[u.kind], rent: u.rent,
+      rows.push({ key: u.id, property: p, label: u.label, kind: UNIT_KIND[u.kind], rooms: u.rooms, rent: u.rent,
         commune: p.commune, quartier: p.quartier, agent: memberById[p.agentId],
         forWhat: p.availableFor !== "aucun" ? AVAILABLE_FOR[p.availableFor] : "À louer" });
     });
     properties.filter((p) => p.availableFor !== "aucun" && !units.some((u) => u.propertyId === p.id)).forEach((p) => {
-      rows.push({ key: p.id, property: p, label: "Bien entier", kind: PROPERTY_KIND[p.kind],
+      rows.push({ key: p.id, property: p, label: "Bien entier", kind: PROPERTY_KIND[p.kind], rooms: null,
         rent: p.availableFor === "vente" ? (p.salePrice || 0) : (p.rent || 0),
         commune: p.commune, quartier: p.quartier, agent: memberById[p.agentId], forWhat: AVAILABLE_FOR[p.availableFor] });
     });
@@ -2903,6 +3077,7 @@ function Patrimoine({ store, me }) {
         { label: "Bâtiment / bien", render: (r) => r.property.name },
         { label: "Lot", render: (r) => r.label },
         { label: "Type", render: (r) => r.kind },
+        { label: "Pièces", render: (r) => (r.rooms ? `${r.rooms}` : "—") },
         { label: "Commune", render: (r) => r.commune || "—" },
         { label: "Quartier", render: (r) => r.quartier || "—" },
         { label: "Disponible pour", render: (r) => r.forWhat },
@@ -2946,9 +3121,9 @@ function Patrimoine({ store, me }) {
       <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>Immeubles et leurs lots, villas et appartements indépendants — avec l'agent en charge de chaque bien.</p>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-        <StatCard icon={Building2} label="Biens en gestion" value={properties.length} sub={`${owners.length} propriétaire(s)`} tint="#2E78A8" />
+        <StatCard icon={Building2} label="Biens en gestion" value={properties.length} sub={`${owners.length} propriétaire(s)`} tint="#2E78A8" onClick={() => setTab("biens")} />
         <StatCard icon={Layers} label="Lots au total" value={units.length} sub={`${units.filter((u) => u.status === "occupe").length} occupé(s)`} tint="#4F9E2A" />
-        <StatCard icon={DoorOpen} label="Disponibles" value={vacantRows.length} sub="à louer ou à vendre" tint="#EA580C" />
+        <StatCard icon={DoorOpen} label="Disponibles" value={vacantRows.length} sub="à louer ou à vendre" tint="#EA580C" onClick={() => setTab("vacants")} />
         <StatCard icon={Wallet} label="Loyer potentiel" value={fcfa(units.reduce((a, u) => a + u.rent, 0) || properties.reduce((a, p) => a + (p.rent || 0), 0))} sub="tous lots confondus" tint="var(--brass)" />
       </div>
 
@@ -3004,7 +3179,8 @@ function Patrimoine({ store, me }) {
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead><tr className="text-left" style={{ color: "var(--muted)" }}>
               <th className="px-4 py-2.5 font-medium">Bâtiment / bien</th><th className="px-3 py-2.5 font-medium">Lot</th>
-              <th className="px-3 py-2.5 font-medium">Type</th><th className="px-3 py-2.5 font-medium">Localisation</th>
+              <th className="px-3 py-2.5 font-medium">Type</th><th className="px-3 py-2.5 font-medium">Pièces</th>
+              <th className="px-3 py-2.5 font-medium">Localisation</th>
               <th className="px-3 py-2.5 font-medium">Disponible pour</th><th className="px-3 py-2.5 font-medium">Loyer / prix</th>
               <th className="px-3 py-2.5 font-medium">Agent</th></tr></thead>
             <tbody>{filteredVacants.map((r) => (
@@ -3012,6 +3188,7 @@ function Patrimoine({ store, me }) {
                 <td className="px-4 py-2.5 font-medium">{r.property.name}</td>
                 <td className="px-3 py-2.5">{r.label}</td>
                 <td className="px-3 py-2.5">{r.kind}</td>
+                <td className="px-3 py-2.5 font-medium">{r.rooms ? `${r.rooms} pièce${r.rooms > 1 ? "s" : ""}` : <span style={{ color: "#D81F26" }}>à préciser</span>}</td>
                 <td className="px-3 py-2.5" style={{ color: "var(--muted)" }}>{[r.quartier, r.commune].filter(Boolean).join(", ") || "—"}</td>
                 <td className="px-3 py-2.5"><Chip color="#EA580C">{r.forWhat}</Chip></td>
                 <td className="px-3 py-2.5 font-medium tabular-nums">{fcfa(r.rent)}</td>
@@ -3285,9 +3462,9 @@ function Produits({ store, me }) {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <StatCard icon={Package} label="Valeur du stock" value={fcfa(stockValue)} sub={`${products.filter((p) => p.active).length} références`} tint="#4F9E2A" />
-        <StatCard icon={ClipboardList} label="Fiches de sortie" value={releases.length} sub={`${recentReleases.length} sur ${months} mois`} tint="var(--brass)" />
+        <StatCard icon={ClipboardList} label="Fiches de sortie" value={releases.length} sub={`${recentReleases.length} sur ${months} mois`} tint="var(--brass)" onClick={() => setTab("sorties")} />
         <StatCard icon={TrendingDown} label="Consommé (période)" value={fcfa(recentLines.reduce((a, l) => a + l.qty * l.price, 0))} tint="#7C3AED" />
-        <StatCard icon={AlertTriangle} label="Alertes de stock" value={lowStock.length} tint="#D81F26" />
+        <StatCard icon={AlertTriangle} label="Alertes de stock" value={lowStock.length} tint="#D81F26" onClick={() => setTab("stock")} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -4414,8 +4591,8 @@ function Transport({ store, me, userId }) {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <StatCard icon={Wallet} label={`Transport ${trPeriodLabel(period)}`} value={fcfa(monthTotal)} sub={`${monthTransport.length} déplacement(s)`} tint="#2E78A8" />
-        <StatCard icon={Clock} label="En attente de décision" value={pending.length} tint="#C58A1B" />
-        <StatCard icon={Car} label="Mes demandes" value={mine.length} sub={`${mine.filter((r) => r.status === "approuve").length} approuvée(s)`} tint="#4F9E2A" />
+        <StatCard icon={Clock} label="En attente de décision" value={pending.length} tint="#C58A1B" onClick={() => setTab("attente")} />
+        <StatCard icon={Car} label="Mes demandes" value={mine.length} sub={`${mine.filter((r) => r.status === "approuve").length} approuvée(s)`} tint="#4F9E2A" onClick={() => setTab("mes")} />
         <StatCard icon={CalendarOff} label="Absences du mois" value={monthReqs.filter((r) => r.reqType === "absence" && r.status === "approuve").length} tint="#7C3AED" />
       </div>
 
@@ -4539,7 +4716,7 @@ function TaskModal({ initial, departments, members, properties, owners, onSave, 
   const [f, setF] = useState(() => ({
     title: "", description: "", deptId: "", assigneeId: members[0]?.id, urgency: "normale", status: "a_faire",
     estMin: 60, day: null, weekStart: mondayIso(new Date()), nature: "autre", propertyId: "", ownerId: "",
-    dueDate: "", ...initial,
+    dueDate: "", assigneeIds: [], startTime: "", reminderMin: 0, ...initial,
   }));
   const [more, setMore] = useState(false);
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
@@ -4566,7 +4743,7 @@ function TaskModal({ initial, departments, members, properties, owners, onSave, 
       </Field>
 
       <div className="grid sm:grid-cols-2 gap-3">
-        <Field label="Assignée à">
+        <Field label="Responsable de la tâche">
           <select className={inputCls} style={inputStyle} value={f.assigneeId} onChange={(e) => set("assigneeId", e.target.value)}>
             {members.filter((m) => m.active).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
@@ -4580,6 +4757,43 @@ function TaskModal({ initial, departments, members, properties, owners, onSave, 
               </button>
             ))}
           </div>
+        </Field>
+      </div>
+
+      <Field label="Autres intervenants" hint="Cliquez pour ajouter ou retirer — ils verront la tâche dans leur liste">
+        <div className="flex flex-wrap gap-1.5">
+          {members.filter((m) => m.active && m.id !== f.assigneeId).map((m) => {
+            const on = (f.assigneeIds || []).includes(m.id);
+            return (
+              <button key={m.id} onClick={() => set("assigneeIds", on
+                ? f.assigneeIds.filter((x) => x !== m.id)
+                : [...(f.assigneeIds || []), m.id])}
+                className="px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1"
+                style={{ background: on ? m.color : "#fff", color: on ? "#fff" : "var(--muted)", border: `1px solid ${on ? m.color : "var(--line)"}` }}>
+                {on && <Check size={11} />} {m.name}
+              </button>
+            );
+          })}
+        </div>
+      </Field>
+
+      <div className="grid sm:grid-cols-3 gap-3">
+        <Field label="Jour">
+          <select className={inputCls} style={inputStyle} value={f.day ?? ""} onChange={(e) => set("day", e.target.value === "" ? null : Number(e.target.value))}>
+            <option value="">Non planifié</option>
+            {DAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}
+          </select>
+        </Field>
+        <Field label="Heure prévue"><input type="time" className={inputCls} style={inputStyle} value={f.startTime || ""} onChange={(e) => set("startTime", e.target.value)} /></Field>
+        <Field label="Rappel" hint="Notification avant l'heure">
+          <select className={inputCls} style={inputStyle} value={f.reminderMin} onChange={(e) => set("reminderMin", Number(e.target.value))}>
+            <option value={0}>Aucun rappel</option>
+            <option value={5}>5 minutes avant</option>
+            <option value={15}>15 minutes avant</option>
+            <option value={30}>30 minutes avant</option>
+            <option value={60}>1 heure avant</option>
+            <option value={1440}>La veille</option>
+          </select>
         </Field>
       </div>
 
@@ -4598,12 +4812,6 @@ function TaskModal({ initial, departments, members, properties, owners, onSave, 
         <div className="rounded-lg border p-3 mb-3" style={{ borderColor: "var(--line)", background: "#FAFBFC" }}>
           <Field label="Détails / consignes"><textarea className={inputCls} style={inputStyle} rows={2} value={f.description} onChange={(e) => set("description", e.target.value)} /></Field>
           <div className="grid sm:grid-cols-2 gap-3">
-            <Field label="Jour planifié">
-              <select className={inputCls} style={inputStyle} value={f.day ?? ""} onChange={(e) => set("day", e.target.value === "" ? null : Number(e.target.value))}>
-                <option value="">Non planifié</option>
-                {DAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}
-              </select>
-            </Field>
             <Field label="Durée estimée (min)"><input type="number" min={0} step={15} className={inputCls} style={inputStyle} value={f.estMin} onChange={(e) => set("estMin", Number(e.target.value))} /></Field>
             <Field label="Échéance"><input type="date" className={inputCls} style={inputStyle} value={f.dueDate || ""} onChange={(e) => set("dueDate", e.target.value)} /></Field>
             <Field label="Statut">
@@ -4663,8 +4871,10 @@ function TaskRow({ task, property, assignee, actualSec, isRunning, canTrack, onE
             <div className="flex items-center gap-1.5 min-w-0">
               {assignee && <Avatar member={assignee} size={20} />}
               <span className="text-[11px] truncate" style={{ color: "var(--muted)" }}>
+                {task.startTime ? <><Clock size={10} className="inline mb-0.5" /> {task.startTime.slice(0, 5)} · </> : null}
                 {fmtEst(task.estMin)} · <span style={{ color: overEst ? "#D81F26" : "var(--muted)", fontWeight: overEst ? 600 : 400 }}>{fmtDur(actualSec)}</span>
                 {task.dueDate && ` · échéance ${fr(task.dueDate + "T00:00:00", { day: "numeric", month: "short" })}`}
+                {(task.assigneeIds || []).length > 0 && ` · +${task.assigneeIds.length} intervenant(s)`}
               </span>
             </div>
             <div className="flex items-center gap-1 shrink-0">
@@ -4715,7 +4925,9 @@ function Taches({ store, me, userId, liveSecForTask, isRunning, toggleTimer, adv
     setQuick("");
   };
 
-  const base = tasks.filter((t) => (scope === "all" || t.assigneeId === userId));
+  /* Une tâche m'appartient si j'en suis responsable ou intervenant */
+  const isMine = (t) => t.assigneeId === userId || (t.assigneeIds || []).includes(userId);
+  const base = tasks.filter((t) => (scope === "all" || isMine(t)));
   const filtered = base.filter((t) =>
     (filterNature === "all" || t.nature === filterNature) &&
     (showDone || t.status !== "termine") &&
@@ -5520,7 +5732,7 @@ function ReceiptModal({ initial, unit, property, owner, isAdminUser, onSave, onC
 }
 
 /* Quittance imprimable — modèle soigné */
-function ReceiptSheet({ doc, unit, property, owner, author, onBack }) {
+function ReceiptSheet({ doc, unit, property, owner, author, validator, onBack }) {
   const total = doc.total || linesTotal(doc.lines || []);
   const balance = Number(doc.fields?.balance) || 0;
   return (
@@ -5633,6 +5845,9 @@ function ReceiptSheet({ doc, unit, property, owner, author, onBack }) {
             <p className="text-[11px] font-semibold pb-24">Pour l'Agence</p>
             <div className="border-t" style={{ borderColor: "var(--ink)" }} />
             <p className="text-[10px] mt-1" style={{ color: "var(--muted)" }}>{author?.name || ""}</p>
+            {doc.approval === "approuve" && validator && (
+              <p className="text-[9px] mt-0.5" style={{ color: "var(--muted)" }}>Mention « PAYÉ » validée par {validator.name}</p>
+            )}
           </div>
         </div>
 
@@ -5645,10 +5860,10 @@ function ReceiptSheet({ doc, unit, property, owner, author, onBack }) {
 
 /* Rendu d'un document : la mise en forme dépend de son type, jamais de
    l'endroit d'où on l'ouvre (Documents, Locataires, dossier, portefeuille). */
-function DocumentSheet({ doc, unit, property, owner, author, onBack }) {
+function DocumentSheet({ doc, unit, property, owner, author, validator, onBack }) {
   const cfg = DOC_TYPES[doc.docType] || DOC_TYPES.courrier;
   if (doc.docType === "quittance") {
-    return <ReceiptSheet doc={doc} unit={unit} property={property} owner={owner} author={author} onBack={onBack} />;
+    return <ReceiptSheet doc={doc} unit={unit} property={property} owner={owner} author={author} validator={validator} onBack={onBack} />;
   }
   if (cfg.layout === "decharge") {
     return <DechargeSheet doc={doc} author={author} onBack={onBack} />;
@@ -5673,11 +5888,14 @@ function Locataires({ store, me, userId }) {
   const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
   const unitById = useMemo(() => Object.fromEntries(units.map((u) => [u.id, u])), [units]);
   const canStamp = isAdmin(me.role) || me.role === "comptable";
+  /* Quittances en attente de validation, mises en avant dès l'ouverture */
+  const pendingReceipts = documents.filter((d) => d.docType === "quittance" && d.approval === "en_attente");
 
   const sheetDoc = documents.find((d) => d.id === sheetId);
   if (sheetDoc) {
     return <DocumentSheet doc={sheetDoc} unit={unitById[sheetDoc.unitId]} property={propById[sheetDoc.propertyId]}
-      owner={ownerById[sheetDoc.ownerId]} author={memberById[sheetDoc.createdBy]} onBack={() => setSheetId(null)} />;
+      owner={ownerById[sheetDoc.ownerId]} author={memberById[sheetDoc.createdBy]}
+      validator={memberById[sheetDoc.approvedBy]} onBack={() => setSheetId(null)} />;
   }
   if (dossier) {
     return <Dossier store={store} me={me} userId={userId} scope="locataire" unit={dossier.unit}
@@ -5713,10 +5931,44 @@ function Locataires({ store, me, userId }) {
       </div>
       <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>Recensement des locataires par lot, coordonnées et quittances de loyer.</p>
 
+      {pendingReceipts.length > 0 && (
+        <div className="rounded-xl border p-3 mb-4" style={{ borderColor: "#FCD9A6", background: "#FFF8EC" }}>
+          <p className="text-sm font-semibold mb-2" style={{ color: "#8A6212" }}>
+            <ShieldAlert size={15} className="inline mb-0.5" /> {pendingReceipts.length} quittance(s) en attente de validation
+            {!canStamp && " — un administrateur doit apposer la mention PAYÉ"}
+          </p>
+          <div className="divide-y" style={{ borderColor: "#F3E2C6" }}>
+            {pendingReceipts.map((d) => (
+              <div key={d.id} className="flex items-center justify-between gap-2 flex-wrap py-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{d.ref} · {d.clientName} · {d.period || "—"}</p>
+                  <p className="text-[11px]" style={{ color: "var(--muted)" }}>
+                    {fcfa(d.total)} — établie par {memberById[d.createdBy]?.name || "—"}
+                    {" le "}{fr(d.date + "T00:00:00", { day: "numeric", month: "short", year: "numeric" })}
+                  </p>
+                </div>
+                <div className="flex gap-1.5 shrink-0">
+                  <button onClick={() => setSheetId(d.id)} className="kb-btn kb-btn-ghost text-xs"><Eye size={13} /> Vérifier</button>
+                  {isAdmin(me.role) && <>
+                    <button onClick={async () => {
+                      const r = await actions.approveDocument(d.id, true);
+                      if (r?.error) alert(r.error);
+                      else if (r?.skipped) alert(`Quittance validée. Report dans le recouvrement non effectué : ${r.skipped}.`);
+                    }} className="kb-btn text-xs px-2.5 py-1.5" style={{ background: "#4F9E2A", color: "#fff" }}><ThumbsUp size={13} /> Valider</button>
+                    <button onClick={async () => { const n = prompt("Motif du refus :", ""); if (n !== null) await actions.approveDocument(d.id, false, n); }}
+                      className="kb-btn text-xs px-2.5 py-1.5" style={{ background: "#fff", color: "#D81F26", border: "1px solid #D81F2655" }}><ThumbsDown size={13} /> Refuser</button>
+                  </>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-        <StatCard icon={Users} label="Locataires recensés" value={list.length} sub={`${units.length} lot(s) au total`} tint="#2E78A8" />
+        <StatCard icon={Users} label="Locataires recensés" value={list.length} sub={`${units.length} lot(s) au total`} tint="#2E78A8" onClick={() => { setOnlyArrears(false); setSearch(""); }} />
         <StatCard icon={Wallet} label="Loyer mensuel cumulé" value={fcfa(rentRoll)} tint="#4F9E2A" />
-        <StatCard icon={AlertTriangle} label="Locataires en arriéré"
+        <StatCard icon={AlertTriangle} label="Locataires en arriéré" onClick={() => setOnlyArrears(true)}
           value={tenants.filter((u) => situation(u).hasArrears).length}
           sub={fcfa(tenants.reduce((a, u) => a + situation(u).total, 0))} tint="#D81F26" />
         <StatCard icon={Receipt} label="Quittances émises" value={documents.filter((d) => d.docType === "quittance").length} tint="var(--brass)" />
@@ -5825,7 +6077,10 @@ function Locataires({ store, me, userId }) {
                   <p className="text-[11px]" style={{ color: "var(--muted)" }}>{d.ref} · {fr(d.date + "T00:00:00", { day: "numeric", month: "short", year: "numeric" })}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  {d.paidStamp && <Chip color="#D81F26" bg="#FDEAEA">PAYÉ</Chip>}
+                  {d.paidStamp && d.approval === "approuve" && (
+                    <Chip color={STAMP_RED} bg="#FDEAEA">PAYÉ · validé par {memberById[d.approvedBy]?.name?.split(" ")[0] || "—"}</Chip>
+                  )}
+                  {d.approval === "en_attente" && <Chip color="#C58A1B" dot>à valider</Chip>}
                   <span className="text-sm font-semibold tabular-nums">{fcfa(d.total)}</span>
                   <button onClick={() => setSheetId(d.id)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Imprimer"><Printer size={14} /></button>
                   {canStamp && <button onClick={() => setReceiptModal({ doc: d, unit: unitById[d.unitId], property: propById[d.propertyId] })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><Pencil size={14} /></button>}
@@ -6014,9 +6269,9 @@ function Plaintes({ store, me, userId }) {
       <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>Du signalement au règlement : nature, cause, traitement et suite donnée.</p>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-        <StatCard icon={AlertTriangle} label="Plaintes ouvertes" value={open.length} sub={`${complaints.length} au total`} tint="#D81F26" />
+        <StatCard icon={AlertTriangle} label="Plaintes ouvertes" value={open.length} sub={`${complaints.length} au total`} tint="#D81F26" onClick={() => setFilterStatus("ouvertes")} />
         <StatCard icon={Clock} label="Urgentes" value={open.filter((c) => c.priority === "urgente" || c.priority === "haute").length} tint="#EA580C" />
-        <StatCard icon={CheckCircle2} label="Résolues" value={complaints.filter((c) => ["resolu", "clos"].includes(c.status)).length} tint="#4F9E2A" />
+        <StatCard icon={CheckCircle2} label="Résolues" value={complaints.filter((c) => ["resolu", "clos"].includes(c.status)).length} tint="#4F9E2A" onClick={() => setFilterStatus("resolu")} />
         <StatCard icon={Wallet} label="Coût des règlements" value={fcfa(complaints.reduce((a, c) => a + (Number(c.cost) || 0), 0))} tint="var(--brass)" />
       </div>
 
@@ -6641,6 +6896,388 @@ function Dossier({ store, me, userId, scope, unit, owner, property, onBack, onOp
 }
 
 /* ══════════════════════════════════════════════════════════════════════
+   CAISSE — réservée aux administrateurs
+   ══════════════════════════════════════════════════════════════════════ */
+
+const CASH_CATEGORY = {
+  loyer:         { label: "Loyer encaissé",     color: "#4F9E2A", sens: "entree" },
+  caution:       { label: "Caution",            color: "#2E78A8", sens: "entree" },
+  commission:    { label: "Commission agence",  color: "#7C3AED", sens: "entree" },
+  charges:       { label: "Charges / factures", color: "#EA580C", sens: "sortie" },
+  fournitures:   { label: "Fournitures",        color: "#C58A1B", sens: "sortie" },
+  transport:     { label: "Transport",          color: "#2E78A8", sens: "sortie" },
+  salaire:       { label: "Salaire / avance",   color: "#DB2777", sens: "sortie" },
+  artisan:       { label: "Artisan / travaux",  color: "#B91C1C", sens: "sortie" },
+  impot:         { label: "Impôt / taxe",       color: "#6366F1", sens: "sortie" },
+  remboursement: { label: "Remboursement",      color: "#0D9488", sens: "sortie" },
+  autre:         { label: "Autre",              color: "#64748B", sens: "entree" },
+};
+const CASH_METHOD = { especes: "Espèces", cheque: "Chèque", virement: "Virement", mobile_money: "Mobile Money" };
+const HANDOVER_STATUS = {
+  en_attente: { label: "En attente de certification", color: "#C58A1B" },
+  approuve:   { label: "Reçu certifié",               color: "#4F9E2A" },
+  conteste:   { label: "Contesté",                    color: "#D81F26" },
+};
+
+/* Solde d'une journée : entrées − sorties */
+function dayBalance(entries, day) {
+  const rows = entries.filter((e) => e.date === day);
+  const inflow = rows.filter((e) => e.direction === "entree").reduce((a, e) => a + e.amount, 0);
+  const outflow = rows.filter((e) => e.direction === "sortie").reduce((a, e) => a + e.amount, 0);
+  return { rows, inflow, outflow, balance: inflow - outflow };
+}
+
+/* ---------------- Modale : mouvement de caisse ---------------- */
+function CashModal({ initial, properties, owners, onSave, onClose }) {
+  const [f, setF] = useState(() => ({
+    date: isoDate(new Date()), direction: "entree", amount: "", label: "",
+    category: "loyer", method: "especes", propertyId: "", ownerId: "", reference: "", notes: "", ...initial,
+  }));
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const valid = f.label.trim() && Number(f.amount) > 0;
+  const submit = async () => { setBusy(true); const r = await onSave(f); setBusy(false); if (r?.error) setErr(r.error); else onClose(); };
+
+  return (
+    <Modal title={f.id ? "Modifier le mouvement" : "Nouveau mouvement de caisse"} onClose={onClose}>
+      <Field label="Sens de l'opération">
+        <div className="flex gap-2">
+          {[["entree", "Entrée en caisse", "#4F9E2A"], ["sortie", "Sortie de caisse", "#D81F26"]].map(([k, l, c]) => (
+            <button key={k} onClick={() => set("direction", k)} className="flex-1 py-2.5 rounded-lg text-sm font-medium"
+              style={{ background: f.direction === k ? c : "#fff", color: f.direction === k ? "#fff" : c, border: `1px solid ${c}55` }}>
+              {k === "entree" ? "↓ " : "↑ "}{l}
+            </button>
+          ))}
+        </div>
+      </Field>
+
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Montant (FCFA)"><input type="number" min={0} step={500} className={inputCls} style={inputStyle} value={f.amount} autoFocus onChange={(e) => set("amount", e.target.value)} /></Field>
+        <Field label="Date"><input type="date" className={inputCls} style={inputStyle} value={f.date} onChange={(e) => set("date", e.target.value)} /></Field>
+      </div>
+
+      <Field label="Libellé"><input className={inputCls} style={inputStyle} value={f.label} onChange={(e) => set("label", e.target.value)} placeholder="Ex. Loyer août — Appt A1, M. DIALLO" /></Field>
+
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Nature">
+          <select className={inputCls} style={inputStyle} value={f.category} onChange={(e) => set("category", e.target.value)}>
+            {Object.entries(CASH_CATEGORY).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+        </Field>
+        <Field label="Moyen">
+          <select className={inputCls} style={inputStyle} value={f.method} onChange={(e) => set("method", e.target.value)}>
+            {Object.entries(CASH_METHOD).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Bien concerné">
+          <select className={inputCls} style={inputStyle} value={f.propertyId || ""} onChange={(e) => set("propertyId", e.target.value)}>
+            <option value="">— Aucun —</option>
+            {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Pièce justificative" hint="N° de quittance, décharge, facture…">
+          <input className={inputCls} style={inputStyle} value={f.reference} onChange={(e) => set("reference", e.target.value)} placeholder="QL-2026-004" />
+        </Field>
+      </div>
+
+      <Field label="Observations"><textarea className={inputCls} style={inputStyle} rows={2} value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
+      {err && <p className="text-xs text-red-600 mb-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} className="kb-btn kb-btn-ghost">Annuler</button>
+        <button disabled={!valid || busy} onClick={submit} className="kb-btn kb-btn-primary disabled:opacity-40"><Check size={16} /> Enregistrer</button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ---------------- Modale : remise du solde ---------------- */
+function HandoverModal({ day, amount, members, userId, onSend, onClose }) {
+  const [toUser, setToUser] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const submit = async () => {
+    setBusy(true);
+    const r = await onSend({ date: day, amount, toUser, note });
+    setBusy(false);
+    if (r?.error) setErr(r.error); else onClose();
+  };
+  return (
+    <Modal title="Remise du solde journalier" onClose={onClose}>
+      <div className="rounded-lg p-3 mb-4 text-center" style={{ background: "#F6F8FA" }}>
+        <p className="text-xs" style={{ color: "var(--muted)" }}>Solde du {fr(day + "T00:00:00", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
+        <p className="text-2xl font-bold tabular-nums" style={{ color: "var(--brass)" }}>{fcfa(amount)}</p>
+        <p className="text-[11px] mt-1 italic" style={{ color: "var(--muted)" }}>{amountInWords(amount)}</p>
+      </div>
+
+      <Field label="Remis en mains propres à" hint="La personne recevra une notification et devra certifier la réception">
+        <select className={inputCls} style={inputStyle} value={toUser} onChange={(e) => setToUser(e.target.value)}>
+          <option value="">— Choisir la personne —</option>
+          {members.filter((m) => m.active && m.id !== userId).map((m) => <option key={m.id} value={m.id}>{m.name} — {ROLES[m.role]}</option>)}
+        </select>
+      </Field>
+      <Field label="Précision (facultatif)"><input className={inputCls} style={inputStyle} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ex. dont 300 000 F en espèces, reste en chèques" /></Field>
+
+      <div className="rounded-lg p-3 mb-3 text-xs" style={{ background: "#EFF6FF", color: "#1F5C82" }}>
+        Tant que le destinataire n'a pas certifié la réception, la remise reste « en attente ».
+        La certification est horodatée et nominative : elle vaut décharge.
+      </div>
+
+      {err && <p className="text-xs text-red-600 mb-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} className="kb-btn kb-btn-ghost">Annuler</button>
+        <button disabled={!toUser || busy} onClick={submit} className="kb-btn kb-btn-primary disabled:opacity-40"><Send size={16} /> Transmettre pour certification</button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ---------------- Journal de caisse imprimable ---------------- */
+function CashSheet({ day, data, members, handover, onBack }) {
+  const memberById = Object.fromEntries(members.map((m) => [m.id, m]));
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
+        <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
+        <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+      </div>
+      <div id="print-area" className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
+        <PrintHead title="JOURNAL DE CAISSE" subtitle={fr(day + "T00:00:00", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} />
+
+        <table className="w-full text-[11px] mt-4">
+          <thead><tr style={{ background: "#F1F3F5" }}>
+            <th className="text-left px-2 py-1.5 font-semibold">N°</th>
+            <th className="text-left px-2 py-1.5 font-semibold">Libellé</th>
+            <th className="text-left px-2 py-1.5 font-semibold">Nature</th>
+            <th className="text-left px-2 py-1.5 font-semibold">Moyen</th>
+            <th className="text-left px-2 py-1.5 font-semibold">Pièce</th>
+            <th className="text-right px-2 py-1.5 font-semibold">Entrée</th>
+            <th className="text-right px-2 py-1.5 font-semibold">Sortie</th>
+            <th className="text-left px-2 py-1.5 font-semibold">Saisi par</th>
+          </tr></thead>
+          <tbody>{data.rows.map((e, i) => (
+            <tr key={e.id} className="border-b" style={{ borderColor: "var(--line)" }}>
+              <td className="px-2 py-1.5">{i + 1}</td>
+              <td className="px-2 py-1.5 font-medium">{e.label}</td>
+              <td className="px-2 py-1.5">{CASH_CATEGORY[e.category]?.label}</td>
+              <td className="px-2 py-1.5">{CASH_METHOD[e.method]}</td>
+              <td className="px-2 py-1.5">{e.reference || "—"}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums" style={{ color: "#3d7d20" }}>{e.direction === "entree" ? fcfa(e.amount) : ""}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums" style={{ color: "#B5171D" }}>{e.direction === "sortie" ? fcfa(e.amount) : ""}</td>
+              <td className="px-2 py-1.5">{memberById[e.createdBy]?.name || "—"}</td>
+            </tr>
+          ))}</tbody>
+          <tfoot><tr style={{ background: "#F1F3F5" }}>
+            <td colSpan={5} className="px-2 py-2 font-bold">TOTAUX</td>
+            <td className="px-2 py-2 text-right font-bold tabular-nums" style={{ color: "#3d7d20" }}>{fcfa(data.inflow)}</td>
+            <td className="px-2 py-2 text-right font-bold tabular-nums" style={{ color: "#B5171D" }}>{fcfa(data.outflow)}</td>
+            <td />
+          </tr></tfoot>
+        </table>
+
+        <div className="flex justify-end mt-4">
+          <div className="rounded-lg px-4 py-3" style={{ background: "#F6F8FA", minWidth: 280 }}>
+            <div className="flex justify-between text-sm"><span style={{ color: "var(--muted)" }}>Total des entrées</span><span className="font-semibold tabular-nums">{fcfa(data.inflow)}</span></div>
+            <div className="flex justify-between text-sm"><span style={{ color: "var(--muted)" }}>Total des sorties</span><span className="font-semibold tabular-nums">− {fcfa(data.outflow)}</span></div>
+            <div className="flex justify-between items-center pt-2 mt-2 border-t" style={{ borderColor: "var(--line)" }}>
+              <span className="text-sm font-bold">SOLDE DU JOUR</span>
+              <span className="text-lg font-bold tabular-nums" style={{ color: "var(--brass)" }}>{fcfa(data.balance)}</span>
+            </div>
+          </div>
+        </div>
+
+        {data.balance > 0 && <p className="text-[11px] italic mt-3">Arrêté le présent journal à la somme de <strong>{amountInWords(data.balance)}</strong>.</p>}
+
+        {handover && (
+          <div className="rounded-lg border p-3 mt-4" style={{ borderColor: handover.status === "approuve" ? "#BBE3A6" : "#FCD9A6", background: handover.status === "approuve" ? "#F6FBF3" : "#FFF8EC" }}>
+            <p className="text-xs font-bold mb-1">REMISE DU SOLDE</p>
+            <p className="text-xs">
+              Somme de <strong>{fcfa(handover.amount)}</strong> remise par <strong>{memberById[handover.fromUser]?.name || "—"}</strong>
+              {" à "}<strong>{memberById[handover.toUser]?.name || "—"}</strong>.
+            </p>
+            <p className="text-xs mt-1" style={{ color: HANDOVER_STATUS[handover.status].color, fontWeight: 600 }}>
+              {handover.status === "approuve"
+                ? `Réception certifiée en mains propres le ${fr(handover.approvedAt, { day: "2-digit", month: "2-digit", year: "numeric" })} à ${fmtTime(handover.approvedAt)}.`
+                : HANDOVER_STATUS[handover.status].label}
+            </p>
+            {handover.note && <p className="text-[11px] mt-1 italic" style={{ color: "var(--muted)" }}>{handover.note}</p>}
+          </div>
+        )}
+
+        <div className="kb-sign flex justify-between items-end pt-10 mt-4">
+          <div className="text-center" style={{ minWidth: 200 }}>
+            <p className="text-[11px] font-semibold pb-20">Le Caissier</p>
+            <div className="border-t" style={{ borderColor: "var(--ink)" }} />
+          </div>
+          <div className="text-center" style={{ minWidth: 200 }}>
+            <p className="text-[11px] font-semibold pb-20">Le Dépositaire du solde</p>
+            <div className="border-t" style={{ borderColor: "var(--ink)" }} />
+          </div>
+        </div>
+        <PrintFoot />
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Vue principale ---------------- */
+function Caisse({ store, me, userId }) {
+  const { cashEntries, handovers, members, properties, owners, actions } = store;
+  const [day, setDay] = useState(isoDate(new Date()));
+  const [modal, setModal] = useState(null);
+  const [handoverModal, setHandoverModal] = useState(false);
+  const [sheet, setSheet] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
+  const data = useMemo(() => dayBalance(cashEntries, day), [cashEntries, day]);
+  const dayHandover = handovers.find((h) => h.date === day);
+
+  /* Remises qui m'attendent, quel que soit le jour affiché */
+  const toCertify = handovers.filter((h) => h.toUser === userId && h.status === "en_attente");
+
+  const monthIsoOf = (d) => (d || "").slice(0, 7);
+  const monthRows = cashEntries.filter((e) => monthIsoOf(e.date) === monthIsoOf(day));
+  const monthIn = monthRows.filter((e) => e.direction === "entree").reduce((a, e) => a + e.amount, 0);
+  const monthOut = monthRows.filter((e) => e.direction === "sortie").reduce((a, e) => a + e.amount, 0);
+
+  const rows = data.rows.filter((e) => !search
+    || e.label.toLowerCase().includes(search.toLowerCase())
+    || (e.reference || "").toLowerCase().includes(search.toLowerCase()));
+
+  if (sheet) return <CashSheet day={day} data={data} members={members} handover={dayHandover} onBack={() => setSheet(false)} />;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
+        <h1 className="text-xl font-bold">Caisse</h1>
+        <div className="flex gap-2">
+          <button onClick={() => setSheet(true)} className="kb-btn kb-btn-ghost"><Printer size={15} /> Journal du jour</button>
+          <button onClick={() => setModal({ date: day })} className="kb-btn kb-btn-primary"><Plus size={16} /> Mouvement</button>
+        </div>
+      </div>
+      <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>Entrées et sorties, solde journalier et remise certifiée en mains propres.</p>
+
+      {/* Remises à certifier — priorité absolue */}
+      {toCertify.length > 0 && (
+        <div className="rounded-xl border p-3 mb-4" style={{ borderColor: "#FCD9A6", background: "#FFF8EC" }}>
+          <p className="text-sm font-semibold mb-2" style={{ color: "#8A6212" }}>
+            <ShieldAlert size={15} className="inline mb-0.5" /> {toCertify.length} remise(s) de caisse à certifier
+          </p>
+          {toCertify.map((h) => (
+            <div key={h.id} className="flex items-center justify-between gap-2 flex-wrap py-2 border-t" style={{ borderColor: "#F3E2C6" }}>
+              <div>
+                <p className="text-sm">
+                  <strong>{fcfa(h.amount)}</strong> remis par <strong>{memberById[h.fromUser]?.name || "—"}</strong>
+                  {" — "}{fr(h.date + "T00:00:00", { day: "numeric", month: "long", year: "numeric" })}
+                </p>
+                {h.note && <p className="text-[11px] italic" style={{ color: "var(--muted)" }}>{h.note}</p>}
+              </div>
+              <div className="flex gap-1.5">
+                <button onClick={() => actions.answerHandover(h.id, true)} className="kb-btn text-xs px-2.5 py-1.5" style={{ background: "#4F9E2A", color: "#fff" }}>
+                  <ThumbsUp size={13} /> Je certifie avoir reçu cette somme
+                </button>
+                <button onClick={async () => { const n = prompt("Motif de la contestation :", ""); if (n !== null) await actions.answerHandover(h.id, false, n); }}
+                  className="kb-btn text-xs px-2.5 py-1.5" style={{ background: "#fff", color: "#D81F26", border: "1px solid #D81F2655" }}>
+                  <ThumbsDown size={13} /> Contester
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <StatCard icon={ArrowDownToLine} label="Entrées du jour" value={fcfa(data.inflow)} sub={`${data.rows.filter((e) => e.direction === "entree").length} mouvement(s)`} tint="#4F9E2A" />
+        <StatCard icon={ArrowUpFromLine} label="Sorties du jour" value={fcfa(data.outflow)} sub={`${data.rows.filter((e) => e.direction === "sortie").length} mouvement(s)`} tint="#D81F26" />
+        <StatCard icon={Wallet} label="Solde du jour" value={fcfa(data.balance)} tint="var(--brass)" />
+        <StatCard icon={BarChart3} label="Solde du mois" value={fcfa(monthIn - monthOut)} sub={`${fcfa(monthIn)} entrés · ${fcfa(monthOut)} sortis`} tint="#2E78A8" />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <input type="date" value={day} onChange={(e) => setDay(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle} />
+        <div className="relative flex-1 min-w-[150px]">
+          <Search size={15} className="absolute left-2.5 top-2.5 text-slate-400" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Libellé, pièce justificative…" className="w-full pl-8 pr-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle} />
+        </div>
+        {data.balance > 0 && !dayHandover && (
+          <button onClick={() => setHandoverModal(true)} className="kb-btn kb-btn-primary text-sm"><Send size={14} /> Remettre le solde</button>
+        )}
+      </div>
+
+      {/* État de la remise du jour */}
+      {dayHandover && (
+        <div className="rounded-xl border p-3 mb-4 flex items-start gap-2"
+          style={{ borderColor: dayHandover.status === "approuve" ? "#BBE3A6" : dayHandover.status === "conteste" ? "#F5C6C7" : "#FCD9A6",
+                   background: dayHandover.status === "approuve" ? "#F6FBF3" : dayHandover.status === "conteste" ? "#FDF2F2" : "#FFF8EC" }}>
+          <BadgeCheck size={16} className="mt-0.5 shrink-0" style={{ color: HANDOVER_STATUS[dayHandover.status].color }} />
+          <div>
+            <p className="text-sm font-medium" style={{ color: HANDOVER_STATUS[dayHandover.status].color }}>
+              {HANDOVER_STATUS[dayHandover.status].label} — {fcfa(dayHandover.amount)}
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>
+              Remis par {memberById[dayHandover.fromUser]?.name || "—"} à {memberById[dayHandover.toUser]?.name || "—"}
+              {dayHandover.approvedAt ? ` · certifié le ${fr(dayHandover.approvedAt, { day: "numeric", month: "long", year: "numeric" })} à ${fmtTime(dayHandover.approvedAt)}` : ""}
+            </p>
+            {dayHandover.responseNote && <p className="text-[11px] mt-1 italic" style={{ color: "#B5171D" }}>{dayHandover.responseNote}</p>}
+          </div>
+        </div>
+      )}
+
+      {rows.length ? (
+        <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: "var(--line)" }}>
+          <div className="overflow-x-auto"><table className="w-full text-sm">
+            <thead><tr className="text-left" style={{ color: "var(--muted)" }}>
+              <th className="px-4 py-2.5 font-medium">Libellé</th>
+              <th className="px-3 py-2.5 font-medium">Nature</th>
+              <th className="px-3 py-2.5 font-medium">Moyen</th>
+              <th className="px-3 py-2.5 font-medium">Pièce</th>
+              <th className="px-3 py-2.5 font-medium text-right">Entrée</th>
+              <th className="px-3 py-2.5 font-medium text-right">Sortie</th>
+              <th className="px-3 py-2.5 font-medium">Saisi par</th>
+              <th />
+            </tr></thead>
+            <tbody>{rows.map((e) => {
+              const cat = CASH_CATEGORY[e.category] || CASH_CATEGORY.autre;
+              return (
+                <tr key={e.id} className="border-t" style={{ borderColor: "var(--line)" }}>
+                  <td className="px-4 py-2.5"><p className="font-medium">{e.label}</p>{e.notes && <p className="text-[11px]" style={{ color: "var(--muted)" }}>{e.notes}</p>}</td>
+                  <td className="px-3 py-2.5"><Chip color={cat.color}>{cat.label}</Chip></td>
+                  <td className="px-3 py-2.5" style={{ color: "var(--muted)" }}>{CASH_METHOD[e.method]}</td>
+                  <td className="px-3 py-2.5" style={{ color: "var(--muted)" }}>{e.reference || "—"}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums font-medium" style={{ color: "#4F9E2A" }}>{e.direction === "entree" ? fcfa(e.amount) : ""}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums font-medium" style={{ color: "#D81F26" }}>{e.direction === "sortie" ? fcfa(e.amount) : ""}</td>
+                  <td className="px-3 py-2.5 text-xs" style={{ color: "var(--muted)" }}>{memberById[e.createdBy]?.name || "—"}</td>
+                  <td className="px-3 py-2.5">
+                    <div className="flex gap-1 justify-end">
+                      <button onClick={() => setModal(e)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><Pencil size={14} /></button>
+                      <button onClick={async () => { if (confirm(`Supprimer « ${e.label} » ?`)) await actions.deleteCashEntry(e.id); }} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}</tbody>
+          </table></div>
+          <div className="flex justify-end px-4 py-3 border-t gap-6" style={{ borderColor: "var(--line)" }}>
+            <span className="text-sm" style={{ color: "var(--muted)" }}>Entrées <strong style={{ color: "#4F9E2A" }}>{fcfa(data.inflow)}</strong></span>
+            <span className="text-sm" style={{ color: "var(--muted)" }}>Sorties <strong style={{ color: "#D81F26" }}>{fcfa(data.outflow)}</strong></span>
+            <span className="text-sm font-bold">Solde <span style={{ color: "var(--brass)" }}>{fcfa(data.balance)}</span></span>
+          </div>
+        </div>
+      ) : <EmptyState icon={Wallet} title="Aucun mouvement ce jour"
+        sub="Enregistrez les entrées et sorties d'espèces de la journée."
+        action={<button onClick={() => setModal({ date: day })} className="kb-btn kb-btn-primary"><Plus size={15} /> Nouveau mouvement</button>} />}
+
+      {modal && <CashModal initial={modal} properties={properties} owners={owners} onSave={actions.saveCashEntry} onClose={() => setModal(null)} />}
+      {handoverModal && <HandoverModal day={day} amount={data.balance} members={members} userId={userId}
+        onSend={actions.createHandover} onClose={() => setHandoverModal(false)} />}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
    APPLICATION (Root + Workspace)
    ══════════════════════════════════════════════════════════════════════ */
 /* ====================== Modales ====================== */
@@ -6762,7 +7399,8 @@ export default function Root() {
 function Workspace({ userId }) {
   const store = useStore(userId);
   const { loading, departments, members, tasks, timeEntries, activeTimers, channels, channelMembers, messages,
-    owners, properties, products, releases, releaseLines, quotes, units, requests, complaints, documents, actions } = store;
+    owners, properties, products, releases, releaseLines, quotes, units, requests, complaints, documents,
+    cashEntries, handovers, folderFiles, rentPeriods, rentLines, actions } = store;
 
   const [view, setView] = useState("dashboard");
   const [viewWeek, setViewWeek] = useState(mondayIso(new Date()));
@@ -6840,6 +7478,10 @@ function Workspace({ userId }) {
     else { const cid = await actions.ensureDm(dest); if (cid) await actions.sendMessage(cid, text, shareTask.id); if (reassign) await actions.updateTask(shareTask.id, { assigneeId: dest }); }
     setShareTask(null);
   };
+  const pendingHandovers = useMemo(
+    () => handovers.filter((h) => h.toUser === userId && h.status === "en_attente").length,
+    [handovers, userId]);
+
   const openComplaints = useMemo(
     () => complaints.filter((c) => ["signale", "en_cours", "en_attente"].includes(c.status)).length,
     [complaints]);
@@ -6855,6 +7497,34 @@ function Workspace({ userId }) {
 
   useTitleBadge(unreadTotal);   // pastille de non-lus dans le titre de l'onglet
 
+  /* Rappels des tâches planifiées : vérifiés chaque minute, une seule
+     notification par tâche et par session. */
+  const remindedRef = useRef(new Set());
+  useEffect(() => {
+    const check = () => {
+      const now = new Date();
+      const today = isoDate(now);
+      const monday = mondayIso(now);
+      tasks.forEach((t) => {
+        if (t.status === "termine" || !t.startTime || !t.reminderMin) return;
+        if (!(t.assigneeId === userId || (t.assigneeIds || []).includes(userId))) return;
+        if (t.weekStart !== monday || t.day === null || t.day === undefined) return;
+        const dayIso = isoDate(addDays(t.weekStart + "T00:00:00", t.day));
+        if (dayIso !== today) return;
+        const due = new Date(`${dayIso}T${t.startTime}`);
+        const fire = new Date(due.getTime() - t.reminderMin * 60000);
+        if (now >= fire && now <= due && !remindedRef.current.has(t.id)) {
+          remindedRef.current.add(t.id);
+          const mins = Math.max(0, Math.round((due - now) / 60000));
+          notify("Rappel de tâche", `${t.title} — ${mins > 0 ? `dans ${mins} min` : "maintenant"} (${t.startTime.slice(0, 5)})`);
+        }
+      });
+    };
+    check();
+    const timer = setInterval(check, 60000);
+    return () => clearInterval(timer);
+  }, [tasks, userId]);
+
   if (loading || !me) return <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg)" }}><p style={{ color: "var(--muted)" }}>Chargement de votre espace…</p></div>;
 
   const NAV = [
@@ -6868,6 +7538,7 @@ function Workspace({ userId }) {
     { id: "devis", label: "Devis artisans", icon: FileText },
     { id: "documents", label: "Documents", icon: FileSignature },
     { id: "recouvrement", label: "Recouvrement", icon: Wallet },
+    ...(isAdmin(me.role) ? [{ id: "caisse", label: "Caisse", icon: Banknote, badge: pendingHandovers }] : []),
     ...(canSupervise(me.role) || me.role === "comptable" ? [{ id: "impots", label: "Impôt foncier", icon: Landmark }] : []),
     { id: "transport", label: "Transport", icon: Car, badge: pendingReq },
     { id: "produits", label: "Produits", icon: SprayCan },
@@ -6922,6 +7593,7 @@ function Workspace({ userId }) {
       {myTimer && <button onClick={actions.stopTimer} className="sm:hidden w-full flex items-center justify-center gap-2 py-2 text-white text-sm font-medium" style={{ background: "var(--live)" }}><span className="w-2 h-2 rounded-full bg-white animate-pulse" /> En cours · {fmtClock((now - myTimer.startedAt) / 1000)} — toucher pour arrêter</button>}
 
       <main className="max-w-6xl mx-auto px-4 py-5">
+        <NotifBanner />
         {view === "dashboard" && Dashboard()}
         {view === "planner" && Planner()}
         {view === "board" && (
@@ -6939,6 +7611,7 @@ function Workspace({ userId }) {
         {view === "devis" && <Devis store={store} me={me} />}
         {view === "documents" && <Documents store={store} me={me} />}
         {view === "recouvrement" && <Recouvrement store={store} me={me} userId={userId} />}
+        {view === "caisse" && isAdmin(me.role) && <Caisse store={store} me={me} userId={userId} />}
         {view === "impots" && (canSupervise(me.role) || me.role === "comptable") && <ImpotFoncier store={store} me={me} />}
         {view === "transport" && <Transport store={store} me={me} userId={userId} />}
         {view === "produits" && <Produits store={store} me={me} />}
@@ -6964,7 +7637,7 @@ function Workspace({ userId }) {
   /* ---------- Vues ---------- */
   function Dashboard() {
     const wk = mondayIso(new Date()), today = isoDate(new Date());
-    const myTasks = tasks.filter((t) => t.assigneeId === userId);
+    const myTasks = tasks.filter((t) => t.assigneeId === userId || (t.assigneeIds || []).includes(userId));
     const myOpen = myTasks.filter((t) => t.status !== "termine");
     const live = myTimer ? Math.round((now - myTimer.startedAt) / 1000) : 0;
     const todaySec = secForUserDay(userId, today) + live;
@@ -6978,16 +7651,16 @@ function Workspace({ userId }) {
         <div className="flex items-center justify-between mb-4"><div><h1 className="text-xl font-bold">Bonjour {me.name.split(" ")[0]} 👋</h1><p className="text-sm" style={{ color: "var(--muted)" }}>{fr(new Date(), { weekday: "long", day: "numeric", month: "long" })}</p></div><FloatingAdd /></div>
         {runningTask && <div className="rounded-xl p-4 mb-4 text-white flex items-center justify-between" style={{ background: "linear-gradient(100deg,#3d7d20,#4F9E2A)" }}><div className="min-w-0"><p className="text-xs opacity-90 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-white animate-pulse" /> Chrono en cours</p><p className="font-medium truncate">{runningTask.title}</p></div><div className="flex items-center gap-3"><span className="text-2xl font-bold tabular-nums">{fmtClock((now - myTimer.startedAt) / 1000)}</span><button onClick={actions.stopTimer} className="bg-white/20 hover:bg-white/30 rounded-lg p-2"><Square size={18} /></button></div></div>}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
-          <StatCard icon={ListChecks} label="Mes tâches ouvertes" value={myOpen.length} sub={`${myTasks.length} au total`} tint="#2E78A8" />
-          <StatCard icon={Clock} label="Temps suivi aujourd'hui" value={fmtDur(todaySec)} tint="#4F9E2A" />
-          <StatCard icon={BarChart3} label="Temps suivi cette semaine" value={fmtDur(weekSec)} tint="var(--brass)" />
-          <StatCard icon={AlertTriangle} label="Tâches urgentes" value={myOpen.filter((t) => t.urgency === "urgente" || t.urgency === "haute").length} tint="#D81F26" />
+          <StatCard icon={ListChecks} label="Mes tâches ouvertes" value={myOpen.length} sub={`${myTasks.length} au total`} tint="#2E78A8" onClick={() => setView("board")} />
+          <StatCard icon={Clock} label="Temps suivi aujourd'hui" value={fmtDur(todaySec)} tint="#4F9E2A" onClick={() => setView("time")} />
+          <StatCard icon={BarChart3} label="Temps suivi cette semaine" value={fmtDur(weekSec)} tint="var(--brass)" onClick={() => setView("time")} />
+          <StatCard icon={AlertTriangle} label="Tâches urgentes" value={myOpen.filter((t) => t.urgency === "urgente" || t.urgency === "haute").length} tint="#D81F26" onClick={() => setView("board")} />
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-          <StatCard icon={Building2} label="Biens gérés" value={properties.length} sub={`${owners.length} propriétaire(s)`} tint="#2E78A8" />
-          <StatCard icon={FileText} label="Devis en attente" value={quotes.filter((q) => ["recu", "en_validation"].includes(q.status)).length} sub={fcfa(quotes.filter((q) => ["recu", "en_validation"].includes(q.status)).reduce((a, q) => a + q.total, 0))} tint="#EA580C" />
-          <StatCard icon={Wallet} label="Dépenses engagées" value={fcfa(quotes.filter((q) => ["valide", "execute", "paye"].includes(q.status)).reduce((a, q) => a + q.total, 0))} tint="#4F9E2A" />
-          <StatCard icon={SprayCan} label="Alertes de stock" value={products.filter((p) => p.active && p.stock <= p.minQty).length} sub={`${products.length} produits`} tint="#7C3AED" />
+          <StatCard icon={Building2} label="Biens gérés" value={properties.length} sub={`${owners.length} propriétaire(s)`} tint="#2E78A8" onClick={() => setView("patrimoine")} />
+          <StatCard icon={FileText} label="Devis en attente" value={quotes.filter((q) => ["recu", "en_validation"].includes(q.status)).length} sub={fcfa(quotes.filter((q) => ["recu", "en_validation"].includes(q.status)).reduce((a, q) => a + q.total, 0))} tint="#EA580C" onClick={() => setView("devis")} />
+          <StatCard icon={Wallet} label="Dépenses engagées" value={fcfa(quotes.filter((q) => ["valide", "execute", "paye"].includes(q.status)).reduce((a, q) => a + q.total, 0))} tint="#4F9E2A" onClick={() => setView("devis")} />
+          <StatCard icon={SprayCan} label="Alertes de stock" value={products.filter((p) => p.active && p.stock <= p.minQty).length} sub={`${products.length} produits`} tint="#7C3AED" onClick={() => setView("produits")} />
         </div>
         <div className="grid lg:grid-cols-2 gap-4">
           <section className="bg-white rounded-xl border p-4" style={{ borderColor: "var(--line)" }}>
@@ -7119,14 +7792,6 @@ function Workspace({ userId }) {
       <div>
         <h1 className="text-xl font-bold mb-1">Messagerie d'équipe</h1>
         <p className="text-sm mb-3" style={{ color: "var(--muted)" }}>Échangez en privé, en groupe, partagez des fichiers et des tâches.</p>
-        {notifPerm === "default" && (
-          <div className="rounded-xl border p-3 mb-3 flex items-center justify-between gap-3 flex-wrap" style={{ borderColor: "#BFDBFE", background: "#EFF6FF" }}>
-            <p className="text-xs" style={{ color: "#1F5C82" }}>
-              <Bell size={13} className="inline mb-0.5" /> Recevez une alerte sur cet appareil dès qu'un message arrive, même dans un autre onglet.
-            </p>
-            <button onClick={async () => setNotifPerm(await askNotifications())} className="kb-btn kb-btn-primary text-sm"><Bell size={14} /> Activer les notifications</button>
-          </div>
-        )}
         {notifPerm === "denied" && (
           <p className="text-[11px] mb-3" style={{ color: "var(--muted)" }}>
             <BellOff size={12} className="inline mb-0.5" /> Notifications bloquées pour ce site — réactivez-les dans les réglages du navigateur (icône à gauche de l'adresse).
