@@ -1286,7 +1286,13 @@ function useStore(userId) {
     if (data) setOwners((p) => p.some((x) => x.id === data.id) ? p : [...p, mOwner(data)]);
     return { error: error?.message, id: data?.id };
   };
-  const deleteOwner = async (id) => { const { error } = await supabase.from("owners").delete().eq("id", id); return { error: error?.message }; };
+  const deleteOwner = async (id, force = false) => {
+    const { data, error } = await supabase.rpc("delete_owner_cascade", { o_id: id, force });
+    if (error) return { error: error.message };
+    setOwners((p) => p.filter((x) => x.id !== id));
+    await load();
+    return { message: data };
+  };
 
   const saveProperty = async (f) => {
     const row = { ref: f.ref || "", name: f.name, kind: f.kind, address: f.address || "", commune: f.commune || "",
@@ -1298,7 +1304,16 @@ function useStore(userId) {
     if (data) setProperties((p) => p.some((x) => x.id === data.id) ? p : [...p, mProp(data)]);
     return { error: error?.message, id: data?.id };
   };
-  const deleteProperty = async (id) => { const { error } = await supabase.from("properties").delete().eq("id", id); return { error: error?.message }; };
+  /* Un bien est référencé par ses lots, tableaux, plaintes, devis…
+     La fonction en base retire les dépendances dans le bon ordre. */
+  const deleteProperty = async (id) => {
+    const { data, error } = await supabase.rpc("delete_property_cascade", { p_id: id });
+    if (error) return { error: error.message };
+    setProperties((p) => p.filter((x) => x.id !== id));
+    setUnits((p) => p.filter((u) => u.propertyId !== id));
+    await load();
+    return { message: data };
+  };
 
   /* ================= ACTIONS : PRODUITS & STOCK ================= */
   const saveProduct = async (f) => {
@@ -2991,7 +3006,7 @@ function Register({ title, subtitle, columns, rows, onBack, footer }) {
 }
 
 /* ---------------- Fiche d'un bien ---------------- */
-function PropertyDetail({ property, owner, agent, units, tasks, quotes, releases, releaseLines, products, members, onBack, onEdit }) {
+function PropertyDetail({ property, owner, agent, units, tasks, quotes, releases, releaseLines, products, members, canDelete, onDelete, onBack, onEdit }) {
   const pUnits = units.filter((u) => u.propertyId === property.id);
   const pTasks = tasks.filter((t) => t.propertyId === property.id);
   const pQuotes = quotes.filter((q) => q.propertyId === property.id);
@@ -3027,6 +3042,11 @@ function PropertyDetail({ property, owner, agent, units, tasks, quotes, releases
             </div>
           </div>
           <button onClick={() => onEdit(property)} className="kb-btn kb-btn-ghost"><Pencil size={15} /> Modifier</button>
+          {canDelete && (
+            <button onClick={onDelete} className="kb-btn kb-btn-ghost" style={{ color: "#D81F26" }} title="Supprimer ce bien et tout ce qui s'y rattache">
+              <Trash2 size={15} /> Supprimer
+            </button>
+          )}
         </div>
       </div>
 
@@ -3195,7 +3215,16 @@ function Patrimoine({ store, me }) {
     return <>
       <PropertyDetail property={detail} owner={ownerById[detail.ownerId]} agent={memberById[detail.agentId]}
         units={units} tasks={tasks} quotes={quotes} releases={releases} releaseLines={releaseLines}
-        products={products} members={members} onBack={() => setDetailId(null)} onEdit={setPropModal} />
+        products={products} members={members} canDelete={sup}
+        onDelete={async () => {
+          const pu = units.filter((u) => u.propertyId === detail.id).length;
+          if (!confirm(`Supprimer définitivement « ${detail.name} » ?\n\nSeront également supprimés : ${pu} lot(s), les tableaux de recouvrement, les plaintes et les devis de ce bien.\nCette action est irréversible.`)) return;
+          const r = await actions.deleteProperty(detail.id);
+          if (r?.error) { alert(r.error); return; }
+          setDetailId(null);
+          if (r?.message) alert(r.message);
+        }}
+        onBack={() => setDetailId(null)} onEdit={setPropModal} />
       {propModal && <PropertyModal initial={propModal} owners={owners} members={members} units={units}
         onSave={actions.saveProperty} onSaveUnits={saveUnitsFor} onClose={() => setPropModal(null)} onNewOwner={() => setOwnerModal({})} />}
       {ownerModal && <OwnerModal initial={ownerModal} onSave={actions.saveOwner} onClose={() => setOwnerModal(null)} />}
@@ -3326,7 +3355,15 @@ function Patrimoine({ store, me }) {
               </div>
               <div className="flex gap-1 shrink-0">
                 <button onClick={() => setOwnerModal(o)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><Pencil size={14} /></button>
-                {sup && <button onClick={async () => { if (confirm(`Supprimer ${o.name} ?`)) await actions.deleteOwner(o.id); }} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>}
+                {sup && <button onClick={async () => {
+                  const nb = properties.filter((p) => p.ownerId === o.id).length;
+                  const msg = nb > 0
+                    ? `${o.name} possède ${nb} bien(s) dans l'outil.\n\nSupprimer le propriétaire ET ses ${nb} bien(s), avec leurs lots, tableaux de recouvrement et plaintes ?\nCette action est irréversible.`
+                    : `Supprimer définitivement ${o.name} ?`;
+                  if (!confirm(msg)) return;
+                  const r = await actions.deleteOwner(o.id, nb > 0);
+                  if (r?.error) alert(r.error); else if (r?.message) alert(r.message);
+                }} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500" title="Supprimer ce propriétaire"><Trash2 size={14} /></button>}
               </div>
             </div>;
           })}
@@ -6653,12 +6690,6 @@ function Plaintes({ store, me, userId }) {
   const unitById = useMemo(() => Object.fromEntries(units.map((u) => [u.id, u])), [units]);
   const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
 
-  const sheetC = complaints.find((c) => c.id === sheetId);
-  if (sheetC) {
-    return <ComplaintSheet complaint={sheetC} property={propById[sheetC.propertyId]} unit={unitById[sheetC.unitId]}
-      members={members} quote={quotes.find((q) => q.id === sheetC.quoteId)} onBack={() => setSheetId(null)} />;
-  }
-
   const open = complaints.filter((c) => ["signale", "en_cours", "en_attente"].includes(c.status));
   const list = complaints.filter((c) =>
     (filterStatus === "all" || (filterStatus === "ouvertes" ? ["signale", "en_cours", "en_attente"].includes(c.status) : c.status === filterStatus)) &&
@@ -6680,6 +6711,13 @@ function Plaintes({ store, me, userId }) {
     });
     return Object.values(m).sort((a, b) => b.value - a.value).slice(0, 8);
   }, [complaints]);
+
+  const sheetC = complaints.find((c) => c.id === sheetId);
+  if (sheetC) {
+    return <ComplaintSheet complaint={sheetC} property={propById[sheetC.propertyId]} unit={unitById[sheetC.unitId]}
+      members={members} quote={quotes.find((q) => q.id === sheetC.quoteId)} onBack={() => setSheetId(null)} />;
+  }
+
 
   return (
     <div>
