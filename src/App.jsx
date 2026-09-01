@@ -787,6 +787,12 @@ const DEPARTURE_REASON = {
   autre:          "Autre motif",
 };
 
+/* Version de l'application : permet de vérifier d'un coup d'œil que le
+   fichier déployé est bien le dernier livré (utile après un remplacement
+   sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
+const APP_VERSION = "18.1";
+const APP_BUILD = "2026-09-01";
+
 /* ---- Papier à en-tête de l'agence ---- */
 const AGENCY = {
   name: "ENTREPRISE KIBEGNON",
@@ -1496,13 +1502,16 @@ function useStore(userId) {
       const saved = mUnit(data);
       setUnits((p) => p.map((u) => (u.id === f.id ? saved : u)));
 
-      /* Contrôle explicite : ce qui a été demandé est-il bien en base ? */
+      /* Contrôle explicite, fait sur la réponse BRUTE de la base : la
+         vérification ne dépend ainsi d'aucune étape de conversion interne. */
       const attendu = Number(f.advanceMonths) || 0;
       const arrAttendu = Number(f.arrearsAmount) || 0;
-      if (saved.advanceMonths !== attendu || saved.arrearsAmount !== arrAttendu) {
-        return { error: `Enregistrement incomplet : la base a retenu ${saved.advanceMonths} mois d'avance `
-          + `et ${fcfa(saved.arrearsAmount)} d'arriérés au lieu de ${attendu} et ${fcfa(arrAttendu)}. `
-          + "Vérifiez que les migrations v10 et v12 ont bien été exécutées." };
+      const enBaseAv = Number(data.advance_months) || 0;
+      const enBaseArr = Number(data.arrears_amount) || 0;
+      if (enBaseAv !== attendu || enBaseArr !== arrAttendu) {
+        return { error: `La base a retenu ${enBaseAv} mois d'avance et ${fcfa(enBaseArr)} d'arriérés `
+          + `au lieu de ${attendu} et ${fcfa(arrAttendu)}. Réessayez ; si le problème persiste, `
+          + "exécutez le script de vérification dans le SQL Editor." };
       }
 
       const adv = await applyAdvanceToPeriods(saved);
@@ -1935,6 +1944,7 @@ function Login() {
           </div>
         </div>
         <p className="text-center text-xs mt-4" style={{ color: "#7E8CA0" }}>Entreprise Kibegnon · Espace interne sécurisé</p>
+        <p className="text-center text-[10px] mt-1" style={{ color: "#9AA6B5" }}>Version {APP_VERSION} · {APP_BUILD}</p>
       </div>
     </div>
   );
