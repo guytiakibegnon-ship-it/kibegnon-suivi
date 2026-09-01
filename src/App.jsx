@@ -769,6 +769,18 @@ function arrearsOf(unit, data) {
 /* Libellé court : « 3 mois · 240 000 F » */
 const arrearsLabel = (a) => `${a.months} mois · ${fcfa(a.total)}`;
 
+const PAY_METHODS = ["Espèces", "Chèque", "Virement",
+  "Mobile Money : Wave", "Mobile Money : Orange Money", "Mobile Money : MTN",
+  "Mobile Money : Moov", "Djamo"];
+
+const DEPARTURE_REASON = {
+  fin_bail:       "Fin de bail",
+  conge_locataire: "Congé donné par le locataire",
+  conge_bailleur: "Congé donné par le bailleur",
+  impaye:         "Départ pour impayés",
+  autre:          "Autre motif",
+};
+
 /* ---- Papier à en-tête de l'agence ---- */
 const AGENCY = {
   name: "ENTREPRISE KIBEGNON",
@@ -914,13 +926,14 @@ const mUnit    = (r) => ({ id: r.id, propertyId: r.property_id, label: r.label, 
 const mPeriod  = (r) => ({ id: r.id, propertyId: r.property_id, period: r.period, scope: r.scope, rate: Number(r.agency_rate), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
 const mRLine   = (r) => ({ id: r.id, periodId: r.period_id, unitId: r.unit_id, unitLabel: r.unit_label, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, expected: Number(r.expected), collected: Number(r.collected), paidAt: r.paid_at, charges: Number(r.charges), comment: r.comment, position: r.position, vacant: !!r.vacant });
 const mRCharge = (r) => ({ id: r.id, periodId: r.period_id, label: r.label, amount: Number(r.amount), observation: r.observation, position: r.position, kind: r.kind || "charge" });
+const mFormer   = (r) => ({ id: r.id, unitId: r.unit_id, propertyId: r.property_id, unitLabel: r.unit_label, name: r.name, phone: r.phone, email: r.email, leaseStart: r.lease_start, leaseEnd: r.lease_end, departureDate: r.departure_date, reason: r.reason, rent: Number(r.rent_amount) || 0, deposit: Number(r.deposit) || 0, depositRefund: Number(r.deposit_refund) || 0, balanceDue: Number(r.balance_due) || 0, notes: r.notes, archivedBy: r.archived_by });
 const mCash     = (r) => ({ id: r.id, date: r.entry_date, direction: r.direction, amount: Number(r.amount), label: r.label, category: r.category, method: r.method, propertyId: r.property_id, ownerId: r.owner_id, reference: r.reference, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
 const mHandover = (r) => ({ id: r.id, date: r.handover_date, amount: Number(r.amount), fromUser: r.from_user, toUser: r.to_user, status: r.status, approvedAt: r.approved_at, note: r.note, responseNote: r.response_note, createdAt: Date.parse(r.created_at) });
-const mFolderFile = (r) => ({ id: r.id, scope: r.scope, unitId: r.unit_id, ownerId: r.owner_id, propertyId: r.property_id, category: r.category, label: r.label, fileUrl: r.file_url, fileName: r.file_name, fileType: r.file_type, fileSize: Number(r.file_size) || 0, notes: r.notes, uploadedBy: r.uploaded_by, createdAt: Date.parse(r.created_at) });
+const mFolderFile = (r) => ({ id: r.id, scope: r.scope, unitId: r.unit_id, ownerId: r.owner_id, formerTenantId: r.former_tenant_id, propertyId: r.property_id, category: r.category, label: r.label, fileUrl: r.file_url, fileName: r.file_name, fileType: r.file_type, fileSize: Number(r.file_size) || 0, notes: r.notes, uploadedBy: r.uploaded_by, createdAt: Date.parse(r.created_at) });
 const mComplaint = (r) => ({ id: r.id, ref: r.ref, propertyId: r.property_id, unitId: r.unit_id, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, category: r.category, cause: r.cause, priority: r.priority, description: r.description, reportedAt: r.reported_at, channel: r.channel, status: r.status, assignedTo: r.assigned_to, quoteId: r.quote_id, cost: Number(r.cost) || 0, resolution: r.resolution, resolvedAt: r.resolved_at, createdBy: r.created_by });
 const mTax     = (r) => ({ id: r.id, propertyId: r.property_id, unitId: r.unit_id, customLabel: r.custom_label, ownerId: r.owner_id, ownerLabel: r.owner_label, taxYear: r.tax_year, noticeNumber: r.notice_number, taxedAmount: Number(r.taxed_amount), installments: r.installments || [], receipts: r.receipts, declarationNext: r.declaration_next, notes: r.notes, createdBy: r.created_by, ncc: r.ncc || "", declarationDate: r.declaration_date, nextBase: r.next_base });
 const mReq     = (r) => ({ id: r.id, reqType: r.req_type, userId: r.user_id, date: r.req_date, amount: Number(r.amount), destination: r.destination, mode: r.transport_mode, propertyId: r.property_id, startDate: r.start_date, endDate: r.end_date, absenceType: r.absence_type, motif: r.motif, status: r.status, decidedBy: r.decided_by, decidedAt: r.decided_at, decisionNote: r.decision_note, createdAt: Date.parse(r.created_at) });
-const mDoc     = (r) => ({ id: r.id, ref: r.ref, docType: r.doc_type, date: r.doc_date, propertyId: r.property_id, ownerId: r.owner_id, clientName: r.client_name, clientPhone: r.client_phone, clientEmail: r.client_email, clientAddr: r.client_addr, object: r.object, body: r.body, lines: r.lines || [], fields: r.fields || {}, total: Number(r.total_amount), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at), unitId: r.unit_id, paidStamp: !!r.paid_stamp, stampedBy: r.stamped_by, period: r.period || "", approval: r.approval || "non_requise", approvedBy: r.approved_by, approvedAt: r.approved_at, approvalNote: r.approval_note || "", periodIso: r.period_iso || "", direction: r.direction || "encaissement" });
+const mDoc     = (r) => ({ id: r.id, ref: r.ref, docType: r.doc_type, date: r.doc_date, propertyId: r.property_id, ownerId: r.owner_id, clientName: r.client_name, clientPhone: r.client_phone, clientEmail: r.client_email, clientAddr: r.client_addr, object: r.object, body: r.body, lines: r.lines || [], fields: r.fields || {}, monthsCount: Number(r.fields?.monthsCount) || 1, total: Number(r.total_amount), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at), unitId: r.unit_id, paidStamp: !!r.paid_stamp, stampedBy: r.stamped_by, period: r.period || "", approval: r.approval || "non_requise", approvedBy: r.approved_by, approvedAt: r.approved_at, approvalNote: r.approval_note || "", periodIso: r.period_iso || "", direction: r.direction || "encaissement" });
 const mTpl     = (r) => ({ id: r.id, label: r.label, nature: r.nature, deptId: r.dept_id, urgency: r.urgency, estMin: r.est_min, sortOrder: r.sort_order, active: r.active });
 
 const upsertBy = (key, map) => (setter) => (row) =>
@@ -956,6 +969,7 @@ function useStore(userId) {
   const [complaints, setComplaints] = useState([]);
   const [folderFiles, setFolderFiles] = useState([]);
   const [cashEntries, setCashEntries] = useState([]);
+  const [formerTenants, setFormerTenants] = useState([]);
   const [handovers, setHandovers] = useState([]);
 
   /* Référence vivante des membres, utilisée par les notifications */
@@ -963,7 +977,7 @@ function useStore(userId) {
   useEffect(() => { membersRef.current = members; }, [members]);
 
   const load = useCallback(async () => {
-    const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc, un, rp, rlin, rch, rq, tax, cp, ff, ce, ho] = await Promise.all([
+    const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc, un, rp, rlin, rch, rq, tax, cp, ff, ce, ho, ft] = await Promise.all([
       supabase.from("departments").select("*").order("created_at"),
       supabase.from("profiles").select("*").order("created_at"),
       supabase.from("tasks").select("*"),
@@ -992,6 +1006,7 @@ function useStore(userId) {
       supabase.from("folder_files").select("*").order("created_at", { ascending: false }),
       supabase.from("cash_entries").select("*").order("entry_date", { ascending: false }),
       supabase.from("cash_handovers").select("*").order("handover_date", { ascending: false }),
+      supabase.from("former_tenants").select("*").order("departure_date", { ascending: false }),
     ]);
     setDepartments((dep.data || []).map(mDept));
     setMembers((prof.data || []).map(mProfile));
@@ -1021,6 +1036,7 @@ function useStore(userId) {
     setFolderFiles((ff.data || []).map(mFolderFile));
     setCashEntries((ce.data || []).map(mCash));
     setHandovers((ho.data || []).map(mHandover));
+    setFormerTenants((ft.data || []).map(mFormer));
     setLoading(false);
   }, []);
 
@@ -1054,6 +1070,7 @@ function useStore(userId) {
     const upFf = upsertBy("id", mFolderFile)(setFolderFiles), rmFf = removeBy("id")(setFolderFiles);
     const upCe = upsertBy("id", mCash)(setCashEntries), rmCe = removeBy("id")(setCashEntries);
     const upHo = upsertBy("id", mHandover)(setHandovers), rmHo = removeBy("id")(setHandovers);
+    const upFt = upsertBy("id", mFormer)(setFormerTenants), rmFt = removeBy("id")(setFormerTenants);
     const h = (up, rm, key = "id") => (p) => p.eventType === "DELETE" ? rm(p.old[key]) : up(p.new);
 
     const ch = supabase.channel("kibegnon-rt")
@@ -1095,6 +1112,7 @@ function useStore(userId) {
       .on("postgres_changes", { event: "*", schema: "public", table: "complaints" }, h(upCp, rmCp))
       .on("postgres_changes", { event: "*", schema: "public", table: "folder_files" }, h(upFf, rmFf))
       .on("postgres_changes", { event: "*", schema: "public", table: "cash_entries" }, h(upCe, rmCe))
+      .on("postgres_changes", { event: "*", schema: "public", table: "former_tenants" }, h(upFt, rmFt))
       .on("postgres_changes", { event: "*", schema: "public", table: "cash_handovers" }, (p) => {
         if (p.eventType === "DELETE") return rmHo(p.old.id);
         /* Le gardien du solde est prévenu dès qu'une remise lui est adressée */
@@ -1383,6 +1401,45 @@ function useStore(userId) {
   };
 
   /* ================= ACTIONS : LOTS ================= */
+  /* Répercute l'avance d'entrée sur les tableaux de recouvrement DÉJÀ créés,
+     suivi commercial comme état comptable. Sans cela, un locataire ayant payé
+     d'avance ressort en impayé sur les mois concernés. */
+  const applyAdvanceToPeriods = async (unit) => {
+    const mois = coveredMonths(unit?.advanceStart || unit?.leaseStart, unit?.advanceMonths);
+    if (!mois.length || !unit?.propertyId) return { touched: 0 };
+    let touched = 0;
+    for (const period of rentPeriods.filter((p) => p.propertyId === unit.propertyId && mois.includes(p.period))) {
+      const line = rentLines.find((l) => l.periodId === period.id
+        && (l.unitId === unit.id
+          || (l.unitLabel || "").toLowerCase() === (unit.label || "").toLowerCase()));
+      const rank = advanceRank(unit, period.period);
+      if (!rank) continue;
+      const comment = `Avance versée à l'entrée (mois ${rank}/${unit.advanceMonths})`;
+      const paidAt = (unit.advanceStart || unit.leaseStart || "").slice(0, 10) || null;
+      if (line) {
+        const attendu = Number(line.expected) || Number(unit.rent) || 0;
+        if ((Number(line.collected) || 0) >= attendu) continue;   // déjà encaissé : on ne touche pas
+        const { error } = await supabase.from("rent_lines")
+          .update({ expected: attendu, collected: attendu, paid_at: paidAt, comment, vacant: false })
+          .eq("id", line.id);
+        if (!error) touched += 1;
+      } else {
+        const { error } = await supabase.from("rent_lines").insert({
+          period_id: period.id, unit_id: unit.id, unit_label: unit.label || "",
+          tenant_name: unit.tenantName || "", tenant_phone: unit.tenantPhone || "",
+          expected: Number(unit.rent) || 0, collected: Number(unit.rent) || 0,
+          paid_at: paidAt, charges: 0, comment, position: 999, vacant: false,
+        });
+        if (!error) touched += 1;
+      }
+    }
+    if (touched) {
+      const { data } = await supabase.from("rent_lines").select("*").order("position");
+      if (data) setRentLines(data.map(mRLine));
+    }
+    return { touched };
+  };
+
   const saveUnit = async (f) => {
     const row = { property_id: f.propertyId, label: f.label, kind: f.kind, floor: f.floor || "",
       rooms: (f.rooms === "" || f.rooms === null || f.rooms === undefined) ? null : Number(f.rooms), surface_m2: f.surface ? Number(f.surface) : null,
@@ -1397,7 +1454,9 @@ function useStore(userId) {
     if (f.id) {
       setUnits((p) => p.map((u) => (u.id === f.id ? { ...u, ...f } : u)));
       const { error } = await supabase.from("units").update(row).eq("id", f.id);
-      return { error: error?.message };
+      if (error) return { error: error.message };
+      const adv = await applyAdvanceToPeriods({ ...f, id: f.id });
+      return { touched: adv.touched };
     }
     const { data, error } = await supabase.from("units").insert(row).select().single();
     if (data) setUnits((p) => (p.some((u) => u.id === data.id) ? p : [...p, mUnit(data)]));
@@ -1499,6 +1558,37 @@ function useStore(userId) {
     return { error: error?.message };
   };
 
+  /* Départ d'un locataire : on archive sa fiche, le lot redevient vacant.
+     Son dossier et ses documents restent consultables. */
+  const archiveTenant = async (unit, info) => {
+    const { data, error } = await supabase.from("former_tenants").insert({
+      unit_id: unit.id, property_id: unit.propertyId, unit_label: unit.label || "",
+      name: unit.tenantName || "", phone: unit.tenantPhone || "", email: unit.tenantEmail || "",
+      lease_start: unit.leaseStart || null, lease_end: unit.leaseEnd || null,
+      departure_date: info.departureDate, reason: info.reason,
+      rent_amount: Number(unit.rent) || 0, deposit: Number(unit.deposit) || 0,
+      deposit_refund: Number(info.depositRefund) || 0, balance_due: Number(info.balanceDue) || 0,
+      notes: info.notes || "", archived_by: userId,
+    }).select().single();
+    if (error) return { error: error.message };
+    if (data) setFormerTenants((p) => [mFormer(data), ...p]);
+    const clear = { tenant_name: "", tenant_phone: "", tenant_email: "", lease_start: null,
+      lease_end: null, status: "vacant", advance_months: 0, advance_start: null,
+      arrears_amount: 0, arrears_months: 0, arrears_note: "" };
+    setUnits((p) => p.map((u) => (u.id === unit.id
+      ? { ...u, tenantName: "", tenantPhone: "", tenantEmail: "", status: "vacant",
+          leaseStart: null, leaseEnd: null, advanceMonths: 0, advanceStart: null,
+          arrearsAmount: 0, arrearsMonths: 0, arrearsNote: "" }
+      : u)));
+    const up = await supabase.from("units").update(clear).eq("id", unit.id);
+    return { error: up.error?.message, id: data?.id };
+  };
+  const deleteFormerTenant = async (id) => {
+    setFormerTenants((p) => p.filter((x) => x.id !== id));
+    const { error } = await supabase.from("former_tenants").delete().eq("id", id);
+    return { error: error?.message };
+  };
+
   /* ================= ACTIONS : CAISSE ================= */
   const saveCashEntry = async (f) => {
     const row = { entry_date: f.date, direction: f.direction, amount: Number(f.amount) || 0,
@@ -1548,6 +1638,7 @@ function useStore(userId) {
     const { data: pub } = supabase.storage.from("dossiers").getPublicUrl(path);
     const { data, error } = await supabase.from("folder_files").insert({
       scope: meta.scope, unit_id: meta.unitId || null, owner_id: meta.ownerId || null,
+      former_tenant_id: meta.formerTenantId || null,
       property_id: meta.propertyId || null, category: meta.category || "autre",
       label: meta.label || file.name, file_url: pub.publicUrl, file_name: file.name,
       file_type: file.type, file_size: file.size, uploaded_by: userId,
@@ -1567,37 +1658,47 @@ function useStore(userId) {
      déjà supérieur, et le tableau demeure entièrement modifiable. */
   const applyReceiptToRent = async (doc) => {
     if (!doc?.periodIso || !doc.propertyId) return { skipped: "période ou bien non précisé" };
-    const period = rentPeriods.find((p) => p.propertyId === doc.propertyId
-      && p.period === doc.periodIso && p.scope === "comptable");
-    if (!period) return { skipped: `aucun état comptable pour ${doc.periodIso}` };
-
+    const mois = coveredMonths(doc.periodIso + "-01", doc.monthsCount || 1);
     const unit = units.find((u) => u.id === doc.unitId);
-    const line = rentLines.find((l) => l.periodId === period.id
-      && (l.unitId === doc.unitId
-        || (unit && (l.unitLabel || "").toLowerCase() === (unit.label || "").toLowerCase())
-        || (l.tenantName || "").toLowerCase() === (doc.clientName || "").toLowerCase()));
     const paidOn = doc.fields?.paidOn || doc.date;
+    /* Une quittance de plusieurs mois se répartit sur chaque mois concerné */
+    const parMois = Math.round(Number(doc.total) / mois.length);
+    let done = 0; const manquants = [];
 
-    if (line) {
-      const already = Number(line.collected) || 0;
-      if (already >= Number(doc.total)) return { skipped: "encaissement déjà enregistré" };
-      const { error } = await supabase.from("rent_lines")
-        .update({ collected: Number(doc.total), paid_at: paidOn,
-          comment: `Quittance ${doc.ref}` }).eq("id", line.id);
-      if (error) return { error: error.message };
-    } else {
-      const { error } = await supabase.from("rent_lines").insert({
-        period_id: period.id, unit_id: doc.unitId || null,
-        unit_label: unit?.label || "", tenant_name: doc.clientName || "",
-        tenant_phone: doc.clientPhone || "", expected: unit?.rent || Number(doc.total),
-        collected: Number(doc.total), paid_at: paidOn, charges: 0,
-        comment: `Quittance ${doc.ref}`, position: 999,
-      });
-      if (error) return { error: error.message };
+    for (const m of mois) {
+      const period = rentPeriods.find((p) => p.propertyId === doc.propertyId
+        && p.period === m && p.scope === "comptable");
+      if (!period) { manquants.push(m); continue; }
+      const line = rentLines.find((l) => l.periodId === period.id
+        && (l.unitId === doc.unitId
+          || (unit && (l.unitLabel || "").toLowerCase() === (unit.label || "").toLowerCase())
+          || (l.tenantName || "").toLowerCase() === (doc.clientName || "").toLowerCase()));
+      const montant = line ? Math.max(Number(line.expected) || 0, parMois) : parMois;
+
+      if (line) {
+        if ((Number(line.collected) || 0) >= montant) { done += 1; continue; }
+        const { error } = await supabase.from("rent_lines")
+          .update({ collected: montant, paid_at: paidOn, comment: `Quittance ${doc.ref}`, vacant: false })
+          .eq("id", line.id);
+        if (!error) done += 1;
+      } else {
+        const { error } = await supabase.from("rent_lines").insert({
+          period_id: period.id, unit_id: doc.unitId || null,
+          unit_label: unit?.label || "", tenant_name: doc.clientName || "",
+          tenant_phone: doc.clientPhone || "", expected: unit?.rent || parMois,
+          collected: parMois, paid_at: paidOn, charges: 0,
+          comment: `Quittance ${doc.ref}`, position: 999, vacant: false,
+        });
+        if (!error) done += 1;
+      }
     }
-    const { data } = await supabase.from("rent_lines").select("*").order("position");
-    if (data) setRentLines(data.map(mRLine));
-    return { ok: true };
+    if (done) {
+      const { data } = await supabase.from("rent_lines").select("*").order("position");
+      if (data) setRentLines(data.map(mRLine));
+    }
+    if (!done) return { skipped: `aucun état comptable pour ${mois.join(", ")}` };
+    if (manquants.length) return { ok: true, skipped: `mois sans état comptable : ${manquants.join(", ")}` };
+    return { ok: true, months: done };
   };
 
   /* Validation d'une quittance par un administrateur */
@@ -1673,9 +1774,10 @@ function useStore(userId) {
       doc_type: f.docType, doc_date: f.date, property_id: f.propertyId || null, owner_id: f.ownerId || null,
       client_name: f.clientName || "", client_phone: f.clientPhone || "", client_email: f.clientEmail || "",
       client_addr: f.clientAddr || "", object: f.object || "", body: f.body || "",
-      lines: f.lines || [], fields: f.fields || {}, total_amount: total,
+      lines: f.lines || [], total_amount: total,
       status: f.status || "brouillon", notes: f.notes || "",
       unit_id: f.unitId || null, period: f.period || "", period_iso: f.periodIso || "",
+      fields: { ...(f.fields || {}), monthsCount: Number(f.monthsCount) || 1 },
       approval: f.approval || "non_requise", direction: f.direction || "encaissement",
       paid_stamp: f.approval === "approuve" ? !!f.paidStamp : false,
       stamped_by: f.approval === "approuve" && f.paidStamp ? userId : null,
@@ -1704,7 +1806,7 @@ function useStore(userId) {
     loading, departments, members, tasks, timeEntries, activeTimers, channels, channelMembers, messages,
     owners, properties, products, stockEntries, releases, releaseLines, quotes, quoteLines, templates, documents,
     units, rentPeriods, rentLines, rentCharges, requests, taxRecords, complaints, folderFiles,
-    cashEntries, handovers,
+    cashEntries, handovers, formerTenants,
     actions: {
       createTask, updateTask, deleteTask, startTimer, stopTimer, pauseTask, finishTask, addManualTime, deleteEntry,
       ensureDm, sendMessage, markRead, saveDept, deleteDept, updateProfile, adminUsers,
@@ -1717,7 +1819,8 @@ function useStore(userId) {
       saveRequest, decideRequest, deleteRequest,
       saveTaxRecord, deleteTaxRecord, saveComplaint, deleteComplaint, uploadAttachment,
       uploadFolderFile, deleteFolderFile, approveDocument, applyReceiptToRent,
-      saveCashEntry, deleteCashEntry, createHandover, answerHandover, reload: load,
+      saveCashEntry, deleteCashEntry, createHandover, answerHandover,
+      applyAdvanceToPeriods, archiveTenant, deleteFormerTenant, reload: load,
     },
   };
 }
@@ -3652,6 +3755,19 @@ function periodTotals(lines, charges, rate) {
 }
 
 
+const firstOfMonth = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+
+/* Liste des mois 'YYYY-MM' couverts par une avance */
+function coveredMonths(start, months) {
+  const n = Number(months) || 0;
+  if (!start || !n) return [];
+  const [y, m] = start.slice(0, 7).split("-").map(Number);
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(y, m - 1 + i, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+}
+
 /* ---- Avance versée à l'entrée du locataire ----
    Renvoie le rang du mois dans l'avance (1..n) si la période est couverte, sinon 0. */
 function advanceRank(unit, period) {
@@ -5576,6 +5692,9 @@ function TenantModal({ unit, property, onSave, onClose }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const submit = async () => {
+    if (Number(f.advanceMonths) > 0 && !f.advanceStart) {
+      setErr("Indiquez le premier mois couvert par l'avance."); return;
+    }
     setBusy(true);
     const r = await onSave({ ...f, status: f.tenantName?.trim() ? (f.status === "vacant" ? "occupe" : f.status) : "vacant" });
     setBusy(false);
@@ -5613,19 +5732,40 @@ function TenantModal({ unit, property, onSave, onClose }) {
         <div className="grid sm:grid-cols-3 gap-3">
           <Field label="Caution versée"><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.deposit || 0} onChange={(e) => set("deposit", e.target.value)} /></Field>
           <Field label="Mois d'avance payés" hint="2 en général, parfois 1">
-            <select className={inputCls} style={inputStyle} value={f.advanceMonths || 0} onChange={(e) => set("advanceMonths", Number(e.target.value))}>
+            <select className={inputCls} style={inputStyle} value={f.advanceMonths || 0}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                /* La date de départ se remplit d'elle-même : sans elle, aucun
+                   mois ne peut être marqué comme réglé. */
+                setF((p) => ({ ...p, advanceMonths: n,
+                  advanceStart: n > 0 ? (p.advanceStart || p.leaseStart || firstOfMonth(new Date())) : p.advanceStart }));
+              }}>
               {[0, 1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n === 0 ? "Aucune avance" : `${n} mois`}</option>)}
             </select>
           </Field>
-          <Field label="Premier mois couvert" hint="Début du bail par défaut">
-            <input type="date" className={inputCls} style={inputStyle} value={f.advanceStart || f.leaseStart || ""} onChange={(e) => set("advanceStart", e.target.value)} />
+          <Field label="Premier mois couvert" hint="Obligatoire dès qu'il y a une avance">
+            <input type="date" className={inputCls} style={inputStyle} value={f.advanceStart || ""}
+              onChange={(e) => set("advanceStart", e.target.value)}
+              style={{ ...inputStyle, borderColor: (Number(f.advanceMonths) > 0 && !f.advanceStart) ? "#D81F26" : inputStyle.borderColor }} />
           </Field>
         </div>
         {Number(f.advanceMonths) > 0 && (
-          <p className="text-[11px]" style={{ color: "#1F5C82" }}>
-            Soit <strong>{fcfa((Number(f.rent) || 0) * Number(f.advanceMonths))}</strong> d'avance couvrant {Number(f.advanceMonths)} mois
-            à partir de {(f.advanceStart || f.leaseStart) ? fr((f.advanceStart || f.leaseStart) + "T00:00:00", { month: "long", year: "numeric" }) : "…"}.
-          </p>
+          f.advanceStart ? (
+            <div className="rounded-lg p-2.5 mt-1" style={{ background: "#EAF6E3" }}>
+              <p className="text-[11px]" style={{ color: "#3d7d20" }}>
+                <strong>{fcfa((Number(f.rent) || 0) * Number(f.advanceMonths))}</strong> d'avance —
+                mois marqués réglés : <strong>{coveredMonths(f.advanceStart, f.advanceMonths).map((m) => periodLabel(m)).join(", ")}</strong>.
+              </p>
+              <p className="text-[11px] mt-0.5" style={{ color: "#3d7d20" }}>
+                Les tableaux de recouvrement existants (commercial et comptable) seront mis à jour à l'enregistrement.
+              </p>
+            </div>
+          ) : (
+            <p className="text-[11px] font-medium" style={{ color: "#D81F26" }}>
+              <AlertTriangle size={12} className="inline mb-0.5" /> Indiquez le premier mois couvert : sans cette date,
+              aucun mois ne peut être marqué comme réglé et le locataire ressortira en impayé.
+            </p>
+          )
         )}
       </div>
       <div className="rounded-xl border p-3 mb-3" style={{ borderColor: "#F5C6C7", background: "#FDF2F2" }}>
@@ -5660,7 +5800,7 @@ function ReceiptModal({ initial, unit, property, owner, isAdminUser, onSave, onC
     object: "", period: `${MONTHS_FR[now.getMonth()]} ${now.getFullYear()}`,
     fields: { mode: "Espèces", paidOn: isoDate(now), dueOn: "" },
     periodIso: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`,
-    status: "emis", notes: "", paidStamp: true, ...initial,
+    monthsCount: 1, status: "emis", notes: "", paidStamp: true, ...initial,
   }));
   const [lines, setLines] = useState(() => initial?.lines?.length ? initial.lines : [
     { label: "Loyer", qty: 1, unit: "mois", price: unit?.rent || 0 },
@@ -5670,10 +5810,22 @@ function ReceiptModal({ initial, unit, property, owner, isAdminUser, onSave, onC
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const setField = (k, v) => setF((p) => ({ ...p, fields: { ...p.fields, [k]: v } }));
   const total = linesTotal(lines);
+  /* Une quittance peut couvrir plusieurs mois consécutifs */
+  const mois = coveredMonths(f.periodIso ? f.periodIso + "-01" : "", f.monthsCount || 1);
+  const periodLabelText = mois.length > 1
+    ? `${periodLabel(mois[0])} à ${periodLabel(mois[mois.length - 1])}`
+    : (mois[0] ? periodLabel(mois[0]) : f.period);
+
+  useEffect(() => {
+    const n = Number(f.monthsCount) || 1;
+    setLines((p) => p.map((l) => (["Loyer", "Charges"].includes(l.label) ? { ...l, qty: n } : l)));
+  }, [f.monthsCount]);
+
   const submit = async () => {
     setBusy(true);
     const approval = f.paidStamp ? (isAdminUser ? "approuve" : "en_attente") : "non_requise";
-    const r = await onSave({ ...f, lines, approval });
+    const r = await onSave({ ...f, lines, approval, period: periodLabelText,
+      monthsCount: Number(f.monthsCount) || 1 });
     setBusy(false);
     if (r?.error) setErr(r.error); else onClose();
   };
@@ -5684,12 +5836,15 @@ function ReceiptModal({ initial, unit, property, owner, isAdminUser, onSave, onC
         <Field label="Téléphone"><input className={inputCls} style={inputStyle} value={f.clientPhone} onChange={(e) => set("clientPhone", e.target.value)} /></Field>
       </div>
       <div className="grid sm:grid-cols-3 gap-3">
-        <Field label="Mois quittancé" hint="Reporté dans le recouvrement">
+        <Field label="Premier mois quittancé" hint="Reporté dans le recouvrement">
           <input type="month" className={inputCls} style={inputStyle} value={f.periodIso || ""}
-            onChange={(e) => {
-              const iso = e.target.value; const [y, mo] = iso.split("-");
-              setF((p) => ({ ...p, periodIso: iso, period: iso ? `${MONTHS_FR[Number(mo) - 1]} ${y}` : p.period }));
-            }} />
+            onChange={(e) => setF((p) => ({ ...p, periodIso: e.target.value }))} />
+        </Field>
+        <Field label="Nombre de mois réglés" hint="Un locataire peut régler plusieurs mois">
+          <select className={inputCls} style={inputStyle} value={f.monthsCount || 1}
+            onChange={(e) => setF((p) => ({ ...p, monthsCount: Number(e.target.value) }))}>
+            {[1, 2, 3, 4, 5, 6, 9, 12].map((n) => <option key={n} value={n}>{n} mois</option>)}
+          </select>
         </Field>
         <Field label="Date d'échéance"><input type="date" className={inputCls} style={inputStyle} value={f.fields.dueOn || ""} onChange={(e) => setField("dueOn", e.target.value)} /></Field>
         <Field label="Date de paiement"><input type="date" className={inputCls} style={inputStyle} value={f.fields.paidOn || ""} onChange={(e) => setField("paidOn", e.target.value)} /></Field>
@@ -5697,11 +5852,18 @@ function ReceiptModal({ initial, unit, property, owner, isAdminUser, onSave, onC
       <div className="grid sm:grid-cols-2 gap-3">
         <Field label="Mode de paiement">
           <select className={inputCls} style={inputStyle} value={f.fields.mode || "Espèces"} onChange={(e) => setField("mode", e.target.value)}>
-            {["Espèces", "Chèque", "Virement", "Mobile Money : Wave", "Mobile Money : Orange Money", "Mobile Money : MTN", "Mobile Money : Moov"].map((m) => <option key={m} value={m}>{m}</option>)}
+            {PAY_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
         </Field>
         <Field label="Solde restant dû (FCFA)"><input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.fields.balance ?? 0} onChange={(e) => setField("balance", e.target.value)} /></Field>
       </div>
+
+      {mois.length > 1 && (
+        <p className="text-[11px] mb-2 p-2 rounded" style={{ background: "#EAF6E3", color: "#3d7d20" }}>
+          Quittance couvrant <strong>{periodLabelText}</strong> — les {mois.length} mois seront reportés
+          dans les tableaux de recouvrement correspondants.
+        </p>
+      )}
 
       <p className="text-xs font-semibold mb-2 mt-1" style={{ color: "var(--ink)" }}>Détail encaissé</p>
       <LineEditor lines={lines} setLines={setLines} labelPlaceholder="Ex. Loyer" />
@@ -5873,12 +6035,14 @@ function DocumentSheet({ doc, unit, property, owner, author, validator, onBack }
 
 /* ---------------- Module LOCATAIRES ---------------- */
 function Locataires({ store, me, userId }) {
-  const { units, properties, owners, documents, members, rentPeriods, rentLines, actions } = store;
+  const { units, properties, owners, documents, members, rentPeriods, rentLines, formerTenants, actions } = store;
   const [search, setSearch] = useState("");
   const [filterProp, setFilterProp] = useState("all");
   const [onlyMine, setOnlyMine] = useState(false);
   const [onlyArrears, setOnlyArrears] = useState(false);
   const [tenantModal, setTenantModal] = useState(null);
+  const [archiveModal, setArchiveModal] = useState(null);
+  const [tab, setTab] = useState("actifs");
   const [receiptModal, setReceiptModal] = useState(null);
   const [sheetId, setSheetId] = useState(null);
   const [dossier, setDossier] = useState(null);
@@ -5890,6 +6054,10 @@ function Locataires({ store, me, userId }) {
   const canStamp = isAdmin(me.role) || me.role === "comptable";
   /* Quittances en attente de validation, mises en avant dès l'ouverture */
   const pendingReceipts = documents.filter((d) => d.docType === "quittance" && d.approval === "en_attente");
+  /* Un agent peut modifier la quittance d'un locataire de SON portefeuille
+     tant qu'elle n'est pas validée ; un administrateur, toujours. */
+  const canEditReceipt = (d) => isAdmin(me.role) || d.approval !== "approuve"
+    && (d.createdBy === userId || propById[d.propertyId]?.agentId === userId);
 
   const sheetDoc = documents.find((d) => d.id === sheetId);
   if (sheetDoc) {
@@ -5898,8 +6066,10 @@ function Locataires({ store, me, userId }) {
       validator={memberById[sheetDoc.approvedBy]} onBack={() => setSheetId(null)} />;
   }
   if (dossier) {
-    return <Dossier store={store} me={me} userId={userId} scope="locataire" unit={dossier.unit}
-      property={dossier.property} onBack={() => setDossier(null)} onOpenDoc={(d) => { setDossier(null); setSheetId(d.id); }} />;
+    return <Dossier store={store} me={me} userId={userId}
+      scope={dossier.former ? "ancien_locataire" : "locataire"}
+      unit={dossier.unit} former={dossier.former} property={dossier.property}
+      onBack={() => setDossier(null)} onOpenDoc={(d) => { setDossier(null); setSheetId(d.id); }} />;
   }
 
   /* Situation de paiement : tableaux de recouvrement + quittances émises */
@@ -5974,6 +6144,16 @@ function Locataires({ store, me, userId }) {
         <StatCard icon={Receipt} label="Quittances émises" value={documents.filter((d) => d.docType === "quittance").length} tint="var(--brass)" />
       </div>
 
+      <div className="flex gap-1 mb-4 border-b" style={{ borderColor: "var(--line)" }}>
+        {[["actifs", `Locataires en place (${tenants.length})`], ["anciens", `Anciens locataires (${formerTenants.length})`]].map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} className="px-4 py-2.5 text-sm font-medium relative"
+            style={{ color: tab === k ? "var(--brass)" : "var(--muted)" }}>
+            {l}
+            {tab === k && <span className="absolute left-0 right-0 bottom-0" style={{ height: 2, background: "var(--brass)" }} />}
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="relative flex-1 min-w-[150px]">
           <Search size={15} className="absolute left-2.5 top-2.5 text-slate-400" />
@@ -5992,7 +6172,7 @@ function Locataires({ store, me, userId }) {
         </button>
       </div>
 
-      {list.length ? (
+      {tab === "actifs" && (list.length ? (
         <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: "var(--line)" }}>
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead><tr className="text-left" style={{ color: "var(--muted)" }}>
@@ -6056,6 +6236,7 @@ function Locataires({ store, me, userId }) {
                     <div className="flex gap-1 justify-end">
                       <button onClick={() => setReceiptModal({ unit: u, property: p })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Établir une quittance"><Receipt size={14} /></button>
                       <button onClick={() => setTenantModal({ unit: u, property: p })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Modifier le locataire"><Pencil size={14} /></button>
+                      {u.tenantName && <button onClick={() => setArchiveModal({ unit: u, property: p })} className="p-1.5 rounded-lg hover:bg-amber-50 text-slate-400" title="Enregistrer son départ"><DoorClosed size={14} /></button>}
                     </div>
                   </td>
                 </tr>
@@ -6064,7 +6245,53 @@ function Locataires({ store, me, userId }) {
           </table></div>
         </div>
       ) : <EmptyState icon={Users} title="Aucun locataire recensé"
-        sub="Les locataires se saisissent sur les lots, dans Patrimoine ou directement ici." />}
+        sub="Les locataires se saisissent sur les lots, dans Patrimoine ou directement ici." />)}
+
+      {tab === "anciens" && (
+        formerTenants.length ? (
+          <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: "var(--line)" }}>
+            <div className="overflow-x-auto"><table className="w-full text-sm">
+              <thead><tr className="text-left" style={{ color: "var(--muted)" }}>
+                <th className="px-4 py-2.5 font-medium">Ancien locataire</th>
+                <th className="px-3 py-2.5 font-medium">Lot occupé</th>
+                <th className="px-3 py-2.5 font-medium">Période</th>
+                <th className="px-3 py-2.5 font-medium">Motif du départ</th>
+                <th className="px-3 py-2.5 font-medium text-right">Reste dû</th>
+                <th />
+              </tr></thead>
+              <tbody>{formerTenants.filter((ft) => !search
+                || ft.name.toLowerCase().includes(search.toLowerCase())
+                || (ft.phone || "").includes(search)).map((ft) => (
+                <tr key={ft.id} className="border-t" style={{ borderColor: "var(--line)" }}>
+                  <td className="px-4 py-2.5">
+                    <button onClick={() => setDossier({ former: ft, property: propById[ft.propertyId] })}
+                      className="font-medium hover:underline text-left flex items-center gap-1.5" style={{ color: "#2E78A8" }}>
+                      <FolderOpen size={13} /> {ft.name}
+                    </button>
+                    {ft.phone && <p className="text-[11px]" style={{ color: "var(--muted)" }}>{ft.phone}</p>}
+                  </td>
+                  <td className="px-3 py-2.5">{propById[ft.propertyId]?.name || "—"} · {ft.unitLabel}</td>
+                  <td className="px-3 py-2.5 text-xs" style={{ color: "var(--muted)" }}>
+                    {ft.leaseStart ? fr(ft.leaseStart + "T00:00:00", { month: "short", year: "numeric" }) : "—"}
+                    {" → "}{fr(ft.departureDate + "T00:00:00", { month: "short", year: "numeric" })}
+                  </td>
+                  <td className="px-3 py-2.5"><Chip color="#64748B">{DEPARTURE_REASON[ft.reason]}</Chip></td>
+                  <td className="px-3 py-2.5 text-right tabular-nums font-medium" style={{ color: ft.balanceDue > 0 ? "#D81F26" : "#4F9E2A" }}>
+                    {ft.balanceDue > 0 ? fcfa(ft.balanceDue) : "soldé"}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    {canSupervise(me.role) && (
+                      <button onClick={async () => { if (confirm(`Supprimer définitivement la fiche de ${ft.name} ?`)) await actions.deleteFormerTenant(ft.id); }}
+                        className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>
+                    )}
+                  </td>
+                </tr>
+              ))}</tbody>
+            </table></div>
+          </div>
+        ) : <EmptyState icon={DoorClosed} title="Aucun ancien locataire"
+          sub="Les locataires dont vous enregistrez le départ apparaîtront ici, avec leur dossier complet." />
+      )}
 
       {/* Quittances déjà émises */}
       {documents.filter((d) => d.docType === "quittance").length > 0 && (
@@ -6083,7 +6310,7 @@ function Locataires({ store, me, userId }) {
                   {d.approval === "en_attente" && <Chip color="#C58A1B" dot>à valider</Chip>}
                   <span className="text-sm font-semibold tabular-nums">{fcfa(d.total)}</span>
                   <button onClick={() => setSheetId(d.id)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Imprimer"><Printer size={14} /></button>
-                  {canStamp && <button onClick={() => setReceiptModal({ doc: d, unit: unitById[d.unitId], property: propById[d.propertyId] })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><Pencil size={14} /></button>}
+                  {canEditReceipt(d) && <button onClick={() => setReceiptModal({ doc: d, unit: unitById[d.unitId], property: propById[d.propertyId] })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Modifier la quittance"><Pencil size={14} /></button>}
                 </div>
               </div>
             ))}
@@ -6092,7 +6319,16 @@ function Locataires({ store, me, userId }) {
       )}
 
       {tenantModal && <TenantModal unit={tenantModal.unit} property={tenantModal.property}
-        onSave={actions.saveUnit} onClose={() => setTenantModal(null)} />}
+        onSave={async (u) => {
+          const r = await actions.saveUnit(u);
+          if (!r?.error && r?.touched > 0) {
+            alert(`Avance enregistrée. ${r.touched} ligne(s) de recouvrement mise(s) à jour comme réglées.`);
+          }
+          return r;
+        }} onClose={() => setTenantModal(null)} />}
+
+      {archiveModal && <ArchiveTenantModal unit={archiveModal.unit} property={archiveModal.property}
+        arrears={situation(archiveModal.unit)} onArchive={actions.archiveTenant} onClose={() => setArchiveModal(null)} />}
 
       {receiptModal && <ReceiptModal initial={receiptModal.doc} unit={receiptModal.unit} property={receiptModal.property}
         owner={ownerById[receiptModal.property?.ownerId]} isAdminUser={isAdmin(me.role)}
@@ -6227,16 +6463,201 @@ function ComplaintModal({ initial, properties, units, members, quotes, onSave, o
   );
 }
 
+/* ---------------- Fiche de plainte : affichage large et impression ---------------- */
+function ComplaintSheet({ complaint: c, property, unit, members, quote, onBack }) {
+  const memberById = Object.fromEntries(members.map((m) => [m.id, m]));
+  const cfg = COMPLAINT_CATEGORY[c.category] || COMPLAINT_CATEGORY.autre;
+  const st = COMPLAINT_STATUS[c.status];
+  const etapes = ["signale", "en_cours", "en_attente", "resolu"];
+  const rangActuel = etapes.indexOf(c.status);
+  const jours = Math.max(0, Math.round(
+    ((c.resolvedAt ? new Date(c.resolvedAt) : new Date()) - new Date(c.reportedAt)) / 86400000));
+
+  const Ligne = ({ label, value, color }) => (
+    <div className="flex gap-3 py-1.5 border-b" style={{ borderColor: "var(--line)" }}>
+      <span className="text-xs shrink-0" style={{ color: "var(--muted)", width: 150 }}>{label}</span>
+      <span className="text-sm font-medium" style={{ color: color || "var(--ink)" }}>{value || "—"}</span>
+    </div>
+  );
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
+        <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
+        <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+      </div>
+
+      <div id="print-area" className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
+        <PrintHead title="FICHE DE PLAINTE" subtitle={c.ref} extra={
+          <p className="text-[11px]" style={{ color: "var(--muted)" }}>
+            Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}
+          </p>
+        } />
+
+        {/* Bandeau de suivi du traitement */}
+        <div className="rounded-xl p-4 my-4" style={{ background: "#F6F8FA" }}>
+          <p className="text-[11px] font-semibold mb-3" style={{ color: "var(--muted)" }}>PROCESSUS DE TRAITEMENT</p>
+          <div className="flex items-center">
+            {["Signalée", "Prise en charge", "En attente", "Résolue"].map((label, i) => {
+              const atteint = c.status === "rejete" ? i === 0 : i <= rangActuel;
+              const actif = i === rangActuel;
+              return (
+                <div key={label} className="flex items-center" style={{ flex: i < 3 ? 1 : "0 0 auto" }}>
+                  <div className="text-center" style={{ minWidth: 76 }}>
+                    <div className="mx-auto mb-1 rounded-full flex items-center justify-center"
+                      style={{ width: 26, height: 26, background: atteint ? st.color : "#E6EAEF",
+                               color: atteint ? "#fff" : "var(--muted)", fontWeight: 700, fontSize: 12,
+                               border: actif ? `2px solid ${st.color}` : "none" }}>
+                      {atteint ? "✓" : i + 1}
+                    </div>
+                    <p className="text-[10px]" style={{ color: atteint ? "var(--ink)" : "var(--muted)", fontWeight: actif ? 700 : 400 }}>{label}</p>
+                  </div>
+                  {i < 3 && <div style={{ flex: 1, height: 2, background: i < rangActuel ? st.color : "#E6EAEF", marginBottom: 14 }} />}
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-xs text-center mt-3" style={{ color: st.color, fontWeight: 600 }}>
+            {st.label}
+            {" · "}
+            {["resolu", "clos"].includes(c.status) ? `réglée en ${jours} jour(s)` : `ouverte depuis ${jours} jour(s)`}
+          </p>
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-x-6">
+          <div>
+            <p className="text-[11px] font-bold mb-1.5" style={{ color: "var(--brass)" }}>LE PLAIGNANT</p>
+            <Ligne label="Locataire" value={c.tenantName} />
+            <Ligne label="Téléphone" value={c.tenantPhone} />
+            <Ligne label="Bâtiment" value={property?.name} />
+            <Ligne label="Lot" value={unit?.label} />
+          </div>
+          <div>
+            <p className="text-[11px] font-bold mb-1.5" style={{ color: "var(--brass)" }}>LA PLAINTE</p>
+            <Ligne label="Nature" value={cfg.label} color={cfg.color} />
+            <Ligne label="Cause identifiée" value={COMPLAINT_CAUSE[c.cause]} />
+            <Ligne label="Priorité" value={URGENCY[c.priority]?.label} color={URGENCY[c.priority]?.color} />
+            <Ligne label="Reçue par" value={COMPLAINT_CHANNEL[c.channel]} />
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <p className="text-[11px] font-bold mb-1.5" style={{ color: "var(--brass)" }}>OBJET DU SIGNALEMENT</p>
+          <div className="rounded-lg border p-3" style={{ borderColor: "var(--line)", background: "#FAFBFC" }}>
+            <p className="text-sm whitespace-pre-wrap">{c.description}</p>
+            <p className="text-[11px] mt-2" style={{ color: "var(--muted)" }}>
+              Signalée le {fr(c.reportedAt + "T00:00:00", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <p className="text-[11px] font-bold mb-1.5" style={{ color: "var(--brass)" }}>TRAITEMENT</p>
+          <Ligne label="Agent en charge" value={memberById[c.assignedTo]?.name} />
+          {quote && <Ligne label="Devis artisan" value={`${quote.ref} — ${quote.artisanName} (${fcfa(quote.total)})`} />}
+          <Ligne label="Coût du règlement" value={Number(c.cost) > 0 ? fcfa(c.cost) : "—"} />
+          <Ligne label="Date de règlement" value={c.resolvedAt ? fr(c.resolvedAt + "T00:00:00", { day: "numeric", month: "long", year: "numeric" }) : "—"} />
+        </div>
+
+        {c.resolution && (
+          <div className="mt-4">
+            <p className="text-[11px] font-bold mb-1.5" style={{ color: "#3d7d20" }}>SUITE DONNÉE</p>
+            <div className="rounded-lg border p-3" style={{ borderColor: "#BBE3A6", background: "#F6FBF3" }}>
+              <p className="text-sm whitespace-pre-wrap">{c.resolution}</p>
+            </div>
+          </div>
+        )}
+
+        <p className="text-[10px] italic mt-4" style={{ color: "var(--muted)" }}>
+          La cause identifiée détermine la charge des frais : vétusté et défaut d'entretien relèvent du propriétaire,
+          la mauvaise utilisation relève du locataire.
+        </p>
+
+        <div className="kb-sign flex justify-between items-end pt-10 mt-4">
+          <div className="text-center" style={{ minWidth: 200 }}>
+            <p className="text-[11px] font-semibold pb-20">Le Locataire</p>
+            <div className="border-t" style={{ borderColor: "var(--ink)" }} />
+          </div>
+          <div className="text-center" style={{ minWidth: 200 }}>
+            <p className="text-[11px] font-semibold pb-20">Pour l'Agence</p>
+            <div className="border-t" style={{ borderColor: "var(--ink)" }} />
+          </div>
+        </div>
+        <PrintFoot />
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Départ d'un locataire ---------------- */
+
+function ArchiveTenantModal({ unit, property, arrears, onArchive, onClose }) {
+  const [f, setF] = useState({
+    departureDate: isoDate(new Date()), reason: "fin_bail",
+    depositRefund: unit?.deposit || 0, balanceDue: arrears?.total || 0, notes: "",
+  });
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const submit = async () => {
+    setBusy(true);
+    const r = await onArchive(unit, f);
+    setBusy(false);
+    if (r?.error) setErr(r.error); else onClose();
+  };
+  return (
+    <Modal title={`Départ de ${unit?.tenantName || "ce locataire"}`} onClose={onClose}>
+      <div className="rounded-lg p-3 mb-3 text-xs" style={{ background: "#FFF8EC", color: "#8A6212" }}>
+        Le lot <strong>{unit?.label}</strong> de {property?.name} redeviendra vacant.
+        La fiche du locataire, ses quittances et les pièces de son dossier restent consultables
+        dans « Anciens locataires ».
+      </div>
+
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Date de départ"><input type="date" className={inputCls} style={inputStyle} value={f.departureDate} onChange={(e) => set("departureDate", e.target.value)} /></Field>
+        <Field label="Motif">
+          <select className={inputCls} style={inputStyle} value={f.reason} onChange={(e) => set("reason", e.target.value)}>
+            {Object.entries(DEPARTURE_REASON).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Caution restituée (FCFA)" hint={`Caution versée : ${fcfa(unit?.deposit || 0)}`}>
+          <input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.depositRefund} onChange={(e) => set("depositRefund", e.target.value)} />
+        </Field>
+        <Field label="Reste dû au départ (FCFA)" hint={arrears?.hasArrears ? `Arriérés constatés : ${fcfa(arrears.total)}` : "Aucun arriéré constaté"}>
+          <input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.balanceDue} onChange={(e) => set("balanceDue", e.target.value)} />
+        </Field>
+      </div>
+
+      <Field label="Observations"><textarea className={inputCls} style={inputStyle} rows={2} value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="État des lieux de sortie, litige éventuel, adresse de réexpédition…" /></Field>
+
+      {err && <p className="text-xs text-red-600 mb-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} className="kb-btn kb-btn-ghost">Annuler</button>
+        <button disabled={busy} onClick={submit} className="kb-btn kb-btn-primary disabled:opacity-40"><Check size={16} /> Enregistrer le départ</button>
+      </div>
+    </Modal>
+  );
+}
+
 function Plaintes({ store, me, userId }) {
   const { complaints, properties, units, members, quotes, actions } = store;
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("ouvertes");
   const [filterProp, setFilterProp] = useState("all");
   const [modal, setModal] = useState(null);
+  const [sheetId, setSheetId] = useState(null);
 
   const propById = useMemo(() => Object.fromEntries(properties.map((p) => [p.id, p])), [properties]);
   const unitById = useMemo(() => Object.fromEntries(units.map((u) => [u.id, u])), [units]);
   const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
+
+  const sheetC = complaints.find((c) => c.id === sheetId);
+  if (sheetC) {
+    return <ComplaintSheet complaint={sheetC} property={propById[sheetC.propertyId]} unit={unitById[sheetC.unitId]}
+      members={members} quote={quotes.find((q) => q.id === sheetC.quoteId)} onBack={() => setSheetId(null)} />;
+  }
 
   const open = complaints.filter((c) => ["signale", "en_cours", "en_attente"].includes(c.status));
   const list = complaints.filter((c) =>
@@ -6322,7 +6743,7 @@ function Plaintes({ store, me, userId }) {
                     <Chip color={ur.color} bg={ur.bg}>{ur.label}</Chip>
                     <Chip color={st.color}>{st.label}</Chip>
                   </div>
-                  <p className="text-sm mt-1.5">{c.description}</p>
+                  <button onClick={() => setSheetId(c.id)} className="text-sm mt-1.5 text-left hover:underline block w-full">{c.description}</button>
                   <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>
                     {c.tenantName || "Locataire non précisé"}{c.tenantPhone ? ` · ${c.tenantPhone}` : ""}
                     {propById[c.propertyId] ? ` · ${propById[c.propertyId].name}` : ""}{u ? ` — ${u.label}` : ""}
@@ -6345,7 +6766,8 @@ function Plaintes({ store, me, userId }) {
                     {COMPLAINT_STATUS_ORDER.map((k) => <option key={k} value={k}>{COMPLAINT_STATUS[k].label}</option>)}
                   </select>
                   <div className="flex gap-1">
-                    <button onClick={() => setModal(c)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><Pencil size={14} /></button>
+                    <button onClick={() => setSheetId(c.id)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Ouvrir la fiche complète"><Eye size={14} /></button>
+                    <button onClick={() => setModal(c)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Modifier"><Pencil size={14} /></button>
                     {canSupervise(me.role) && <button onClick={async () => { if (confirm(`Supprimer la plainte ${c.ref} ?`)) await actions.deleteComplaint(c.id); }} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>}
                   </div>
                 </div>
@@ -6364,13 +6786,33 @@ function Plaintes({ store, me, userId }) {
 
 /* ---------------- Module MON PORTEFEUILLE (agent commercial) ---------------- */
 function Portefeuille({ store, me, userId }) {
-  const { properties, units, owners, members, rentPeriods, rentLines, complaints, tasks, quotes } = store;
+  const { properties, units, owners, members, rentPeriods, rentLines, complaints, tasks, quotes, documents, actions } = store;
   const [agentId, setAgentId] = useState(userId);
   const [search, setSearch] = useState("");
+  const [dossier, setDossier] = useState(null);
+  const [tenantModal, setTenantModal] = useState(null);
+  const [receiptModal, setReceiptModal] = useState(null);
+  const [sheetId, setSheetId] = useState(null);
   const sup = canSupervise(me.role);
   const who = sup ? agentId : userId;
 
   const ownerById = useMemo(() => Object.fromEntries(owners.map((o) => [o.id, o])), [owners]);
+  const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
+  const propById = useMemo(() => Object.fromEntries(properties.map((p) => [p.id, p])), [properties]);
+
+  const sheetDoc = documents.find((d) => d.id === sheetId);
+  if (sheetDoc) {
+    return <DocumentSheet doc={sheetDoc} unit={units.find((u) => u.id === sheetDoc.unitId)}
+      property={propById[sheetDoc.propertyId]} owner={ownerById[sheetDoc.ownerId]}
+      author={memberById[sheetDoc.createdBy]} validator={memberById[sheetDoc.approvedBy]}
+      onBack={() => setSheetId(null)} />;
+  }
+  if (dossier) {
+    return <Dossier store={store} me={me} userId={userId} scope={dossier.scope || "locataire"}
+      unit={dossier.unit} owner={dossier.owner} property={dossier.property}
+      onBack={() => setDossier(null)} onOpenDoc={(d) => { setDossier(null); setSheetId(d.id); }} />;
+  }
+
   const mine = properties.filter((p) => p.agentId === who);
   const mineIds = new Set(mine.map((p) => p.id));
   const myUnits = units.filter((u) => mineIds.has(u.propertyId));
@@ -6457,6 +6899,7 @@ function Portefeuille({ store, me, userId }) {
                 <th className="px-3 py-2.5 font-medium">Lots</th>
                 <th className="px-3 py-2.5 font-medium">Occupation</th>
                 <th className="px-3 py-2.5 font-medium">Loyer attendu</th>
+                <th />
               </tr></thead>
               <tbody>{mine.map((p) => {
                 const pu = units.filter((u) => u.propertyId === p.id);
@@ -6464,10 +6907,27 @@ function Portefeuille({ store, me, userId }) {
                 return (
                   <tr key={p.id} className="border-t" style={{ borderColor: "var(--line)" }}>
                     <td className="px-4 py-2.5"><p className="font-medium">{p.name}</p><p className="text-[11px]" style={{ color: "var(--muted)" }}>{[p.quartier, p.commune].filter(Boolean).join(", ")}</p></td>
-                    <td className="px-3 py-2.5">{ownerById[p.ownerId]?.name || "—"}</td>
+                    <td className="px-3 py-2.5">
+                      {ownerById[p.ownerId]
+                        ? <button onClick={() => setDossier({ scope: "proprietaire", owner: ownerById[p.ownerId], property: p })}
+                            className="hover:underline flex items-center gap-1.5" style={{ color: "#2E78A8" }}>
+                            <FolderOpen size={12} /> {ownerById[p.ownerId].name}
+                          </button>
+                        : "—"}
+                    </td>
                     <td className="px-3 py-2.5">{pu.length || "—"}</td>
                     <td className="px-3 py-2.5">{pu.length ? `${occ}/${pu.length}` : "—"}</td>
                     <td className="px-3 py-2.5 tabular-nums">{fcfa(pu.reduce((a, u) => a + (u.rent || 0), 0) || p.rent || 0)}</td>
+                    <td className="px-3 py-2.5">
+                      {canSupervise(me.role) && (
+                        <button onClick={async () => {
+                          if (confirm(`Supprimer définitivement « ${p.name} » et ses ${pu.length} lot(s) ?\nCette action est irréversible.`)) {
+                            const r = await actions.deleteProperty(p.id);
+                            if (r?.error) alert(r.error);
+                          }
+                        }} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500" title="Supprimer ce bien"><Trash2 size={14} /></button>
+                      )}
+                    </td>
                   </tr>
                 );
               })}</tbody>
@@ -6498,13 +6958,19 @@ function Portefeuille({ store, me, userId }) {
                   <th className="px-3 py-2.5 font-medium">Avance</th>
                   <th className="px-3 py-2.5 font-medium">Arriérés</th>
                   <th className="px-3 py-2.5 font-medium">Dernier paiement</th>
+                  <th />
                 </tr></thead>
                 <tbody>{grp.rows.map(({ u, pay, arr }) => {
                   const st = pay ? PAY_STATUS[pay.status] : null;
                   return (
                     <tr key={u.id} className="border-t" style={{ borderColor: "var(--line)" }}>
                       <td className="px-4 py-2.5 font-medium">{u.label}</td>
-                      <td className="px-3 py-2.5">{u.tenantName}</td>
+                      <td className="px-3 py-2.5">
+                        <button onClick={() => setDossier({ unit: u, property: grp.property })}
+                          className="hover:underline text-left flex items-center gap-1.5" style={{ color: "#2E78A8" }}>
+                          <FolderOpen size={12} /> {u.tenantName}
+                        </button>
+                      </td>
                       <td className="px-3 py-2.5">{u.tenantPhone
                         ? <a href={`tel:${u.tenantPhone}`} className="hover:underline" style={{ color: "#2E78A8" }}>{u.tenantPhone}</a>
                         : <span style={{ color: "#D81F26" }}>à compléter</span>}</td>
@@ -6518,12 +6984,30 @@ function Portefeuille({ store, me, userId }) {
                       <td className="px-3 py-2.5">{pay
                         ? <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: st.bg, color: st.color }}>{st.label} · {pay.period}</span>
                         : <span className="text-xs" style={{ color: "var(--muted)" }}>aucun relevé</span>}</td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex gap-1 justify-end">
+                          <button onClick={() => setReceiptModal({ unit: u, property: grp.property })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Établir une quittance"><Receipt size={14} /></button>
+                          <button onClick={() => setTenantModal({ unit: u, property: grp.property })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Modifier le locataire"><Pencil size={14} /></button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}</tbody>
               </table></div>
             </SectionCard>
           ))}
+
+          {tenantModal && <TenantModal unit={tenantModal.unit} property={tenantModal.property}
+            onSave={async (u) => {
+              const r = await actions.saveUnit(u);
+              if (!r?.error && r?.touched > 0) alert(`Avance enregistrée. ${r.touched} ligne(s) de recouvrement mise(s) à jour.`);
+              return r;
+            }} onClose={() => setTenantModal(null)} />}
+
+          {receiptModal && <ReceiptModal unit={receiptModal.unit} property={receiptModal.property}
+            owner={ownerById[receiptModal.property?.ownerId]} isAdminUser={isAdmin(me.role)}
+            onSave={async (f) => { const r = await actions.saveDocument(f); if (!r.error && r.id) setSheetId(r.id); return r; }}
+            onClose={() => setReceiptModal(null)} />}
 
           {myComplaints.length > 0 && (
             <SectionCard title={`Plaintes en cours (${myComplaints.length})`} icon={AlertTriangle} pad={false}>
@@ -6703,7 +7187,7 @@ const FOLDER_CATEGORY = {
   autre:            "Autre",
 };
 
-function Dossier({ store, me, userId, scope, unit, owner, property, onBack, onOpenDoc }) {
+function Dossier({ store, me, userId, scope, unit, owner, former, property, onBack, onOpenDoc }) {
   const { documents, folderFiles, members, actions } = store;
   const [openDoc, setOpenDoc] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -6712,6 +7196,7 @@ function Dossier({ store, me, userId, scope, unit, owner, property, onBack, onOp
   const fileRef = useRef(null);
   const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
   const arr = scope === "locataire" ? arrearsOf(unit, store) : null;
+  const ancien = scope === "ancien_locataire";
 
   if (openDoc) {
     return <DocumentSheet doc={openDoc} unit={unit}
@@ -6720,19 +7205,25 @@ function Dossier({ store, me, userId, scope, unit, owner, property, onBack, onOp
       author={memberById[openDoc.createdBy]} onBack={() => setOpenDoc(null)} />;
   }
 
-  const person = scope === "locataire"
+  const person = ancien
+    ? { name: former?.name || "Ancien locataire", phone: former?.phone, email: former?.email,
+        sub: `${property?.name || ""} — ${former?.unitLabel || ""} · parti le ${former ? fr(former.departureDate + "T00:00:00", { day: "numeric", month: "long", year: "numeric" }) : ""}` }
+    : scope === "locataire"
     ? { name: unit?.tenantName || "Locataire", phone: unit?.tenantPhone, email: unit?.tenantEmail,
         sub: `${property?.name || ""}${unit ? ` — ${unit.label}` : ""}` }
     : { name: owner?.name || "Propriétaire", phone: owner?.phone, email: owner?.email,
         sub: `${OWNER_KIND[owner?.kind] || ""}` };
 
   /* Documents produits dans l'outil */
-  const docs = documents.filter((d) => scope === "locataire"
+  const docs = documents.filter((d) => ancien
+    ? (former && (d.clientName || "").toLowerCase() === (former.name || "").toLowerCase())
+    : scope === "locataire"
     ? (unit && (d.unitId === unit.id || (d.clientName || "").toLowerCase() === (unit.tenantName || "").toLowerCase()))
     : (owner && d.ownerId === owner.id));
 
   /* Pièces importées depuis l'appareil */
-  const files = folderFiles.filter((f) => scope === "locataire" ? f.unitId === unit?.id : f.ownerId === owner?.id);
+  const files = folderFiles.filter((f) => ancien ? f.formerTenantId === former?.id
+    : scope === "locataire" ? f.unitId === unit?.id : f.ownerId === owner?.id);
 
   const upload = async (file) => {
     if (!file) return;
@@ -6740,6 +7231,7 @@ function Dossier({ store, me, userId, scope, unit, owner, property, onBack, onOp
     const r = await actions.uploadFolderFile(file, {
       scope, unitId: scope === "locataire" ? unit?.id : null,
       ownerId: scope === "proprietaire" ? owner?.id : null,
+      formerTenantId: ancien ? former?.id : null,
       propertyId: property?.id || null, category,
     });
     setBusy(false);
@@ -6755,13 +7247,13 @@ function Dossier({ store, me, userId, scope, unit, owner, property, onBack, onOp
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <span className="w-11 h-11 rounded-full flex items-center justify-center text-white shrink-0"
-              style={{ background: scope === "locataire" ? "#2E78A8" : "var(--brass)" }}>
-              {scope === "locataire" ? <Users size={20} /> : <UserRound size={20} />}
+              style={{ background: ancien ? "#64748B" : scope === "locataire" ? "#2E78A8" : "var(--brass)" }}>
+              {ancien ? <DoorClosed size={20} /> : scope === "locataire" ? <Users size={20} /> : <UserRound size={20} />}
             </span>
             <div>
               <h1 className="text-xl font-bold">{person.name}</h1>
               <p className="text-sm" style={{ color: "var(--muted)" }}>
-                Dossier {scope === "locataire" ? "locataire" : "propriétaire"}{person.sub ? ` · ${person.sub}` : ""}
+                Dossier {ancien ? "ancien locataire" : scope === "locataire" ? "locataire" : "propriétaire"}{person.sub ? ` · ${person.sub}` : ""}
               </p>
               <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>
                 {person.phone || "téléphone non renseigné"}{person.email ? ` · ${person.email}` : ""}
@@ -6780,6 +7272,21 @@ function Dossier({ store, me, userId, scope, unit, owner, property, onBack, onOp
         </div>
         {err && <p className="text-xs text-red-600 mt-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
       </div>
+
+      {ancien && former && (
+        <div className="rounded-xl border p-3 mb-4" style={{ borderColor: "var(--line)", background: "#F6F8FA" }}>
+          <p className="text-xs font-semibold mb-2">Récapitulatif du départ</p>
+          <div className="grid sm:grid-cols-4 gap-3 text-sm">
+            <div><p className="text-[11px]" style={{ color: "var(--muted)" }}>Motif</p><p className="font-medium">{DEPARTURE_REASON[former.reason]}</p></div>
+            <div><p className="text-[11px]" style={{ color: "var(--muted)" }}>Caution versée</p><p className="font-medium tabular-nums">{fcfa(former.deposit)}</p></div>
+            <div><p className="text-[11px]" style={{ color: "var(--muted)" }}>Caution restituée</p><p className="font-medium tabular-nums">{fcfa(former.depositRefund)}</p></div>
+            <div><p className="text-[11px]" style={{ color: "var(--muted)" }}>Reste dû</p>
+              <p className="font-medium tabular-nums" style={{ color: former.balanceDue > 0 ? "#D81F26" : "#4F9E2A" }}>
+                {former.balanceDue > 0 ? fcfa(former.balanceDue) : "soldé"}</p></div>
+          </div>
+          {former.notes && <p className="text-[11px] mt-2 italic" style={{ color: "var(--muted)" }}>{former.notes}</p>}
+        </div>
+      )}
 
       {arr?.hasArrears && (
         <div className="rounded-xl border p-3 mb-4" style={{ borderColor: "#F5C6C7", background: "#FDF2F2" }}>
@@ -6919,9 +7426,27 @@ const HANDOVER_STATUS = {
   conteste:   { label: "Contesté",                    color: "#D81F26" },
 };
 
-/* Solde d'une journée : entrées − sorties */
-function dayBalance(entries, day) {
-  const rows = entries.filter((e) => e.date === day);
+/* Bornes d'une période à partir d'un jour de référence */
+function cashRange(day, mode) {
+  const d = new Date(day + "T00:00:00");
+  if (mode === "semaine") {
+    const start = mondayIso(d);
+    const end = isoDate(addDays(start + "T00:00:00", 6));
+    return { start, end, label: `Semaine du ${fr(start + "T00:00:00", { day: "numeric", month: "long" })} au ${fr(end + "T00:00:00", { day: "numeric", month: "long", year: "numeric" })}` };
+  }
+  if (mode === "mois") {
+    const start = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+    const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    return { start, end: isoDate(last), label: periodLabel(start.slice(0, 7)) };
+  }
+  return { start: day, end: day, label: fr(day + "T00:00:00", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) };
+}
+
+/* Solde d'une journée ou d'une période : entrées − sorties */
+function dayBalance(entries, day, mode = "jour") {
+  const { start, end } = cashRange(day, mode);
+  const rows = entries.filter((e) => e.date >= start && e.date <= end)
+    .sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? -1 : 1));
   const inflow = rows.filter((e) => e.direction === "entree").reduce((a, e) => a + e.amount, 0);
   const outflow = rows.filter((e) => e.direction === "sortie").reduce((a, e) => a + e.amount, 0);
   return { rows, inflow, outflow, balance: inflow - outflow };
@@ -7035,8 +7560,10 @@ function HandoverModal({ day, amount, members, userId, onSend, onClose }) {
 }
 
 /* ---------------- Journal de caisse imprimable ---------------- */
-function CashSheet({ day, data, members, handover, onBack }) {
+function CashSheet({ day, mode = "jour", range, data, members, handover, onBack }) {
   const memberById = Object.fromEntries(members.map((m) => [m.id, m]));
+  const titre = mode === "jour" ? "JOURNAL DE CAISSE"
+    : mode === "semaine" ? "POINT HEBDOMADAIRE DE CAISSE" : "POINT MENSUEL DE CAISSE";
   return (
     <div>
       <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
@@ -7044,11 +7571,12 @@ function CashSheet({ day, data, members, handover, onBack }) {
         <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
       </div>
       <div id="print-area" className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
-        <PrintHead title="JOURNAL DE CAISSE" subtitle={fr(day + "T00:00:00", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} />
+        <PrintHead title={titre} subtitle={range?.label || fr(day + "T00:00:00", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} />
 
         <table className="w-full text-[11px] mt-4">
           <thead><tr style={{ background: "#F1F3F5" }}>
             <th className="text-left px-2 py-1.5 font-semibold">N°</th>
+            {mode !== "jour" && <th className="text-left px-2 py-1.5 font-semibold">Date</th>}
             <th className="text-left px-2 py-1.5 font-semibold">Libellé</th>
             <th className="text-left px-2 py-1.5 font-semibold">Nature</th>
             <th className="text-left px-2 py-1.5 font-semibold">Moyen</th>
@@ -7060,6 +7588,7 @@ function CashSheet({ day, data, members, handover, onBack }) {
           <tbody>{data.rows.map((e, i) => (
             <tr key={e.id} className="border-b" style={{ borderColor: "var(--line)" }}>
               <td className="px-2 py-1.5">{i + 1}</td>
+              {mode !== "jour" && <td className="px-2 py-1.5">{fr(e.date + "T00:00:00", { day: "2-digit", month: "2-digit" })}</td>}
               <td className="px-2 py-1.5 font-medium">{e.label}</td>
               <td className="px-2 py-1.5">{CASH_CATEGORY[e.category]?.label}</td>
               <td className="px-2 py-1.5">{CASH_METHOD[e.method]}</td>
@@ -7070,7 +7599,7 @@ function CashSheet({ day, data, members, handover, onBack }) {
             </tr>
           ))}</tbody>
           <tfoot><tr style={{ background: "#F1F3F5" }}>
-            <td colSpan={5} className="px-2 py-2 font-bold">TOTAUX</td>
+            <td colSpan={mode === "jour" ? 5 : 6} className="px-2 py-2 font-bold">TOTAUX</td>
             <td className="px-2 py-2 text-right font-bold tabular-nums" style={{ color: "#3d7d20" }}>{fcfa(data.inflow)}</td>
             <td className="px-2 py-2 text-right font-bold tabular-nums" style={{ color: "#B5171D" }}>{fcfa(data.outflow)}</td>
             <td />
@@ -7082,7 +7611,7 @@ function CashSheet({ day, data, members, handover, onBack }) {
             <div className="flex justify-between text-sm"><span style={{ color: "var(--muted)" }}>Total des entrées</span><span className="font-semibold tabular-nums">{fcfa(data.inflow)}</span></div>
             <div className="flex justify-between text-sm"><span style={{ color: "var(--muted)" }}>Total des sorties</span><span className="font-semibold tabular-nums">− {fcfa(data.outflow)}</span></div>
             <div className="flex justify-between items-center pt-2 mt-2 border-t" style={{ borderColor: "var(--line)" }}>
-              <span className="text-sm font-bold">SOLDE DU JOUR</span>
+              <span className="text-sm font-bold">{mode === "jour" ? "SOLDE DU JOUR" : mode === "semaine" ? "SOLDE DE LA SEMAINE" : "SOLDE DU MOIS"}</span>
               <span className="text-lg font-bold tabular-nums" style={{ color: "var(--brass)" }}>{fcfa(data.balance)}</span>
             </div>
           </div>
@@ -7126,13 +7655,16 @@ function CashSheet({ day, data, members, handover, onBack }) {
 function Caisse({ store, me, userId }) {
   const { cashEntries, handovers, members, properties, owners, actions } = store;
   const [day, setDay] = useState(isoDate(new Date()));
+  const [mode, setMode] = useState("jour");
   const [modal, setModal] = useState(null);
   const [handoverModal, setHandoverModal] = useState(false);
   const [sheet, setSheet] = useState(false);
   const [search, setSearch] = useState("");
 
   const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
-  const data = useMemo(() => dayBalance(cashEntries, day), [cashEntries, day]);
+  const data = useMemo(() => dayBalance(cashEntries, day, mode), [cashEntries, day, mode]);
+  const range = cashRange(day, mode);
+  const jour = useMemo(() => dayBalance(cashEntries, day, "jour"), [cashEntries, day]);
   const dayHandover = handovers.find((h) => h.date === day);
 
   /* Remises qui m'attendent, quel que soit le jour affiché */
@@ -7147,14 +7679,14 @@ function Caisse({ store, me, userId }) {
     || e.label.toLowerCase().includes(search.toLowerCase())
     || (e.reference || "").toLowerCase().includes(search.toLowerCase()));
 
-  if (sheet) return <CashSheet day={day} data={data} members={members} handover={dayHandover} onBack={() => setSheet(false)} />;
+  if (sheet) return <CashSheet day={day} mode={mode} range={range} data={data} members={members} handover={mode === "jour" ? dayHandover : null} onBack={() => setSheet(false)} />;
 
   return (
     <div>
       <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
         <h1 className="text-xl font-bold">Caisse</h1>
         <div className="flex gap-2">
-          <button onClick={() => setSheet(true)} className="kb-btn kb-btn-ghost"><Printer size={15} /> Journal du jour</button>
+          <button onClick={() => setSheet(true)} className="kb-btn kb-btn-ghost"><Printer size={15} /> Journal {mode === "jour" ? "du jour" : mode === "semaine" ? "de la semaine" : "du mois"}</button>
           <button onClick={() => setModal({ date: day })} className="kb-btn kb-btn-primary"><Plus size={16} /> Mouvement</button>
         </div>
       </div>
@@ -7190,20 +7722,26 @@ function Caisse({ store, me, userId }) {
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-        <StatCard icon={ArrowDownToLine} label="Entrées du jour" value={fcfa(data.inflow)} sub={`${data.rows.filter((e) => e.direction === "entree").length} mouvement(s)`} tint="#4F9E2A" />
-        <StatCard icon={ArrowUpFromLine} label="Sorties du jour" value={fcfa(data.outflow)} sub={`${data.rows.filter((e) => e.direction === "sortie").length} mouvement(s)`} tint="#D81F26" />
-        <StatCard icon={Wallet} label="Solde du jour" value={fcfa(data.balance)} tint="var(--brass)" />
-        <StatCard icon={BarChart3} label="Solde du mois" value={fcfa(monthIn - monthOut)} sub={`${fcfa(monthIn)} entrés · ${fcfa(monthOut)} sortis`} tint="#2E78A8" />
+        <StatCard icon={ArrowDownToLine} label={`Entrées — ${mode}`} value={fcfa(data.inflow)} sub={`${data.rows.filter((e) => e.direction === "entree").length} mouvement(s)`} tint="#4F9E2A" />
+        <StatCard icon={ArrowUpFromLine} label={`Sorties — ${mode}`} value={fcfa(data.outflow)} sub={`${data.rows.filter((e) => e.direction === "sortie").length} mouvement(s)`} tint="#D81F26" />
+        <StatCard icon={Wallet} label={`Solde — ${mode}`} value={fcfa(data.balance)} sub={range.label} tint="var(--brass)" />
+        <StatCard icon={BarChart3} label="Solde du mois" value={fcfa(monthIn - monthOut)} sub={`${fcfa(monthIn)} entrés · ${fcfa(monthOut)} sortis`} tint="#2E78A8" onClick={() => setMode("mois")} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <input type="date" value={day} onChange={(e) => setDay(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle} />
+        <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: "var(--line)" }}>
+          {[["jour", "Jour"], ["semaine", "Semaine"], ["mois", "Mois"]].map(([k, l]) => (
+            <button key={k} onClick={() => setMode(k)} className="px-3 py-2 text-sm font-medium"
+              style={{ background: mode === k ? "var(--ink)" : "#fff", color: mode === k ? "#fff" : "var(--muted)" }}>{l}</button>
+          ))}
+        </div>
         <div className="relative flex-1 min-w-[150px]">
           <Search size={15} className="absolute left-2.5 top-2.5 text-slate-400" />
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Libellé, pièce justificative…" className="w-full pl-8 pr-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle} />
         </div>
-        {data.balance > 0 && !dayHandover && (
-          <button onClick={() => setHandoverModal(true)} className="kb-btn kb-btn-primary text-sm"><Send size={14} /> Remettre le solde</button>
+        {jour.balance > 0 && !dayHandover && (
+          <button onClick={() => setHandoverModal(true)} className="kb-btn kb-btn-primary text-sm"><Send size={14} /> Remettre le solde du jour ({fcfa(jour.balance)})</button>
         )}
       </div>
 
@@ -7271,7 +7809,7 @@ function Caisse({ store, me, userId }) {
         action={<button onClick={() => setModal({ date: day })} className="kb-btn kb-btn-primary"><Plus size={15} /> Nouveau mouvement</button>} />}
 
       {modal && <CashModal initial={modal} properties={properties} owners={owners} onSave={actions.saveCashEntry} onClose={() => setModal(null)} />}
-      {handoverModal && <HandoverModal day={day} amount={data.balance} members={members} userId={userId}
+      {handoverModal && <HandoverModal day={day} amount={jour.balance} members={members} userId={userId}
         onSend={actions.createHandover} onClose={() => setHandoverModal(false)} />}
     </div>
   );
@@ -7400,7 +7938,7 @@ function Workspace({ userId }) {
   const store = useStore(userId);
   const { loading, departments, members, tasks, timeEntries, activeTimers, channels, channelMembers, messages,
     owners, properties, products, releases, releaseLines, quotes, units, requests, complaints, documents,
-    cashEntries, handovers, folderFiles, rentPeriods, rentLines, actions } = store;
+    cashEntries, handovers, formerTenants, folderFiles, rentPeriods, rentLines, actions } = store;
 
   const [view, setView] = useState("dashboard");
   const [viewWeek, setViewWeek] = useState(mondayIso(new Date()));
