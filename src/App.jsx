@@ -1474,11 +1474,39 @@ function useStore(userId) {
       arrears_amount: Number(f.arrearsAmount) || 0, arrears_months: Number(f.arrearsMonths) || 0,
       arrears_note: f.arrearsNote || "" };
     if (f.id) {
-      setUnits((p) => p.map((u) => (u.id === f.id ? { ...u, ...f } : u)));
-      const { error } = await supabase.from("units").update(row).eq("id", f.id);
-      if (error) return { error: error.message };
-      const adv = await applyAdvanceToPeriods({ ...f, id: f.id });
-      return { touched: adv.touched };
+      /* On demande à la base de RENVOYER la ligne enregistrée : sans cela,
+         une écriture refusée (droits, colonne absente) passe inaperçue et la
+         saisie semble disparaître à la resynchronisation suivante. */
+      const { data, error } = await supabase.from("units").update(row).eq("id", f.id).select().single();
+
+      if (error) {
+        if (/column .* does not exist/i.test(error.message)) {
+          return { error: "La base de données n'est pas à jour : exécutez les migrations manquantes "
+            + "(mois d'avance = migration v10, arriérés = migration v12) dans le SQL Editor, puis réessayez. "
+            + "Détail technique : " + error.message };
+        }
+        return { error: error.message };
+      }
+      if (!data) {
+        return { error: "Aucune ligne n'a été modifiée : vos droits ne permettent pas cette modification. "
+          + "Rien n'a été enregistré." };
+      }
+
+      /* La version de la base fait foi, pas celle saisie à l'écran */
+      const saved = mUnit(data);
+      setUnits((p) => p.map((u) => (u.id === f.id ? saved : u)));
+
+      /* Contrôle explicite : ce qui a été demandé est-il bien en base ? */
+      const attendu = Number(f.advanceMonths) || 0;
+      const arrAttendu = Number(f.arrearsAmount) || 0;
+      if (saved.advanceMonths !== attendu || saved.arrearsAmount !== arrAttendu) {
+        return { error: `Enregistrement incomplet : la base a retenu ${saved.advanceMonths} mois d'avance `
+          + `et ${fcfa(saved.arrearsAmount)} d'arriérés au lieu de ${attendu} et ${fcfa(arrAttendu)}. `
+          + "Vérifiez que les migrations v10 et v12 ont bien été exécutées." };
+      }
+
+      const adv = await applyAdvanceToPeriods(saved);
+      return { touched: adv.touched, saved };
     }
     const { data, error } = await supabase.from("units").insert(row).select().single();
     if (data) setUnits((p) => (p.some((u) => u.id === data.id) ? p : [...p, mUnit(data)]));
@@ -3158,7 +3186,19 @@ function Patrimoine({ store, me }) {
     for (const u of existing) if (!keptIds.includes(u.id)) await actions.deleteUnit(u.id);
     for (const l of lots) {
       if (!(l.label || "").trim()) continue;
-      await actions.saveUnit({ ...l, propertyId });
+      /* On repart de la version en base : l'éditeur de lots ne porte pas
+         l'avance d'entrée ni les arriérés, qui seraient sinon remis à zéro. */
+      const actuel = l.id ? units.find((u) => u.id === l.id) : null;
+      await actions.saveUnit({ ...(actuel || {}), ...l, propertyId,
+        advanceMonths: l.advanceMonths ?? actuel?.advanceMonths ?? 0,
+        advanceStart: l.advanceStart ?? actuel?.advanceStart ?? null,
+        arrearsAmount: l.arrearsAmount ?? actuel?.arrearsAmount ?? 0,
+        arrearsMonths: l.arrearsMonths ?? actuel?.arrearsMonths ?? 0,
+        arrearsNote: l.arrearsNote ?? actuel?.arrearsNote ?? "",
+        tenantEmail: l.tenantEmail ?? actuel?.tenantEmail ?? "",
+        deposit: l.deposit ?? actuel?.deposit ?? 0,
+        dueDay: l.dueDay ?? actuel?.dueDay ?? 5,
+        leaseEnd: l.leaseEnd ?? actuel?.leaseEnd ?? null });
     }
   };
 
@@ -5768,10 +5808,13 @@ function TenantModal({ unit, property, onSave, onClose }) {
     if (Number(f.advanceMonths) > 0 && !f.advanceStart) {
       setErr("Indiquez le premier mois couvert par l'avance."); return;
     }
-    setBusy(true);
+    setErr(""); setBusy(true);
     const r = await onSave({ ...f, status: f.tenantName?.trim() ? (f.status === "vacant" ? "occupe" : f.status) : "vacant" });
     setBusy(false);
-    if (r?.error) setErr(r.error); else onClose();
+    /* La fenêtre reste ouverte tant que l'enregistrement n'est pas confirmé :
+       la saisie n'est jamais perdue. */
+    if (r?.error) { setErr(r.error); return; }
+    onClose();
   };
   return (
     <Modal title={`Locataire — ${property?.name || ""} · ${unit.label}`} onClose={onClose}>
@@ -5854,10 +5897,21 @@ function TenantModal({ unit, property, onSave, onClose }) {
         <Field label="Origine / accord d'échelonnement"><input className={inputCls} style={inputStyle} value={f.arrearsNote || ""} onChange={(e) => set("arrearsNote", e.target.value)} placeholder="Ex. Impayés janvier à mars 2026, échelonnement convenu le 12/04" /></Field>
       </div>
 
-      {err && <p className="text-xs text-red-600 mb-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
+      {err && (
+        <div className="rounded-lg border p-3 mb-3 flex items-start gap-2" style={{ borderColor: "#F5C6C7", background: "#FDF2F2" }}>
+          <AlertTriangle size={15} className="mt-0.5 shrink-0" style={{ color: "#D81F26" }} />
+          <div>
+            <p className="text-xs font-semibold" style={{ color: "#B5171D" }}>Rien n'a été enregistré</p>
+            <p className="text-xs mt-0.5" style={{ color: "#B5171D" }}>{err}</p>
+            <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>
+              Votre saisie est conservée dans cette fenêtre : corrigez la cause, puis réessayez.
+            </p>
+          </div>
+        </div>
+      )}
       <div className="flex justify-end gap-2">
         <button onClick={onClose} className="kb-btn kb-btn-ghost">Annuler</button>
-        <button disabled={busy} onClick={submit} className="kb-btn kb-btn-primary disabled:opacity-40"><Check size={16} /> Enregistrer</button>
+        <button disabled={busy} onClick={submit} className="kb-btn kb-btn-primary disabled:opacity-40"><Check size={16} /> {busy ? "Enregistrement…" : "Enregistrer"}</button>
       </div>
     </Modal>
   );
@@ -6394,9 +6448,13 @@ function Locataires({ store, me, userId }) {
       {tenantModal && <TenantModal unit={tenantModal.unit} property={tenantModal.property}
         onSave={async (u) => {
           const r = await actions.saveUnit(u);
-          if (!r?.error && r?.touched > 0) {
-            alert(`Avance enregistrée. ${r.touched} ligne(s) de recouvrement mise(s) à jour comme réglées.`);
-          }
+          if (r?.error) return r;
+          const s = r.saved;
+          const bouts = [];
+          if (s?.advanceMonths > 0) bouts.push(`${s.advanceMonths} mois d'avance`);
+          if (s?.arrearsAmount > 0) bouts.push(`${fcfa(s.arrearsAmount)} d'arriérés repris`);
+          if (r.touched > 0) bouts.push(`${r.touched} ligne(s) de recouvrement mise(s) à jour`);
+          if (bouts.length) alert("Enregistré : " + bouts.join(" · ") + ".");
           return r;
         }} onClose={() => setTenantModal(null)} />}
 
