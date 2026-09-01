@@ -6,7 +6,7 @@
  * ==========================================================================*/
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
-  AlertTriangle, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, Banknote, BarChart3, Bell, BellOff, BellRing, Briefcase, Building2, CalendarClock, CalendarDays, CalendarOff, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, DoorClosed, DoorOpen, Download, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Home, Image, Inbox, KeyRound, Landmark, Layers, LayoutDashboard, ListChecks, Lock, LogOut, Mail, MapPin, MessageCircle, MessageCircleWarning, MessageSquare, Package, Paperclip, Pause, Pencil, Phone, Play, Plus, Printer, Receipt, RotateCcw, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, UserPlus, UserRound, Users, Wallet, X, Zap,
+  AlertTriangle, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, Banknote, BarChart3, Bell, BellOff, BellRing, Briefcase, Building2, CalendarClock, CalendarDays, CalendarOff, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, DoorClosed, DoorOpen, Download, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Home, Image, Inbox, KeyRound, Landmark, Layers, LayoutDashboard, ListChecks, Lock, LogOut, Mail, MapPin, MessageCircle, MessageCircleWarning, MessageSquare, Package, Paperclip, Pause, Pencil, Percent, Phone, Play, Plus, Printer, Receipt, RotateCcw, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, UserPlus, UserRound, Users, Wallet, X, Zap,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, CartesianGrid,
@@ -463,6 +463,12 @@ const fmtEst = (min) => {
 const fmtTime = (ts) => new Date(ts).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 
 /* ---- Formatage monétaire FCFA ---- */
+/* Affiche un taux : 0.095 → « 9,5 % », 0.1 → « 10 % » */
+const pctLabel = (r) => {
+  const v = (Number(r) || 0) * 100;
+  return `${(Math.round(v * 100) / 100).toString().replace(".", ",")} %`;
+};
+
 const fcfa = (n) => {
   const v = Number(n || 0);
   return v.toLocaleString("fr-FR", { maximumFractionDigits: 0 }) + " F";
@@ -915,7 +921,7 @@ const mCM      = (r) => ({ channelId: r.channel_id, userId: r.user_id, lastReadA
 const mMsg     = (r) => ({ id: r.id, channelId: r.channel_id, fromId: r.from_id, text: r.body, taskId: r.task_id, createdAt: Date.parse(r.created_at), fileUrl: r.file_url || "", fileName: r.file_name || "", fileType: r.file_type || "", fileSize: r.file_size || 0 });
 
 const mOwner   = (r) => ({ id: r.id, name: r.full_name, kind: r.kind, phone: r.phone, email: r.email, address: r.address, idNumber: r.id_number, notes: r.notes, active: r.active });
-const mProp    = (r) => ({ id: r.id, ref: r.ref, name: r.name, kind: r.kind, address: r.address, commune: r.commune, quartier: r.quartier, ownerId: r.owner_id, lotsCount: r.lots_count, surface: r.surface_m2, rent: r.rent_amount, mandate: r.mandate_type, status: r.status, notes: r.notes, agentId: r.agent_id, salePrice: r.sale_price, availableFor: r.available_for || 'aucun' });
+const mProp    = (r) => ({ id: r.id, ref: r.ref, name: r.name, kind: r.kind, address: r.address, commune: r.commune, quartier: r.quartier, ownerId: r.owner_id, lotsCount: r.lots_count, surface: r.surface_m2, rent: r.rent_amount, mandate: r.mandate_type, status: r.status, notes: r.notes, agentId: r.agent_id, salePrice: r.sale_price, availableFor: r.available_for || 'aucun', feeRate: r.fee_rate === null || r.fee_rate === undefined ? 0.10 : Number(r.fee_rate) });
 const mProduct = (r) => ({ id: r.id, name: r.name, category: r.category, unit: r.unit, stock: Number(r.stock_qty), minQty: Number(r.min_qty), price: Number(r.unit_price), supplier: r.supplier, active: r.active });
 const mStockIn = (r) => ({ id: r.id, productId: r.product_id, qty: Number(r.qty), price: Number(r.unit_price), supplier: r.supplier, date: r.entry_date, notes: r.notes, createdBy: r.created_by });
 const mRelease = (r) => ({ id: r.id, ref: r.ref, propertyId: r.property_id, releasedTo: r.released_to, releasedBy: r.released_by, purpose: r.purpose, date: r.release_date, zone: r.zone, notes: r.notes, createdAt: Date.parse(r.created_at) });
@@ -1298,7 +1304,8 @@ function useStore(userId) {
     const row = { ref: f.ref || "", name: f.name, kind: f.kind, address: f.address || "", commune: f.commune || "",
       quartier: f.quartier || "", owner_id: f.ownerId || null, lots_count: Number(f.lotsCount) || 1,
       surface_m2: f.surface ? Number(f.surface) : null, rent_amount: f.rent ? Number(f.rent) : null,
-      mandate_type: f.mandate, status: f.status, notes: f.notes || "", agent_id: f.agentId || null, sale_price: f.salePrice ? Number(f.salePrice) : null, available_for: f.availableFor || 'aucun' };
+      mandate_type: f.mandate, status: f.status, notes: f.notes || "", agent_id: f.agentId || null, sale_price: f.salePrice ? Number(f.salePrice) : null, available_for: f.availableFor || 'aucun',
+      fee_rate: (f.feeRate === "" || f.feeRate === null || f.feeRate === undefined) ? 0.10 : Number(f.feeRate) };
     if (f.id) { const { error } = await supabase.from("properties").update(row).eq("id", f.id); return { error: error?.message }; }
     const { data, error } = await supabase.from("properties").insert({ ...row, created_by: userId }).select().single();
     if (data) setProperties((p) => p.some((x) => x.id === data.id) ? p : [...p, mProp(data)]);
@@ -3039,6 +3046,10 @@ function PropertyDetail({ property, owner, agent, units, tasks, quotes, releases
             <div className="flex flex-wrap gap-3 mt-1.5 text-sm">
               {owner && <span className="flex items-center gap-1"><UserRound size={13} style={{ color: "var(--brass)" }} /> {owner.name}</span>}
               {agent && <span className="flex items-center gap-1"><BadgeCheck size={13} style={{ color: "#2E78A8" }} /> {agent.name}</span>}
+              <span className="flex items-center gap-1" title="Taux appliqué aux tableaux de recouvrement de ce bien">
+                <Percent size={13} style={{ color: "var(--brass)" }} />
+                Prestation agence <strong>{pctLabel(property.feeRate)}</strong>
+              </span>
             </div>
           </div>
           <button onClick={() => onEdit(property)} className="kb-btn kb-btn-ghost"><Pencil size={15} /> Modifier</button>
@@ -3184,6 +3195,7 @@ function Patrimoine({ store, me }) {
         { label: "Agent en charge", render: (p) => memberById[p.agentId]?.name || "— non attribué —" },
         { label: "Lots", right: true, render: (p) => units.filter((u) => u.propertyId === p.id).length || "—" },
         { label: "Mandat", render: (p) => MANDATE[p.mandate] },
+        { label: "Taux agence", render: (p) => pctLabel(p.feeRate) },
         { label: "Loyer", right: true, render: (p) => {
           const us = units.filter((u) => u.propertyId === p.id);
           return fcfa(us.length ? us.reduce((a, u) => a + u.rent, 0) : (p.rent || 0));
@@ -3297,6 +3309,7 @@ function Patrimoine({ store, me }) {
               <p className="text-xs mt-1 truncate" style={{ color: ag ? "#2E78A8" : "#B6BEC9" }}><BadgeCheck size={11} className="inline mb-0.5" /> {ag?.name || "Aucun agent attribué"}</p>
               <div className="flex flex-wrap gap-1.5 mt-2">
                 {pu.length > 0 && <Chip color="#64748B">{pu.length} lot(s)</Chip>}
+                <Chip color="var(--brass)">{pctLabel(p.feeRate)}</Chip>
                 {vac > 0 && <Chip color="#EA580C">{vac} vacant(s)</Chip>}
                 {p.availableFor !== "aucun" && <Chip color="#D81F26">{AVAILABLE_FOR[p.availableFor]}</Chip>}
               </div>
@@ -3876,7 +3889,7 @@ function seedPeriod({ period, rentPeriods, rentLines, rentCharges, units }) {
 }
 
 /* ================= Éditeur d'une période ================= */
-function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, readOnly, onSave, onClose }) {
+function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, readOnly, onSave, onSaveRate, onClose }) {
   /* Tableau vierge : on l'amorce depuis le mois précédent, sinon depuis les lots */
   const isNew = lines0.length === 0 && charges0.length === 0;
   const [lines, setLines] = useState(() => lines0.length ? lines0.map((l) => ({ ...l })) : (isNew ? seed.lines : []));
@@ -3889,6 +3902,7 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
   const chargeIdx = charges.map((c, i) => [c, i]).filter(([c]) => (c.kind || "charge") === "charge");
   const supplementIdx = charges.map((c, i) => [c, i]).filter(([c]) => c.kind === "supplement");
   const [rate, setRate] = useState(period.rate);
+  const [keepRate, setKeepRate] = useState(false);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
 
   /* Pré-remplissage depuis les lots du bâtiment */
@@ -3915,6 +3929,8 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
 
   const submit = async () => {
     setBusy(true);
+    /* Le taux retenu devient celui du bien pour les mois suivants */
+    if (keepRate && property) await onSaveRate?.(property, Number(rate));
     const r = await onSave({ ...period, rate }, lines, charges);
     setBusy(false);
     if (r?.error) setErr(r.error); else onClose();
@@ -3942,11 +3958,19 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
       )}
 
       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs" style={{ color: "var(--muted)" }}>Taux de prestation agence</span>
-          <input type="number" min={0} max={1} step={0.01} disabled={readOnly} className="w-20 px-2 py-1 rounded-lg border text-sm"
-            style={inputStyle} value={rate} onChange={(e) => setRate(e.target.value)} />
-          <span className="text-xs font-medium">{(Number(rate) * 100).toFixed(0)} %</span>
+          <input type="number" min={0} max={50} step={0.5} disabled={readOnly} className="w-20 px-2 py-1 rounded-lg border text-sm text-right"
+            style={inputStyle} value={Math.round(Number(rate) * 10000) / 100}
+            onChange={(e) => setRate(e.target.value === "" ? 0 : Number(e.target.value) / 100)} />
+          <span className="text-xs font-medium" style={{ color: "var(--brass)" }}>%</span>
+          {!readOnly && Math.abs(Number(rate) - (property?.feeRate ?? 0.10)) > 0.0001 && (
+            <button onClick={() => setKeepRate((k) => !k)} className="text-[11px] px-2 py-1 rounded-lg"
+              style={{ background: keepRate ? "#EAF6E3" : "#FFF8EC", color: keepRate ? "#3d7d20" : "#8A6212", border: "1px solid " + (keepRate ? "#BBE3A6" : "#F3E2C6") }}>
+              {keepRate ? <><Check size={11} className="inline mb-0.5" /> Retenu pour les mois à venir</>
+                : <>Retenir {pctLabel(rate)} pour ce bien ?</>}
+            </button>
+          )}
         </div>
         {!readOnly && <button onClick={loadFromUnits} className="kb-btn kb-btn-ghost text-sm"><Users size={14} /> Charger les lots du bâtiment</button>}
       </div>
@@ -4068,7 +4092,7 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
         {[["Loyers encaissés (base)", t.collected, ""],
           ...(t.deducted ? [["Charges retenues sur locataires", t.deducted, "-"]] : []),
           ...(t.chargesTotal ? [["Charges du mois (immeuble)", t.chargesTotal, "-"]] : []),
-          [`Prestation agence (${(Number(rate) * 100).toFixed(0)} %)`, t.fee, "-"],
+          [`Prestation agence (${pctLabel(rate)})`, t.fee, "-"],
           ...(t.supplementsTotal ? [["Sommes à verser en plus", t.supplementsTotal, "+"]] : [])].map(([k, v, sign]) => (
           <div key={k} className="flex justify-between text-xs py-1">
             <span style={{ color: "var(--muted)" }}>{k}</span>
@@ -4200,7 +4224,7 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
                 <tr className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-2 py-1">Loyers encaissés</td><td className="px-2 py-1 text-right tabular-nums">{fcfa(t.collected)}</td></tr>
                 <tr className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-2 py-1">Charges retenues sur locataires</td><td className="px-2 py-1 text-right tabular-nums">− {fcfa(t.deducted)}</td></tr>
                 <tr className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-2 py-1">Charges du mois (immeuble)</td><td className="px-2 py-1 text-right tabular-nums">− {fcfa(t.chargesTotal)}</td></tr>
-                <tr className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-2 py-1">Prestation agence ({(period.rate * 100).toFixed(0)} %)</td><td className="px-2 py-1 text-right tabular-nums">− {fcfa(t.fee)}</td></tr>
+                <tr className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-2 py-1">Prestation agence ({pctLabel(period.rate)})</td><td className="px-2 py-1 text-right tabular-nums">− {fcfa(t.fee)}</td></tr>
                 {t.supplementsTotal > 0 && <tr className="border-b" style={{ borderColor: "var(--line)" }}>
                   <td className="px-2 py-1" style={{ color: "#3d7d20" }}>Sommes à verser en plus</td>
                   <td className="px-2 py-1 text-right tabular-nums" style={{ color: "#3d7d20" }}>+ {fcfa(t.supplementsTotal)}</td>
@@ -4475,6 +4499,7 @@ function Recouvrement({ store, me, userId }) {
         charges0={rentCharges.filter((c) => c.periodId === editor.period.id)}
         seed={seedPeriod({ period: editor.period, rentPeriods, rentLines, rentCharges, units })}
         readOnly={editor.readOnly}
+        onSaveRate={async (prop, r) => { await actions.saveProperty({ ...prop, feeRate: r }); }}
         onSave={async (p, lines, charges) => {
           const r1 = await actions.savePeriod(p);
           if (r1.error) return r1;
@@ -4486,7 +4511,11 @@ function Recouvrement({ store, me, userId }) {
 }
 
 function CreatorModal({ properties, scope, existing, onCreate, onClose, isAdminUser }) {
-  const [f, setF] = useState({ propertyId: properties[0]?.id || "", period: currentPeriod(), scope, rate: 0.07, status: "brouillon" });
+  const [f, setF] = useState({ propertyId: properties[0]?.id || "", period: currentPeriod(), scope,
+    rate: properties[0]?.feeRate ?? 0.10, status: "brouillon" });
+  /* Changer de bien reprend automatiquement SON taux de prestation */
+  const pickProperty = (id) => setF((p) => ({ ...p, propertyId: id,
+    rate: properties.find((x) => x.id === id)?.feeRate ?? 0.10 }));
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const dup = existing.some((p) => p.propertyId === f.propertyId && p.period === f.period && p.scope === f.scope);
   const submit = async () => {
@@ -4496,6 +4525,13 @@ function CreatorModal({ properties, scope, existing, onCreate, onClose, isAdminU
   const [y, m] = f.period.split("-");
   return (
     <Modal title="Nouveau tableau de recouvrement" onClose={onClose}>
+      {f.propertyId && (
+        <p className="text-[11px] mb-3 p-2 rounded" style={{ background: "#EFF6FF", color: "#1F5C82" }}>
+          Taux de prestation repris de la fiche du bien : <strong>{pctLabel(f.rate)}</strong>.
+          Modifiable ensuite dans le tableau si ce mois fait exception.
+        </p>
+      )}
+
       <Field label="Type de tableau">
         <select className={inputCls} style={inputStyle} value={f.scope} onChange={(e) => setF((p) => ({ ...p, scope: e.target.value }))}>
           {Object.entries(RENT_SCOPE)
@@ -4504,7 +4540,7 @@ function CreatorModal({ properties, scope, existing, onCreate, onClose, isAdminU
         </select>
       </Field>
       <Field label="Bâtiment">
-        <select className={inputCls} style={inputStyle} value={f.propertyId} onChange={(e) => setF((p) => ({ ...p, propertyId: e.target.value }))}>
+        <select className={inputCls} style={inputStyle} value={f.propertyId} onChange={(e) => pickProperty(e.target.value)}>
           {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       </Field>
