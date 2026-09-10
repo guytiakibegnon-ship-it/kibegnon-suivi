@@ -6,7 +6,7 @@
  * ==========================================================================*/
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
-  AlertTriangle, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, Banknote, BarChart3, Bell, BellOff, BellRing, Briefcase, Building2, CalendarClock, CalendarDays, CalendarOff, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, DoorClosed, DoorOpen, Download, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Home, Image, Inbox, KeyRound, Landmark, Layers, LayoutDashboard, ListChecks, Lock, LogOut, Mail, MapPin, MessageCircle, MessageCircleWarning, MessageSquare, Package, Paperclip, Pause, Pencil, Percent, Phone, Play, Plus, Printer, Receipt, RotateCcw, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, UserPlus, UserRound, Users, Wallet, X, Zap,
+  AlertTriangle, AlignCenter, AlignJustify, AlignLeft, AlignRight, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, Banknote, BarChart3, Bell, BellOff, BellRing, Bold, Briefcase, Building2, CalendarClock, CalendarDays, CalendarOff, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, DoorClosed, DoorOpen, Download, Eraser, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Home, Image, Inbox, IndentDecrease, IndentIncrease, Italic, KeyRound, Landmark, Layers, LayoutDashboard, List, ListChecks, ListOrdered, Lock, LogOut, Mail, MapPin, MessageCircle, MessageCircleWarning, MessageSquare, Package, Palette, Paperclip, Pause, Pencil, Percent, Phone, Play, Plus, Printer, Receipt, Redo2, RotateCcw, Scale, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, Underline, Undo2, UserPlus, UserRound, Users, Wallet, X, Zap,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, CartesianGrid,
@@ -198,6 +198,18 @@ const DOC_TYPES = {
       { label: "Charges", qty: 1, unit: "mois", price: 0 },
     ],
   },
+  solde_tout_compte: {
+    label: "Solde de tout compte",
+    short: "Solde",
+    prefix: "ST",
+    dept: "Gestion locative",
+    layout: "solde",
+    title: "SOLDE DE TOUT COMPTE",
+    color: "#7C3AED",
+    desc: "Arrêté des comptes d'un locataire sortant : caution, sommes dues, consommations et réparations.",
+    clientLabel: "Locataire sortant",
+    preset: [],
+  },
   recu_charge: {
     label: "Reçu de paiement de charges",
     short: "Reçu charges",
@@ -247,7 +259,7 @@ const DOC_TYPES = {
     preset: [{ label: "Loyer impayé", qty: 1, unit: "mois", price: 0 }],
   },
 };
-const DOC_TYPE_ORDER = ["decompte_entree", "prestation", "facture_impayes", "quittance", "recu_charge", "decharge", "relance", "courrier"];
+const DOC_TYPE_ORDER = ["decompte_entree", "prestation", "facture_impayes", "quittance", "recu_charge", "solde_tout_compte", "decharge", "relance", "courrier"];
 
 const DOC_STATUS = {
   brouillon: { label: "Brouillon", color: "#94A3B8" },
@@ -373,6 +385,9 @@ const buildInstallments = (year, taxed, existing = []) => {
     };
   });
 };
+/* Sommes retenues sur les loyers du propriétaire pour régler son impôt */
+const taxWithheld = (rec) => (rec?.withholdings || []).reduce((a, w) => a + (Number(w.amount) || 0), 0);
+
 const taxTotals = (rec) => {
   const paid = (rec.installments || []).reduce((a, t) => a + (Number(t.amountPaid) || 0), 0);
   const taxed = Number(rec.taxedAmount) || 0;
@@ -803,8 +818,8 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "19.0";
-const APP_BUILD = "2026-09-01";
+const APP_VERSION = "20.0";
+const APP_BUILD = "2026-09-10";
 
 /* ---- Papier à en-tête de l'agence ---- */
 const AGENCY = {
@@ -956,9 +971,9 @@ const mCash     = (r) => ({ id: r.id, date: r.entry_date, direction: r.direction
 const mHandover = (r) => ({ id: r.id, date: r.handover_date, amount: Number(r.amount), fromUser: r.from_user, toUser: r.to_user, status: r.status, approvedAt: r.approved_at, note: r.note, responseNote: r.response_note, createdAt: Date.parse(r.created_at) });
 const mFolderFile = (r) => ({ id: r.id, scope: r.scope, unitId: r.unit_id, ownerId: r.owner_id, formerTenantId: r.former_tenant_id, propertyId: r.property_id, category: r.category, label: r.label, fileUrl: r.file_url, fileName: r.file_name, fileType: r.file_type, fileSize: Number(r.file_size) || 0, notes: r.notes, uploadedBy: r.uploaded_by, createdAt: Date.parse(r.created_at) });
 const mComplaint = (r) => ({ id: r.id, ref: r.ref, propertyId: r.property_id, unitId: r.unit_id, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, category: r.category, cause: r.cause, priority: r.priority, description: r.description, reportedAt: r.reported_at, channel: r.channel, status: r.status, assignedTo: r.assigned_to, quoteId: r.quote_id, cost: Number(r.cost) || 0, resolution: r.resolution, resolvedAt: r.resolved_at, createdBy: r.created_by });
-const mTax     = (r) => ({ id: r.id, propertyId: r.property_id, unitId: r.unit_id, customLabel: r.custom_label, ownerId: r.owner_id, ownerLabel: r.owner_label, taxYear: r.tax_year, noticeNumber: r.notice_number, taxedAmount: Number(r.taxed_amount), installments: r.installments || [], receipts: r.receipts, declarationNext: r.declaration_next, notes: r.notes, createdBy: r.created_by, ncc: r.ncc || "", declarationDate: r.declaration_date, nextBase: r.next_base });
+const mTax     = (r) => ({ id: r.id, propertyId: r.property_id, unitId: r.unit_id, customLabel: r.custom_label, ownerId: r.owner_id, ownerLabel: r.owner_label, taxYear: r.tax_year, noticeNumber: r.notice_number, taxedAmount: Number(r.taxed_amount), installments: r.installments || [], receipts: r.receipts, declarationNext: r.declaration_next, notes: r.notes, createdBy: r.created_by, ncc: r.ncc || "", declarationDate: r.declaration_date, nextBase: r.next_base, withholdings: r.withholdings || [] });
 const mReq     = (r) => ({ id: r.id, reqType: r.req_type, userId: r.user_id, date: r.req_date, amount: Number(r.amount), destination: r.destination, mode: r.transport_mode, propertyId: r.property_id, startDate: r.start_date, endDate: r.end_date, absenceType: r.absence_type, motif: r.motif, status: r.status, decidedBy: r.decided_by, decidedAt: r.decided_at, decisionNote: r.decision_note, createdAt: Date.parse(r.created_at) });
-const mDoc     = (r) => ({ id: r.id, ref: r.ref, docType: r.doc_type, date: r.doc_date, propertyId: r.property_id, ownerId: r.owner_id, clientName: r.client_name, clientPhone: r.client_phone, clientEmail: r.client_email, clientAddr: r.client_addr, object: r.object, body: r.body, lines: r.lines || [], fields: r.fields || {}, monthsCount: Number(r.fields?.monthsCount) || 1, total: Number(r.total_amount), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at), unitId: r.unit_id, paidStamp: !!r.paid_stamp, stampedBy: r.stamped_by, period: r.period || "", approval: r.approval || "non_requise", approvedBy: r.approved_by, approvedAt: r.approved_at, approvalNote: r.approval_note || "", periodIso: r.period_iso || "", direction: r.direction || "encaissement" });
+const mDoc     = (r) => ({ id: r.id, ref: r.ref, docType: r.doc_type, date: r.doc_date, propertyId: r.property_id, ownerId: r.owner_id, clientName: r.client_name, clientPhone: r.client_phone, clientEmail: r.client_email, clientAddr: r.client_addr, object: r.object, body: r.body, lines: r.lines || [], fields: r.fields || {}, monthsCount: Number(r.fields?.monthsCount) || 1, total: Number(r.total_amount), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at), unitId: r.unit_id, paidStamp: !!r.paid_stamp, stampedBy: r.stamped_by, period: r.period || "", approval: r.approval || "non_requise", approvedBy: r.approved_by, approvedAt: r.approved_at, approvalNote: r.approval_note || "", periodIso: r.period_iso || "", direction: r.direction || "encaissement", formerTenantId: r.former_tenant_id });
 const mTpl     = (r) => ({ id: r.id, label: r.label, nature: r.nature, deptId: r.dept_id, urgency: r.urgency, estMin: r.est_min, sortOrder: r.sort_order, active: r.active });
 
 const upsertBy = (key, map) => (setter) => (row) =>
@@ -1841,7 +1856,8 @@ function useStore(userId) {
       taxed_amount: Number(f.taxedAmount) || 0, installments: f.installments || [],
       receipts: f.receipts || "non", declaration_next: f.declarationNext || "non", notes: f.notes || "",
       ncc: f.ncc || "", declaration_date: f.declarationDate || null,
-      next_base: f.nextBase ? Number(f.nextBase) : null };
+      next_base: f.nextBase ? Number(f.nextBase) : null,
+      withholdings: (f.withholdings || []).filter((w) => Number(w.amount) > 0) };
     if (f.id) {
       setTaxRecords((p) => p.map((x) => (x.id === f.id ? { ...x, ...f } : x)));
       const { error } = await supabase.from("tax_records").update(row).eq("id", f.id);
@@ -1867,7 +1883,8 @@ function useStore(userId) {
       client_addr: f.clientAddr || "", object: f.object || "", body: f.body || "",
       lines: f.lines || [], total_amount: total,
       status: f.status || "brouillon", notes: f.notes || "",
-      unit_id: f.unitId || null, period: f.period || "", period_iso: f.periodIso || "",
+      unit_id: f.unitId || null, former_tenant_id: f.formerTenantId || null,
+      period: f.period || "", period_iso: f.periodIso || "",
       fields: { ...(f.fields || {}), monthsCount: Number(f.monthsCount) || 1 },
       approval: f.approval || "non_requise", direction: f.direction || "encaissement",
       paid_stamp: f.approval === "approuve" ? !!f.paidStamp : false,
@@ -2151,7 +2168,7 @@ function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onC
           <select className={inputCls} style={inputStyle} value=""
             onChange={(e) => {
               const m = COURRIER_MODELS[e.target.value];
-              if (m) setF((p) => ({ ...p, object: m.object || p.object, body: m.body }));
+              if (m) setF((p) => ({ ...p, object: m.object || p.object, body: textToHtml(m.body) }));
             }}>
             <option value="">— Choisir un modèle —</option>
             {Object.entries(COURRIER_MODELS).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
@@ -2169,8 +2186,10 @@ function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onC
             </Field>
             <Field label="Délai accordé (jours)"><input type="number" min={0} className={inputCls} style={inputStyle} value={f.fields.delay || 8} onChange={(e) => setField("delay", e.target.value)} /></Field>
           </div>
-          <Field label="Corps du courrier" hint="Laissez vide pour utiliser le texte type généré automatiquement">
-            <textarea className={inputCls} style={inputStyle} rows={5} value={f.body} onChange={(e) => set("body", e.target.value)} placeholder="Texte personnalisé du courrier…" />
+          <Field label="Corps du courrier"
+            hint={f.docType === "relance" ? "Laissez vide pour utiliser le texte type généré automatiquement" : "Mise en forme complète : gras, listes, alignements, titres"}>
+            <LetterEditor value={f.body} onChange={(html) => set("body", html)}
+              placeholder={f.docType === "relance" ? "Laissez vide pour le texte type…" : "Rédigez votre courrier…"} />
           </Field>
         </>
       )}
@@ -2265,6 +2284,226 @@ function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onC
 }
 
 /* ================= Texte type des relances ================= */
+/* ══════════════════════════════════════════════════════════════════════
+   LANGUE — contractions et élisions françaises
+   « de » + « le bien » donne « du bien », jamais « de le bien ».
+   ══════════════════════════════════════════════════════════════════════ */
+const VOYELLES = /^[aàâeéèêëiîïoôuùûyh]/i;
+
+/* « de » suivi d'un groupe nominal */
+const deLe = (groupe) => {
+  const g = (groupe || "").trim();
+  if (!g) return "";
+  if (/^le\s/i.test(g))  return "du " + g.slice(3);
+  if (/^les\s/i.test(g)) return "des " + g.slice(4);
+  if (/^la\s/i.test(g))  return "de la " + g.slice(3);
+  if (/^l['’]/i.test(g))  return "de " + g;
+  if (VOYELLES.test(g))   return "d'" + g;
+  return "de " + g;
+};
+
+/* « à » suivi d'un groupe nominal */
+const aLe = (groupe) => {
+  const g = (groupe || "").trim();
+  if (!g) return "";
+  if (/^le\s/i.test(g))  return "au " + g.slice(3);
+  if (/^les\s/i.test(g)) return "aux " + g.slice(4);
+  if (/^la\s/i.test(g))  return "à la " + g.slice(3);
+  return "à " + g;
+};
+
+/* ══════════════════════════════════════════════════════════════════════
+   ÉDITEUR DE COURRIER — mise en forme façon traitement de texte
+   Le texte est conservé en HTML simple : gras, italique, souligné,
+   alignements, listes, titres, tailles et couleurs.
+   ══════════════════════════════════════════════════════════════════════ */
+
+const LETTER_FONTS = [
+  { label: "Calibri", value: "Calibri, sans-serif" },
+  { label: "Arial", value: "Arial, Helvetica, sans-serif" },
+  { label: "Times New Roman", value: "'Times New Roman', Times, serif" },
+  { label: "Georgia", value: "Georgia, serif" },
+  { label: "Inter", value: "Inter, sans-serif" },
+];
+const LETTER_SIZES = [
+  { label: "9", value: "1" }, { label: "10", value: "2" }, { label: "12", value: "3" },
+  { label: "14", value: "4" }, { label: "18", value: "5" }, { label: "24", value: "6" },
+];
+const LETTER_COLORS = ["#1A1C20", "#D81F26", "#2E78A8", "#4F9E2A", "#C58A1B", "#7C3AED", "#6B7280"];
+
+/* Convertit un ancien texte brut en HTML, pour ne rien perdre de l'existant */
+const isHtml = (t) => /<(p|div|br|h[1-3]|ul|ol|li|b|i|u|strong|em|span|font)\b/i.test(t || "");
+
+function textToHtml(txt) {
+  if (!txt) return "";
+  if (/<[a-z][\s\S]*>/i.test(txt)) return txt;          // déjà du HTML
+  const echapper = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return txt.split(/\n{2,}/)
+    .map((p) => `<p>${echapper(p).replace(/\n/g, "<br>")}</p>`)
+    .join("");
+}
+/* Repasse en texte brut, utile pour les aperçus et la recherche */
+function htmlToText(html) {
+  if (!html) return "";
+  return html
+    .replace(/<\/(p|div|h[1-3])>/gi, "\n\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function ToolBtn({ onClick, active, title, children, wide }) {
+  return (
+    <button type="button" title={title} onMouseDown={(e) => e.preventDefault()} onClick={onClick}
+      className="rounded-md flex items-center justify-center shrink-0"
+      style={{
+        height: 30, minWidth: wide ? "auto" : 30, padding: wide ? "0 8px" : 0,
+        background: active ? "var(--ink)" : "transparent",
+        color: active ? "#fff" : "var(--ink)",
+        border: "1px solid " + (active ? "var(--ink)" : "transparent"),
+      }}
+      onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = "#EEF1F5"; }}
+      onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}>
+      {children}
+    </button>
+  );
+}
+
+function LetterEditor({ value, onChange, placeholder }) {
+  const ref = useRef(null);
+  const [etat, setEtat] = useState({});
+  const [couleurs, setCouleurs] = useState(false);
+
+  /* Le contenu n'est injecté qu'au montage : réécrire à chaque frappe
+     replacerait le curseur au début du texte. */
+  useEffect(() => {
+    if (ref.current && ref.current.innerHTML !== (value || "")) {
+      ref.current.innerHTML = value || "";
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const majEtat = () => {
+    try {
+      setEtat({
+        bold: document.queryCommandState("bold"),
+        italic: document.queryCommandState("italic"),
+        underline: document.queryCommandState("underline"),
+        ul: document.queryCommandState("insertUnorderedList"),
+        ol: document.queryCommandState("insertOrderedList"),
+        left: document.queryCommandState("justifyLeft"),
+        center: document.queryCommandState("justifyCenter"),
+        right: document.queryCommandState("justifyRight"),
+        justify: document.queryCommandState("justifyFull"),
+      });
+    } catch { /* certains navigateurs restreignent queryCommandState */ }
+  };
+
+  const cmd = (nom, arg) => {
+    ref.current?.focus();
+    try { document.execCommand(nom, false, arg); } catch { /* ignoré */ }
+    onChange(ref.current?.innerHTML || "");
+    majEtat();
+  };
+
+  const sep = <span style={{ width: 1, height: 20, background: "var(--line)", margin: "0 3px", flexShrink: 0 }} />;
+
+  return (
+    <div className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--line)" }}>
+      {/* Barre d'outils */}
+      <div className="flex flex-wrap items-center gap-0.5 p-1.5 border-b print:hidden"
+        style={{ borderColor: "var(--line)", background: "#F7F9FB" }}>
+
+        <select onMouseDown={(e) => e.stopPropagation()} onChange={(e) => cmd("fontName", e.target.value)}
+          className="rounded-md border text-xs px-1.5" style={{ ...inputStyle, height: 30, width: 118 }} defaultValue="">
+          <option value="" disabled>Police</option>
+          {LETTER_FONTS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+        </select>
+
+        <select onChange={(e) => cmd("fontSize", e.target.value)}
+          className="rounded-md border text-xs px-1.5" style={{ ...inputStyle, height: 30, width: 62 }} defaultValue="">
+          <option value="" disabled>Taille</option>
+          {LETTER_SIZES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </select>
+
+        {sep}
+        <ToolBtn title="Gras (Ctrl+B)" active={etat.bold} onClick={() => cmd("bold")}><Bold size={15} /></ToolBtn>
+        <ToolBtn title="Italique (Ctrl+I)" active={etat.italic} onClick={() => cmd("italic")}><Italic size={15} /></ToolBtn>
+        <ToolBtn title="Souligné (Ctrl+U)" active={etat.underline} onClick={() => cmd("underline")}><Underline size={15} /></ToolBtn>
+
+        <div className="relative">
+          <ToolBtn title="Couleur du texte" onClick={() => setCouleurs((c) => !c)}><Palette size={15} /></ToolBtn>
+          {couleurs && (
+            <div className="absolute z-20 mt-1 p-1.5 rounded-lg border bg-white flex gap-1"
+              style={{ borderColor: "var(--line)", boxShadow: "0 6px 20px rgba(0,0,0,.10)" }}>
+              {LETTER_COLORS.map((c) => (
+                <button key={c} type="button" onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => { cmd("foreColor", c); setCouleurs(false); }}
+                  className="rounded-full" style={{ width: 20, height: 20, background: c, border: "1px solid #fff", outline: "1px solid var(--line)" }} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {sep}
+        <ToolBtn title="Aligner à gauche" active={etat.left} onClick={() => cmd("justifyLeft")}><AlignLeft size={15} /></ToolBtn>
+        <ToolBtn title="Centrer" active={etat.center} onClick={() => cmd("justifyCenter")}><AlignCenter size={15} /></ToolBtn>
+        <ToolBtn title="Aligner à droite" active={etat.right} onClick={() => cmd("justifyRight")}><AlignRight size={15} /></ToolBtn>
+        <ToolBtn title="Justifier" active={etat.justify} onClick={() => cmd("justifyFull")}><AlignJustify size={15} /></ToolBtn>
+
+        {sep}
+        <ToolBtn title="Liste à puces" active={etat.ul} onClick={() => cmd("insertUnorderedList")}><List size={15} /></ToolBtn>
+        <ToolBtn title="Liste numérotée" active={etat.ol} onClick={() => cmd("insertOrderedList")}><ListOrdered size={15} /></ToolBtn>
+        <ToolBtn title="Diminuer le retrait" onClick={() => cmd("outdent")}><IndentDecrease size={15} /></ToolBtn>
+        <ToolBtn title="Augmenter le retrait" onClick={() => cmd("indent")}><IndentIncrease size={15} /></ToolBtn>
+
+        {sep}
+        <ToolBtn wide title="Titre de partie" onClick={() => cmd("formatBlock", "<h3>")}>
+          <span className="text-xs font-bold">Titre</span>
+        </ToolBtn>
+        <ToolBtn wide title="Paragraphe normal" onClick={() => cmd("formatBlock", "<p>")}>
+          <span className="text-xs">Normal</span>
+        </ToolBtn>
+        <ToolBtn title="Effacer la mise en forme" onClick={() => cmd("removeFormat")}><Eraser size={15} /></ToolBtn>
+
+        {sep}
+        <ToolBtn title="Annuler (Ctrl+Z)" onClick={() => cmd("undo")}><Undo2 size={15} /></ToolBtn>
+        <ToolBtn title="Rétablir (Ctrl+Y)" onClick={() => cmd("redo")}><Redo2 size={15} /></ToolBtn>
+      </div>
+
+      {/* Zone de rédaction, aux dimensions d'une page */}
+      <div style={{ background: "#EEF1F5", padding: "14px 0" }}>
+        <div
+          ref={ref}
+          contentEditable
+          suppressContentEditableWarning
+          onInput={() => onChange(ref.current?.innerHTML || "")}
+          onKeyUp={majEtat}
+          onMouseUp={majEtat}
+          onBlur={() => onChange(ref.current?.innerHTML || "")}
+          onPaste={(e) => {
+            /* Collage en texte simple : évite d'importer la mise en forme
+               d'un autre logiciel, souvent illisible à l'impression. */
+            e.preventDefault();
+            const txt = e.clipboardData.getData("text/plain");
+            document.execCommand("insertText", false, txt);
+          }}
+          data-placeholder={placeholder || "Rédigez votre courrier…"}
+          className="kb-letter mx-auto bg-white"
+          style={{
+            width: "min(100%, 640px)", minHeight: 340, padding: "28px 34px",
+            outline: "none", fontFamily: "Calibri, sans-serif", fontSize: 14.5,
+            lineHeight: 1.65, color: "var(--ink)", textAlign: "justify",
+            boxShadow: "0 1px 4px rgba(0,0,0,.08)",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function relanceBody(doc, property) {
   const tone = doc.fields?.tone || "rappel";
   const delay = doc.fields?.delay || 8;
@@ -2286,7 +2525,7 @@ Veuillez agréer, Madame, Monsieur, l'expression de nos salutations distinguées
   if (tone === "relance") {
     return `Madame, Monsieur,
 
-Sauf erreur ou omission de notre part, nous n'avons pas enregistré le règlement des sommes dues au titre de ${bien}, dont le montant s'élève à ce jour à ${somme}.
+Sauf erreur ou omission de notre part, nous n'avons pas enregistré le règlement des sommes dues au titre ${deLe(bien)}, dont le montant s'élève à ce jour à ${somme}.
 
 Un premier rappel vous a déjà été adressé et est resté sans réponse. Nous vous prions donc de bien vouloir procéder au règlement de cette somme sous ${delay} jours.
 
@@ -2296,7 +2535,7 @@ Veuillez agréer, Madame, Monsieur, l'expression de nos salutations distinguées
   }
   return `Madame, Monsieur,
 
-Nous nous permettons d'attirer votre attention sur le fait que le règlement des sommes dues au titre de ${bien} ne nous est pas encore parvenu, pour un montant de ${somme}.
+Nous nous permettons d'attirer votre attention sur le fait que le règlement des sommes dues au titre ${deLe(bien)} ne nous est pas encore parvenu, pour un montant de ${somme}.
 
 Il s'agit très probablement d'un simple oubli. Nous vous saurions gré de bien vouloir procéder à la régularisation de votre situation dans un délai de ${delay} jours.
 
@@ -2311,7 +2550,8 @@ function DocSheet({ doc, property, owner, author, onBack }) {
   if (cfg.layout === "decharge") return <DechargeSheet doc={doc} author={author} onBack={onBack} />;
   const st = DOC_STATUS[doc.status] || DOC_STATUS.brouillon;
   const isLetter = cfg.layout === "lettre";
-  const body = doc.body?.trim() || (doc.docType === "relance" ? relanceBody(doc, property) : "");
+  const brut = doc.body?.trim() || (doc.docType === "relance" ? relanceBody(doc, property) : "");
+  const body = brut && !isHtml(brut) ? textToHtml(brut) : brut;
 
   return (
     <div>
@@ -2353,7 +2593,12 @@ function DocSheet({ doc, property, owner, author, onBack }) {
         )}
 
         {/* Corps de lettre */}
-        {isLetter && body && <p className="text-sm whitespace-pre-wrap leading-relaxed mb-5">{body}</p>}
+        {isLetter && body && (
+          isHtml(body)
+            ? <div className="kb-body text-sm leading-relaxed mb-5" style={{ textAlign: "justify" }}
+                dangerouslySetInnerHTML={{ __html: body }} />
+            : <p className="text-sm whitespace-pre-wrap leading-relaxed mb-5">{body}</p>
+        )}
 
         {/* Tableau */}
         {doc.lines?.length > 0 && (
@@ -5373,7 +5618,7 @@ function TaxModal({ initial, properties, units, owners, onSave, onClose }) {
   const [f, setF] = useState(() => ({
     propertyId: "", unitId: "", customLabel: "", ownerId: "", ownerLabel: "",
     taxYear: new Date().getFullYear(), noticeNumber: "", taxedAmount: "", ncc: "",
-    receipts: "non", declarationNext: "non", declarationDate: "", nextBase: "", notes: "", ...initial,
+    receipts: "non", declarationNext: "non", declarationDate: "", nextBase: "", notes: "", withholdings: [], ...initial,
   }));
   const [inst, setInst] = useState(() =>
     initial?.installments?.length ? initial.installments.map((t) => ({ ...t }))
@@ -5499,6 +5744,52 @@ function TaxModal({ initial, properties, units, owners, onSave, onClose }) {
         </div>
       </div>
 
+      <div className="rounded-xl border p-3 mb-3" style={{ borderColor: "#BBE3A6", background: "#F6FBF3" }}>
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-xs font-semibold" style={{ color: "#3d7d20" }}>Prélèvements sur le propriétaire</p>
+          <button onClick={() => set("withholdings", [...(f.withholdings || []),
+            { date: isoDate(new Date()), amount: "", mode: "Retenue sur loyer", note: "" }])}
+            className="text-xs font-medium" style={{ color: "#3d7d20" }}><Plus size={12} className="inline" /> Prélèvement</button>
+        </div>
+        <p className="text-[11px] mb-2" style={{ color: "var(--muted)" }}>
+          Sommes retenues sur les loyers du propriétaire pour régler son impôt foncier.
+          Elles se comparent aux versements effectués à l'État.
+        </p>
+        {(f.withholdings || []).length === 0 && (
+          <p className="text-[11px] italic" style={{ color: "var(--muted)" }}>Aucun prélèvement enregistré.</p>
+        )}
+        {(f.withholdings || []).map((w, i) => (
+          <div key={i} className="flex gap-2 mb-2 items-center flex-wrap">
+            <input type="date" className="px-2 py-1.5 rounded border text-xs" style={inputStyle} value={w.date || ""}
+              onChange={(e) => set("withholdings", f.withholdings.map((x, j) => (j === i ? { ...x, date: e.target.value } : x)))} />
+            <input type="number" min={0} step={5000} className="w-32 px-2 py-1.5 rounded border text-xs text-right" style={inputStyle}
+              value={w.amount} placeholder="Montant"
+              onChange={(e) => set("withholdings", f.withholdings.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x)))} />
+            <select className="px-2 py-1.5 rounded border text-xs" style={inputStyle} value={w.mode || "Retenue sur loyer"}
+              onChange={(e) => set("withholdings", f.withholdings.map((x, j) => (j === i ? { ...x, mode: e.target.value } : x)))}>
+              {["Retenue sur loyer", "Versement direct", "Espèces", "Chèque", "Virement"].map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+            <input className="flex-1 min-w-[120px] px-2 py-1.5 rounded border text-xs" style={inputStyle} value={w.note || ""}
+              placeholder="Précision (ex. sur loyer de mars)"
+              onChange={(e) => set("withholdings", f.withholdings.map((x, j) => (j === i ? { ...x, note: e.target.value } : x)))} />
+            <button onClick={() => set("withholdings", f.withholdings.filter((_, j) => j !== i))}
+              className="p-1 text-slate-300 hover:text-red-500"><X size={14} /></button>
+          </div>
+        ))}
+        {(f.withholdings || []).length > 0 && (() => {
+          const pre = (f.withholdings || []).reduce((a, w) => a + (Number(w.amount) || 0), 0);
+          const ecart = pre - totals.paid;
+          return (
+            <div className="flex justify-between items-center pt-2 mt-1 border-t text-xs" style={{ borderColor: "#BBE3A6" }}>
+              <span>Total prélevé : <strong>{fcfa(pre)}</strong> · versé à l'État : <strong>{fcfa(totals.paid)}</strong></span>
+              <span className="font-bold" style={{ color: ecart > 0 ? "#C58A1B" : ecart < 0 ? "#D81F26" : "#3d7d20" }}>
+                {ecart > 0 ? `Reste en caisse : ${fcfa(ecart)}` : ecart < 0 ? `Avancé par l'agence : ${fcfa(-ecart)}` : "Équilibré"}
+              </span>
+            </div>
+          );
+        })()}
+      </div>
+
       <div className="rounded-xl border p-3 mb-3" style={{ borderColor: "var(--line)", background: "#FAFBFC" }}>
         <p className="text-xs font-semibold mb-1">Déclaration foncière de fin d'année</p>
         <p className="text-[11px] mb-2" style={{ color: "var(--muted)" }}>
@@ -5562,7 +5853,8 @@ function TaxSheet({ records, year, title, propById, unitById, ownerById, onBack 
               {TRANCHE_LABELS.map((l, i) => (
                 <th key={l} className="text-center px-1.5 py-1 font-semibold border-l" style={{ borderColor: "#fff" }} colSpan={2}>{`Tranche ${i + 1}`}</th>
               ))}
-              <th className="text-right px-1.5 py-1.5 font-semibold border-l" style={{ borderColor: "#fff" }} rowSpan={2}>Total versé</th>
+              <th className="text-right px-1.5 py-1.5 font-semibold border-l" style={{ borderColor: "#fff" }} rowSpan={2}>Prélevé au propriétaire</th>
+              <th className="text-right px-1.5 py-1.5 font-semibold" rowSpan={2}>Total versé</th>
               <th className="text-right px-1.5 py-1.5 font-semibold" rowSpan={2}>Reste à payer</th>
               <th className="text-center px-1.5 py-1.5 font-semibold" rowSpan={2}>Quittances</th>
             </tr>
@@ -5592,7 +5884,8 @@ function TaxSheet({ records, year, title, propById, unitById, ownerById, onBack 
                     </td>,
                   ];
                 })}
-                <td className="px-1.5 py-1.5 text-right tabular-nums font-medium border-l" style={{ borderColor: "var(--line)" }}>{fcfa(t.paid)}</td>
+                <td className="px-1.5 py-1.5 text-right tabular-nums border-l" style={{ borderColor: "var(--line)", color: "#2E78A8" }}>{fcfa(taxWithheld(r))}</td>
+                <td className="px-1.5 py-1.5 text-right tabular-nums font-medium">{fcfa(t.paid)}</td>
                 <td className="px-1.5 py-1.5 text-right tabular-nums font-bold" style={{ color: t.settled ? "#4F9E2A" : "#D81F26" }}>{fcfa(t.remaining)}</td>
                 <td className="px-1.5 py-1.5 text-center" style={{ color: RECEIPTS[r.receipts].color, fontWeight: 600 }}>{RECEIPTS[r.receipts].label}</td>
               </tr>
@@ -5602,6 +5895,7 @@ function TaxSheet({ records, year, title, propById, unitById, ownerById, onBack 
             <td colSpan={multiYear ? 3 : 2} className="px-1.5 py-2 font-bold">TOTAUX</td>
             <td className="px-1.5 py-2 text-right font-bold tabular-nums">{fcfa(grand.taxed)}</td>
             <td colSpan={8} />
+            <td className="px-1.5 py-2 text-right font-bold tabular-nums" style={{ color: "#2E78A8" }}>{fcfa(records.reduce((a, r) => a + taxWithheld(r), 0))}</td>
             <td className="px-1.5 py-2 text-right font-bold tabular-nums">{fcfa(grand.paid)}</td>
             <td className="px-1.5 py-2 text-right font-bold tabular-nums" style={{ color: grand.remaining > 0 ? "#D81F26" : "#4F9E2A" }}>{fcfa(grand.remaining)}</td>
             <td />
@@ -5611,6 +5905,45 @@ function TaxSheet({ records, year, title, propById, unitById, ownerById, onBack 
         {grand.remaining > 0
           ? <p className="text-[11px] italic mt-3">Reste à payer : <strong>{amountInWords(grand.remaining)}</strong>.</p>
           : <p className="text-[11px] italic mt-3" style={{ color: "#3d7d20" }}>Impôt intégralement réglé pour la période présentée.</p>}
+
+        {records.some((r) => taxWithheld(r) > 0) && (
+          <div className="mt-4">
+            <p className="text-xs font-bold mb-1.5" style={{ color: "#2E78A8" }}>PRÉLÈVEMENTS EFFECTUÉS SUR LE PROPRIÉTAIRE</p>
+            <table className="w-full text-[10px]">
+              <thead><tr style={{ background: "#E8F2F8" }}>
+                <th className="text-left px-1.5 py-1 font-semibold">Bien</th>
+                <th className="text-left px-1.5 py-1 font-semibold">Date</th>
+                <th className="text-left px-1.5 py-1 font-semibold">Mode</th>
+                <th className="text-left px-1.5 py-1 font-semibold">Précision</th>
+                <th className="text-right px-1.5 py-1 font-semibold">Montant prélevé</th>
+              </tr></thead>
+              <tbody>{records.flatMap((r) => (r.withholdings || []).map((w, i) => (
+                <tr key={r.id + "-" + i} className="border-b" style={{ borderColor: "var(--line)" }}>
+                  <td className="px-1.5 py-1">{taxLabel(r, propById, unitById)}</td>
+                  <td className="px-1.5 py-1">{w.date ? fr(w.date + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—"}</td>
+                  <td className="px-1.5 py-1">{w.mode || "—"}</td>
+                  <td className="px-1.5 py-1">{w.note || ""}</td>
+                  <td className="px-1.5 py-1 text-right tabular-nums font-medium">{fcfa(w.amount)}</td>
+                </tr>
+              )))}</tbody>
+              <tfoot><tr style={{ background: "#E8F2F8" }}>
+                <td colSpan={4} className="px-1.5 py-1.5 font-bold">TOTAL PRÉLEVÉ</td>
+                <td className="px-1.5 py-1.5 text-right font-bold tabular-nums">{fcfa(records.reduce((a, r) => a + taxWithheld(r), 0))}</td>
+              </tr></tfoot>
+            </table>
+            {(() => {
+              const pre = records.reduce((a, r) => a + taxWithheld(r), 0);
+              const ec = pre - grand.paid;
+              return (
+                <p className="text-[10px] mt-1.5 italic" style={{ color: "var(--muted)" }}>
+                  {ec > 0 ? `Reste ${fcfa(ec)} en caisse, non encore versés à l'administration fiscale.`
+                    : ec < 0 ? `L'agence a avancé ${fcfa(-ec)} au-delà des sommes prélevées.`
+                    : "Les sommes prélevées correspondent exactement aux versements effectués."}
+                </p>
+              );
+            })()}
+          </div>
+        )}
 
         {/* Déclarations de fin d'année */}
         {records.some((r) => r.declarationNext === "oui" || r.nextBase) && (
@@ -5717,7 +6050,14 @@ function ImpotFoncier({ store, me }) {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <StatCard icon={Landmark} label="Total imposé" value={fcfa(totals.taxed)} sub={`${list.length} avis · ${new Set(list.map((r) => r.taxYear)).size} année(s)`} tint="#2E78A8" />
-        <StatCard icon={Wallet} label="Total versé" value={fcfa(totals.paid)} sub={totals.taxed ? `${((totals.paid / totals.taxed) * 100).toFixed(0)} % réglé` : undefined} tint="#4F9E2A" />
+        <StatCard icon={Wallet} label="Total versé à l'État" value={fcfa(totals.paid)} sub={totals.taxed ? `${((totals.paid / totals.taxed) * 100).toFixed(0)} % réglé` : undefined} tint="#4F9E2A" />
+        <StatCard icon={ArrowDownToLine} label="Prélevé aux propriétaires"
+          value={fcfa(list.reduce((a, r) => a + taxWithheld(r), 0))}
+          sub={(() => {
+            const pre = list.reduce((a, r) => a + taxWithheld(r), 0);
+            const ec = pre - totals.paid;
+            return ec > 0 ? `${fcfa(ec)} encore en caisse` : ec < 0 ? `${fcfa(-ec)} avancés par l'agence` : "équilibré";
+          })()} tint="#2E78A8" />
         <StatCard icon={AlertTriangle} label="Reste à payer" value={fcfa(totals.remaining)} tint="#D81F26" />
         <StatCard icon={Clock} label="Échéances dépassées" value={lateCount} sub="biens concernés" tint="#EA580C" />
       </div>
@@ -5780,6 +6120,7 @@ function ImpotFoncier({ store, me }) {
                     <Chip color="#2E78A8">{r.taxYear}</Chip>
                     {r.noticeNumber && <Chip color="#64748B">{r.noticeNumber}</Chip>}
                     {r.ncc && <Chip color="#7C3AED">NCC {r.ncc}</Chip>}
+                    {taxWithheld(r) > 0 && <Chip color="#2E78A8">prélevé {fcfa(taxWithheld(r))}</Chip>}
                     <Chip color={RECEIPTS[r.receipts].color} dot>Quittances : {RECEIPTS[r.receipts].label}</Chip>
                     {late > 0 && <Chip color="#D81F26" bg="#FDEAEA">{late} échéance(s) dépassée(s)</Chip>}
                   </div>
@@ -6223,6 +6564,378 @@ function ReceiptSheet({ doc, unit, property, owner, author, validator, onBack })
 }
 
 
+/* ══════════════════════════════════════════════════════════════════════
+   SOLDE DE TOUT COMPTE — locataire sortant
+   Reprend le modèle interne de l'agence : caution, sommes restant dues,
+   consommations, réparations imputables, puis solde final.
+   ══════════════════════════════════════════════════════════════════════ */
+
+const REPAIR_CHARGE = { locataire: "Locataire", proprietaire: "Propriétaire" };
+
+/* Totaux du solde de tout compte */
+function soldeTotals(f) {
+  const num = (v) => Number(v) || 0;
+  const factures = (f.meters || []).reduce((a, m) => a + num(m.amount), 0);
+  const reparations = (f.repairs || [])
+    .filter((r) => r.charge === "locataire" && r.withheld)
+    .reduce((a, r) => a + num(r.amount), 0);
+  const retenues = num(f.rentDue) + num(f.chargesDue) + factures + reparations + num(f.otherWithheld);
+  const caution = num(f.deposit);
+  const solde = caution - retenues;
+  return { factures, reparations, retenues, caution, solde,
+    aRestituer: solde >= 0 ? solde : 0, resteDu: solde < 0 ? -solde : 0 };
+}
+
+function SoldeModal({ initial, former, unit, property, owner, arrears, onSave, onClose }) {
+  const [f, setF] = useState(() => ({
+    docType: "solde_tout_compte", date: isoDate(new Date()),
+    clientName: former?.name || unit?.tenantName || "",
+    clientPhone: former?.phone || unit?.tenantPhone || "",
+    clientEmail: former?.email || unit?.tenantEmail || "",
+    propertyId: property?.id || former?.propertyId || "",
+    unitId: unit?.id || former?.unitId || "",
+    ownerId: property?.ownerId || "",
+    formerTenantId: former?.id || null,
+    direction: "neutre", status: "brouillon",
+    fields: {
+      leaseStart: former?.leaseStart || unit?.leaseStart || "",
+      leaseEnd: former?.leaseEnd || unit?.leaseEnd || "",
+      departure: former?.departureDate || isoDate(new Date()),
+      rent: former?.rent || unit?.rent || 0,
+      deposit: former?.deposit ?? unit?.deposit ?? 0,
+      lastPaidPeriod: "", lastPaidDate: "",
+      rentDue: former?.balanceDue ?? arrears?.total ?? 0,
+      chargesDue: 0, otherWithheld: 0,
+      meters: [
+        { label: "Électricité (CIE)", oldIndex: "", newIndex: "", amount: 0 },
+        { label: "Eau (SODECI)", oldIndex: "", newIndex: "", amount: 0 },
+      ],
+      repairs: [],
+      observations: "",
+      place: "Abidjan",
+    },
+    ...initial,
+  }));
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const setField = (k, v) => setF((p) => ({ ...p, fields: { ...p.fields, [k]: v } }));
+  const t = soldeTotals(f.fields);
+
+  const setMeter = (i, k, v) => setField("meters", f.fields.meters.map((m, j) => (j === i ? { ...m, [k]: v } : m)));
+  const addMeter = () => setField("meters", [...(f.fields.meters || []), { label: "", oldIndex: "", newIndex: "", amount: 0 }]);
+  const delMeter = (i) => setField("meters", f.fields.meters.filter((_, j) => j !== i));
+
+  const setRepair = (i, k, v) => setField("repairs", f.fields.repairs.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
+  const addRepair = () => setField("repairs", [...(f.fields.repairs || []),
+    { label: "", amount: 0, charge: "locataire", withheld: true, note: "" }]);
+  const delRepair = (i) => setField("repairs", f.fields.repairs.filter((_, j) => j !== i));
+
+  const submit = async () => {
+    setErr(""); setBusy(true);
+    const r = await onSave({ ...f, total: t.aRestituer || t.resteDu,
+      object: `Solde de tout compte — ${f.clientName}` });
+    setBusy(false);
+    if (r?.error) { setErr(r.error); return; }
+    onClose(r);
+  };
+
+  return (
+    <Modal title={`Solde de tout compte — ${f.clientName || "locataire sortant"}`} onClose={onClose} wide>
+      {/* Rappel de ce que l'outil connaît déjà */}
+      <div className="rounded-lg p-3 mb-3 text-xs" style={{ background: "#EFF6FF", color: "#1F5C82" }}>
+        {property?.name || "—"}{unit ? ` · ${unit.label}` : former?.unitLabel ? ` · ${former.unitLabel}` : ""}
+        {owner ? ` · propriétaire : ${owner.name}` : ""}
+        {arrears?.hasArrears ? ` · arriérés relevés : ${fcfa(arrears.total)}` : " · aucun arriéré relevé"}
+      </div>
+
+      <p className="text-xs font-semibold mb-2" style={{ color: "var(--brass)" }}>SITUATION DU BAIL</p>
+      <div className="grid sm:grid-cols-3 gap-3">
+        <Field label="Date d'entrée"><input type="date" className={inputCls} style={inputStyle} value={f.fields.leaseStart || ""} onChange={(e) => setField("leaseStart", e.target.value)} /></Field>
+        <Field label="Fin de bail (contrat)"><input type="date" className={inputCls} style={inputStyle} value={f.fields.leaseEnd || ""} onChange={(e) => setField("leaseEnd", e.target.value)} /></Field>
+        <Field label="Départ effectif"><input type="date" className={inputCls} style={inputStyle} value={f.fields.departure || ""} onChange={(e) => setField("departure", e.target.value)} /></Field>
+      </div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Loyer mensuel (FCFA)"><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.fields.rent} onChange={(e) => setField("rent", e.target.value)} /></Field>
+        <Field label="Caution versée (FCFA)"><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.fields.deposit} onChange={(e) => setField("deposit", e.target.value)} /></Field>
+      </div>
+
+      <p className="text-xs font-semibold mb-2 mt-2" style={{ color: "var(--brass)" }}>SITUATION À LA SORTIE</p>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Dernier loyer payé (période)"><input className={inputCls} style={inputStyle} value={f.fields.lastPaidPeriod} onChange={(e) => setField("lastPaidPeriod", e.target.value)} placeholder="Ex. Juillet 2026" /></Field>
+        <Field label="Date du dernier paiement"><input type="date" className={inputCls} style={inputStyle} value={f.fields.lastPaidDate || ""} onChange={(e) => setField("lastPaidDate", e.target.value)} /></Field>
+      </div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Loyers restant dus (FCFA)" hint={arrears?.hasArrears ? `Arriérés relevés : ${fcfa(arrears.total)}` : undefined}>
+          <input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.fields.rentDue} onChange={(e) => setField("rentDue", e.target.value)} />
+        </Field>
+        <Field label="Charges restant dues (FCFA)"><input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.fields.chargesDue} onChange={(e) => setField("chargesDue", e.target.value)} /></Field>
+      </div>
+
+      <div className="flex items-center justify-between mb-2 mt-2">
+        <p className="text-xs font-semibold" style={{ color: "var(--brass)" }}>FACTURES DE CONSOMMATION</p>
+        <button onClick={addMeter} className="text-xs font-medium" style={{ color: "var(--brass)" }}><Plus size={12} className="inline" /> Compteur</button>
+      </div>
+      {(f.fields.meters || []).map((m, i) => (
+        <div key={i} className="flex gap-2 mb-2 items-center">
+          <input className="flex-1 px-2 py-1.5 rounded border text-xs" style={inputStyle} value={m.label} onChange={(e) => setMeter(i, "label", e.target.value)} placeholder="Compteur" />
+          <input className="w-20 px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={m.oldIndex} onChange={(e) => setMeter(i, "oldIndex", e.target.value)} placeholder="Ancien" />
+          <input className="w-20 px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={m.newIndex} onChange={(e) => setMeter(i, "newIndex", e.target.value)} placeholder="Nouvel" />
+          <input type="number" min={0} step={500} className="w-28 px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={m.amount} onChange={(e) => setMeter(i, "amount", e.target.value)} placeholder="Montant" />
+          <button onClick={() => delMeter(i)} className="p-1 text-slate-300 hover:text-red-500"><X size={14} /></button>
+        </div>
+      ))}
+
+      <div className="flex items-center justify-between mb-2 mt-2">
+        <p className="text-xs font-semibold" style={{ color: "var(--brass)" }}>ÉTAT DES LIEUX ET RÉPARATIONS</p>
+        <button onClick={addRepair} className="text-xs font-medium" style={{ color: "var(--brass)" }}><Plus size={12} className="inline" /> Réparation</button>
+      </div>
+      {(f.fields.repairs || []).length === 0 && (
+        <p className="text-xs mb-2" style={{ color: "var(--muted)" }}>
+          Aucune réparation. Ajoutez-en pour distinguer l'usure normale, à la charge du propriétaire,
+          des dégradations imputables au locataire.
+        </p>
+      )}
+      {(f.fields.repairs || []).map((r, i) => (
+        <div key={i} className="rounded-lg border p-2 mb-2" style={{ borderColor: "var(--line)" }}>
+          <div className="flex gap-2 items-center mb-2">
+            <input className="flex-1 px-2 py-1.5 rounded border text-xs" style={inputStyle} value={r.label} onChange={(e) => setRepair(i, "label", e.target.value)} placeholder="Désignation (ex. Peinture salon)" />
+            <input type="number" min={0} step={1000} className="w-28 px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={r.amount} onChange={(e) => setRepair(i, "amount", e.target.value)} placeholder="Montant" />
+            <button onClick={() => delRepair(i)} className="p-1 text-slate-300 hover:text-red-500"><X size={14} /></button>
+          </div>
+          <div className="flex gap-2 items-center flex-wrap">
+            <select className="px-2 py-1.5 rounded border text-xs" style={inputStyle} value={r.charge} onChange={(e) => setRepair(i, "charge", e.target.value)}>
+              {Object.entries(REPAIR_CHARGE).map(([k, v]) => <option key={k} value={k}>À la charge : {v}</option>)}
+            </select>
+            <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+              <input type="checkbox" checked={!!r.withheld} disabled={r.charge !== "locataire"}
+                onChange={(e) => setRepair(i, "withheld", e.target.checked)} />
+              Retenu sur la caution
+            </label>
+            <input className="flex-1 min-w-[150px] px-2 py-1.5 rounded border text-xs" style={inputStyle} value={r.note} onChange={(e) => setRepair(i, "note", e.target.value)} placeholder="Justification (ex. dégradation imputable, usure normale)" />
+          </div>
+        </div>
+      ))}
+
+      <Field label="Autres retenues justifiées (FCFA)">
+        <input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.fields.otherWithheld} onChange={(e) => setField("otherWithheld", e.target.value)} />
+      </Field>
+
+      {/* Récapitulatif calculé */}
+      <div className="rounded-xl p-3 mb-3" style={{ background: "#F6F8FA" }}>
+        <p className="text-xs font-semibold mb-2">RÉCAPITULATIF</p>
+        {[["Caution versée", t.caution, "+"],
+          ["Loyers dus", Number(f.fields.rentDue) || 0, "-"],
+          ["Charges dues", Number(f.fields.chargesDue) || 0, "-"],
+          ["Factures eau / électricité", t.factures, "-"],
+          ["Réparations imputables au locataire", t.reparations, "-"],
+          ["Autres retenues", Number(f.fields.otherWithheld) || 0, "-"]].map(([k, v, sg]) => (
+          <div key={k} className="flex justify-between text-sm py-0.5">
+            <span style={{ color: "var(--muted)" }}>{k}</span>
+            <span className="tabular-nums font-medium" style={{ color: sg === "-" ? "#B5171D" : "var(--ink)" }}>{sg} {fcfa(v)}</span>
+          </div>
+        ))}
+        <div className="flex justify-between items-center pt-2 mt-2 border-t" style={{ borderColor: "var(--line)" }}>
+          <span className="text-sm font-bold">{t.solde >= 0 ? "SOLDE À RESTITUER AU LOCATAIRE" : "RESTE DÛ PAR LE LOCATAIRE"}</span>
+          <span className="text-lg font-bold tabular-nums" style={{ color: t.solde >= 0 ? "#4F9E2A" : "#D81F26" }}>
+            {fcfa(Math.abs(t.solde))}
+          </span>
+        </div>
+      </div>
+
+      <Field label="Observations">
+        <textarea className={inputCls} style={inputStyle} rows={2} value={f.fields.observations} onChange={(e) => setField("observations", e.target.value)}
+          placeholder="Ex. Document établi contradictoirement lors de l'état des lieux de sortie du 31/08/2026." />
+      </Field>
+
+      {err && <p className="text-xs text-red-600 mb-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} className="kb-btn kb-btn-ghost">Annuler</button>
+        <button disabled={!f.clientName.trim() || busy} onClick={submit} className="kb-btn kb-btn-primary disabled:opacity-40">
+          <Check size={16} /> {busy ? "Enregistrement…" : "Enregistrer"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ---------------- Solde de tout compte imprimable ---------------- */
+function SoldeSheet({ doc, property, owner, author, onBack }) {
+  const f = doc.fields || {};
+  const t = soldeTotals(f);
+  const d = (v) => (v ? fr(v + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—");
+  const Ligne = ({ k, v }) => (
+    <div className="flex gap-2 py-1 border-b" style={{ borderColor: "var(--line)" }}>
+      <span className="text-[11px] shrink-0" style={{ color: "var(--muted)", width: 165 }}>{k}</span>
+      <span className="text-xs font-medium">{v || "—"}</span>
+    </div>
+  );
+  const Titre = ({ n, children }) => (
+    <p className="text-[11px] font-bold mt-4 mb-1.5" style={{ color: "var(--brass)" }}>{n}. {children}</p>
+  );
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
+        <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
+        <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+      </div>
+
+      <div id="print-area" className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
+        <PrintHead title="SOLDE DE TOUT COMPTE" subtitle={doc.ref} extra={
+          <p className="text-[11px]" style={{ color: "var(--muted)" }}>
+            Établi le {fr(doc.date + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" })}
+          </p>
+        } />
+
+        <div className="grid sm:grid-cols-2 gap-x-6">
+          <div>
+            <Titre n={1}>IDENTIFICATION DES PARTIES</Titre>
+            <Ligne k="Propriétaire" v={owner?.name} />
+            <Ligne k="Gestionnaire" v="Entreprise Kibegnon SARL" />
+            <Ligne k="Locataire" v={doc.clientName} />
+            <Ligne k="Téléphone" v={doc.clientPhone} />
+            <Ligne k="E-mail" v={doc.clientEmail} />
+          </div>
+          <div>
+            <Titre n={2}>IDENTIFICATION DU LOGEMENT</Titre>
+            <Ligne k="Résidence" v={property?.name} />
+            <Ligne k="Lot / référence" v={f.unitLabel || doc.unitLabel} />
+            <Ligne k="Adresse" v={[property?.quartier, property?.commune].filter(Boolean).join(", ")} />
+            <Titre n={3}>SITUATION DU BAIL</Titre>
+            <Ligne k="Date d'entrée" v={d(f.leaseStart)} />
+            <Ligne k="Fin de bail (contrat)" v={d(f.leaseEnd)} />
+            <Ligne k="Départ effectif" v={d(f.departure)} />
+          </div>
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-x-6 mt-1">
+          <div>
+            <Ligne k="Loyer mensuel" v={fcfa(f.rent)} />
+            <Ligne k="Caution versée" v={fcfa(f.deposit)} />
+          </div>
+          <div>
+            <Titre n={4}>SITUATION FINANCIÈRE À LA SORTIE</Titre>
+            <Ligne k="Dernier loyer payé" v={f.lastPaidPeriod} />
+            <Ligne k="Date du dernier paiement" v={d(f.lastPaidDate)} />
+            <Ligne k="Loyers restant dus" v={fcfa(f.rentDue)} />
+            <Ligne k="Charges restant dues" v={fcfa(f.chargesDue)} />
+          </div>
+        </div>
+
+        {(f.meters || []).some((m) => m.label) && (<>
+          <Titre n={5}>FACTURES DE CONSOMMATION</Titre>
+          <table className="w-full text-[11px]">
+            <thead><tr style={{ background: "#F1F3F5" }}>
+              <th className="text-left px-2 py-1.5 font-semibold">Compteur</th>
+              <th className="text-right px-2 py-1.5 font-semibold">Ancien index</th>
+              <th className="text-right px-2 py-1.5 font-semibold">Nouvel index</th>
+              <th className="text-right px-2 py-1.5 font-semibold">Montant dû</th>
+            </tr></thead>
+            <tbody>{(f.meters || []).filter((m) => m.label).map((m, i) => (
+              <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
+                <td className="px-2 py-1.5">{m.label}</td>
+                <td className="px-2 py-1.5 text-right">{m.oldIndex || "—"}</td>
+                <td className="px-2 py-1.5 text-right">{m.newIndex || "—"}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(m.amount)}</td>
+              </tr>
+            ))}</tbody>
+            <tfoot><tr style={{ background: "#F1F3F5" }}>
+              <td colSpan={3} className="px-2 py-1.5 font-bold">Total factures</td>
+              <td className="px-2 py-1.5 text-right font-bold tabular-nums">{fcfa(t.factures)}</td>
+            </tr></tfoot>
+          </table>
+        </>)}
+
+        {(f.repairs || []).length > 0 && (<>
+          <Titre n={6}>ÉTAT DES LIEUX ET RÉPARATIONS</Titre>
+          <table className="w-full text-[11px]">
+            <thead><tr style={{ background: "#F1F3F5" }}>
+              <th className="text-left px-2 py-1.5 font-semibold">Désignation</th>
+              <th className="text-right px-2 py-1.5 font-semibold">Montant</th>
+              <th className="text-left px-2 py-1.5 font-semibold">À la charge de</th>
+              <th className="text-center px-2 py-1.5 font-semibold">Retenu</th>
+              <th className="text-left px-2 py-1.5 font-semibold">Justification</th>
+            </tr></thead>
+            <tbody>{(f.repairs || []).map((r, i) => (
+              <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
+                <td className="px-2 py-1.5">{r.label}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(r.amount)}</td>
+                <td className="px-2 py-1.5">{REPAIR_CHARGE[r.charge]}</td>
+                <td className="px-2 py-1.5 text-center">{r.charge === "locataire" && r.withheld ? "Oui" : "Non"}</td>
+                <td className="px-2 py-1.5">{r.note}</td>
+              </tr>
+            ))}</tbody>
+            <tfoot><tr style={{ background: "#F1F3F5" }}>
+              <td colSpan={4} className="px-2 py-1.5 font-bold">Total imputable au locataire</td>
+              <td className="px-2 py-1.5 text-right font-bold tabular-nums">{fcfa(t.reparations)}</td>
+            </tr></tfoot>
+          </table>
+        </>)}
+
+        <Titre n={7}>RÉCAPITULATIF FINANCIER</Titre>
+        <table className="w-full text-xs">
+          <tbody>
+            <tr className="border-b" style={{ borderColor: "var(--line)" }}>
+              <td className="px-2 py-1.5">Caution versée</td>
+              <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fcfa(t.caution)}</td>
+            </tr>
+            {[["Loyers dus", f.rentDue], ["Charges dues", f.chargesDue],
+              ["Factures eau / électricité", t.factures],
+              ["Réparations imputables au locataire", t.reparations],
+              ["Autres retenues justifiées", f.otherWithheld]].map(([k, v]) => (
+              <tr key={k} className="border-b" style={{ borderColor: "var(--line)" }}>
+                <td className="px-2 py-1.5">{k}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">− {fcfa(v)}</td>
+              </tr>
+            ))}
+            <tr style={{ background: "#F1F3F5" }}>
+              <td className="px-2 py-2 font-bold">TOTAL DES RETENUES</td>
+              <td className="px-2 py-2 text-right font-bold tabular-nums">{fcfa(t.retenues)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <Titre n={8}>SOLDE FINAL</Titre>
+        <div className="rounded-lg p-3 text-center"
+          style={{ background: t.solde >= 0 ? "#EAF6E3" : "#FDEAEA", border: `1px solid ${t.solde >= 0 ? "#BBE3A6" : "#F5C6C7"}` }}>
+          <p className="text-sm font-bold" style={{ color: t.solde >= 0 ? "#3d7d20" : "#B5171D" }}>
+            {t.solde >= 0
+              ? `Solde à restituer au locataire : ${fcfa(t.aRestituer)}`
+              : `Le locataire reste redevable de : ${fcfa(t.resteDu)}`}
+          </p>
+          <p className="text-[11px] italic mt-1" style={{ color: "var(--muted)" }}>
+            {amountInWords(Math.abs(t.solde))}
+            {t.solde < 0 ? " — les sommes dues excèdent la caution." : ""}
+          </p>
+        </div>
+
+        {f.observations && (<>
+          <Titre n={9}>OBSERVATIONS</Titre>
+          <p className="text-xs whitespace-pre-wrap">{f.observations}</p>
+        </>)}
+
+        <p className="text-xs mt-5">
+          Fait à {f.place || "Abidjan"}, le {fr(doc.date + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" })}.
+        </p>
+
+        <div className="kb-sign flex justify-between items-end pt-8 mt-2">
+          <div className="text-center" style={{ minWidth: 210 }}>
+            <p className="text-[11px] font-semibold">Le Gestionnaire / L'Agence</p>
+            <p className="text-[10px] mb-16" style={{ color: "var(--muted)" }}>{author?.name || "Entreprise Kibegnon"}</p>
+            <div className="border-t" style={{ borderColor: "var(--ink)" }} />
+          </div>
+          <div className="text-center" style={{ minWidth: 210 }}>
+            <p className="text-[11px] font-semibold">Le Locataire</p>
+            <p className="text-[10px] mb-16" style={{ color: "var(--muted)" }}>{doc.clientName}</p>
+            <div className="border-t" style={{ borderColor: "var(--ink)" }} />
+          </div>
+        </div>
+        <PrintFoot note="Document établi contradictoirement entre les parties, valant solde de tout compte." />
+      </div>
+    </div>
+  );
+}
+
 /* Rendu d'un document : la mise en forme dépend de son type, jamais de
    l'endroit d'où on l'ouvre (Documents, Locataires, dossier, portefeuille). */
 function DocumentSheet({ doc, unit, property, owner, author, validator, onBack }) {
@@ -6232,6 +6945,9 @@ function DocumentSheet({ doc, unit, property, owner, author, validator, onBack }
   }
   if (cfg.layout === "decharge") {
     return <DechargeSheet doc={doc} author={author} onBack={onBack} />;
+  }
+  if (cfg.layout === "solde") {
+    return <SoldeSheet doc={doc} property={property} owner={owner} author={author} onBack={onBack} />;
   }
   return <DocSheet doc={doc} property={property} owner={owner} author={author} onBack={onBack} />;
 }
@@ -6245,6 +6961,7 @@ function Locataires({ store, me, userId }) {
   const [onlyArrears, setOnlyArrears] = useState(false);
   const [tenantModal, setTenantModal] = useState(null);
   const [archiveModal, setArchiveModal] = useState(null);
+  const [soldeModal, setSoldeModal] = useState(null);
   const [tab, setTab] = useState("actifs");
   const [receiptModal, setReceiptModal] = useState(null);
   const [sheetId, setSheetId] = useState(null);
@@ -6460,7 +7177,7 @@ function Locataires({ store, me, userId }) {
                 <th className="px-3 py-2.5 font-medium">Période</th>
                 <th className="px-3 py-2.5 font-medium">Motif du départ</th>
                 <th className="px-3 py-2.5 font-medium text-right">Reste dû</th>
-                <th />
+                <th className="px-3 py-2.5 font-medium text-right">Solde de tout compte</th>
               </tr></thead>
               <tbody>{formerTenants.filter((ft) => !search
                 || ft.name.toLowerCase().includes(search.toLowerCase())
@@ -6483,10 +7200,19 @@ function Locataires({ store, me, userId }) {
                     {ft.balanceDue > 0 ? fcfa(ft.balanceDue) : "soldé"}
                   </td>
                   <td className="px-3 py-2.5">
-                    {canSupervise(me.role) && (
-                      <button onClick={async () => { if (confirm(`Supprimer définitivement la fiche de ${ft.name} ?`)) await actions.deleteFormerTenant(ft.id); }}
-                        className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>
-                    )}
+                    <div className="flex gap-1 justify-end">
+                      {(() => {
+                        const st = documents.find((d) => d.docType === "solde_tout_compte" && d.formerTenantId === ft.id);
+                        return st
+                          ? <button onClick={() => setSheetId(st.id)} className="p-1.5 rounded-lg hover:bg-slate-100" style={{ color: "#7C3AED" }} title={`Solde de tout compte ${st.ref}`}><Scale size={14} /></button>
+                          : <button onClick={() => setSoldeModal({ former: ft, property: propById[ft.propertyId], unit: unitById[ft.unitId] })}
+                              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Établir le solde de tout compte"><Scale size={14} /></button>;
+                      })()}
+                      {canSupervise(me.role) && (
+                        <button onClick={async () => { if (confirm(`Supprimer définitivement la fiche de ${ft.name} ?`)) await actions.deleteFormerTenant(ft.id); }}
+                          className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}</tbody>
@@ -6536,6 +7262,12 @@ function Locataires({ store, me, userId }) {
 
       {archiveModal && <ArchiveTenantModal unit={archiveModal.unit} property={archiveModal.property}
         arrears={situation(archiveModal.unit)} onArchive={actions.archiveTenant} onClose={() => setArchiveModal(null)} />}
+
+      {soldeModal && <SoldeModal former={soldeModal.former} unit={soldeModal.unit} property={soldeModal.property}
+        owner={ownerById[soldeModal.property?.ownerId]}
+        arrears={soldeModal.unit ? situation(soldeModal.unit) : null}
+        onSave={actions.saveDocument}
+        onClose={(r) => { setSoldeModal(null); if (r?.id) setSheetId(r.id); }} />}
 
       {receiptModal && <ReceiptModal initial={receiptModal.doc} unit={receiptModal.unit} property={receiptModal.property}
         owner={ownerById[receiptModal.property?.ownerId]} isAdminUser={isAdmin(me.role)}
@@ -8110,6 +8842,15 @@ button{cursor:pointer}
     display:flex;flex-direction:column;min-height:100vh}
   /* Le pied est repoussé en bas de page et n'est jamais coupé */
   .kb-foot{margin-top:auto;break-inside:avoid;page-break-inside:avoid}
+  .kb-letter:empty:before{content:attr(data-placeholder);color:#9AA6B5}
+  .kb-letter h3{font-size:1.05em;font-weight:700;margin:.9em 0 .35em}
+  .kb-letter p{margin:0 0 .7em}
+  .kb-letter ul,.kb-letter ol{margin:.4em 0 .8em 1.4em}
+  .kb-letter li{margin-bottom:.25em}
+  .kb-body h3{font-size:1.05em;font-weight:700;margin:.9em 0 .35em}
+  .kb-body p{margin:0 0 .7em}
+  .kb-body ul,.kb-body ol{margin:.4em 0 .8em 1.4em}
+  .kb-body li{margin-bottom:.25em}
   .kb-sign{break-inside:avoid;page-break-inside:avoid}
   table{page-break-inside:auto}tr{page-break-inside:avoid}
   /* L'en-tête se répète en haut de chaque page, mais les totaux ne doivent
