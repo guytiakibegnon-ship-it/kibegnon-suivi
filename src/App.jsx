@@ -967,6 +967,7 @@ const mPeriod  = (r) => ({ id: r.id, propertyId: r.property_id, period: r.period
 const mRLine   = (r) => ({ id: r.id, periodId: r.period_id, unitId: r.unit_id, unitLabel: r.unit_label, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, expected: Number(r.expected), collected: Number(r.collected), paidAt: r.paid_at, charges: Number(r.charges), comment: r.comment, position: r.position, vacant: !!r.vacant, months: Math.max(1, Number(r.months) || 1), prepaid: !!r.prepaid });
 const mRCharge = (r) => ({ id: r.id, periodId: r.period_id, label: r.label, amount: Number(r.amount), observation: r.observation, position: r.position, kind: r.kind || "charge" });
 const mFormer   = (r) => ({ id: r.id, unitId: r.unit_id, propertyId: r.property_id, unitLabel: r.unit_label, name: r.name, phone: r.phone, email: r.email, leaseStart: r.lease_start, leaseEnd: r.lease_end, departureDate: r.departure_date, reason: r.reason, rent: Number(r.rent_amount) || 0, deposit: Number(r.deposit) || 0, depositRefund: Number(r.deposit_refund) || 0, balanceDue: Number(r.balance_due) || 0, notes: r.notes, archivedBy: r.archived_by });
+const mProspect = (r) => ({ id: r.id, ref: r.ref, propertyId: r.property_id, unitId: r.unit_id, operation: r.operation, name: r.name, phone: r.phone, email: r.email, source: r.source, interest: r.interest, status: r.status, nextContact: r.next_contact, assignedTo: r.assigned_to, notes: r.notes, lossReason: r.loss_reason || "", contacts: r.contacts || [], createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
 const mCash     = (r) => ({ id: r.id, date: r.entry_date, direction: r.direction, amount: Number(r.amount), label: r.label, category: r.category, method: r.method, propertyId: r.property_id, ownerId: r.owner_id, reference: r.reference, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
 const mHandover = (r) => ({ id: r.id, date: r.handover_date, amount: Number(r.amount), fromUser: r.from_user, toUser: r.to_user, status: r.status, approvedAt: r.approved_at, note: r.note, responseNote: r.response_note, createdAt: Date.parse(r.created_at) });
 const mFolderFile = (r) => ({ id: r.id, scope: r.scope, unitId: r.unit_id, ownerId: r.owner_id, formerTenantId: r.former_tenant_id, propertyId: r.property_id, category: r.category, label: r.label, fileUrl: r.file_url, fileName: r.file_name, fileType: r.file_type, fileSize: Number(r.file_size) || 0, notes: r.notes, uploadedBy: r.uploaded_by, createdAt: Date.parse(r.created_at) });
@@ -1010,6 +1011,7 @@ function useStore(userId) {
   const [folderFiles, setFolderFiles] = useState([]);
   const [cashEntries, setCashEntries] = useState([]);
   const [formerTenants, setFormerTenants] = useState([]);
+  const [prospects, setProspects] = useState([]);
   const [handovers, setHandovers] = useState([]);
 
   /* Référence vivante des membres, utilisée par les notifications */
@@ -1017,7 +1019,7 @@ function useStore(userId) {
   useEffect(() => { membersRef.current = members; }, [members]);
 
   const load = useCallback(async () => {
-    const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc, un, rp, rlin, rch, rq, tax, cp, ff, ce, ho, ft] = await Promise.all([
+    const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc, un, rp, rlin, rch, rq, tax, cp, ff, ce, ho, ft, prs] = await Promise.all([
       supabase.from("departments").select("*").order("created_at"),
       supabase.from("profiles").select("*").order("created_at"),
       supabase.from("tasks").select("*"),
@@ -1047,6 +1049,7 @@ function useStore(userId) {
       supabase.from("cash_entries").select("*").order("entry_date", { ascending: false }),
       supabase.from("cash_handovers").select("*").order("handover_date", { ascending: false }),
       supabase.from("former_tenants").select("*").order("departure_date", { ascending: false }),
+      supabase.from("prospects").select("*").order("created_at", { ascending: false }),
     ]);
     setDepartments((dep.data || []).map(mDept));
     setMembers((prof.data || []).map(mProfile));
@@ -1077,6 +1080,7 @@ function useStore(userId) {
     setCashEntries((ce.data || []).map(mCash));
     setHandovers((ho.data || []).map(mHandover));
     setFormerTenants((ft.data || []).map(mFormer));
+    setProspects((prs.data || []).map(mProspect));
     setLoading(false);
   }, []);
 
@@ -1111,6 +1115,7 @@ function useStore(userId) {
     const upCe = upsertBy("id", mCash)(setCashEntries), rmCe = removeBy("id")(setCashEntries);
     const upHo = upsertBy("id", mHandover)(setHandovers), rmHo = removeBy("id")(setHandovers);
     const upFt = upsertBy("id", mFormer)(setFormerTenants), rmFt = removeBy("id")(setFormerTenants);
+    const upPr = upsertBy("id", mProspect)(setProspects), rmPr = removeBy("id")(setProspects);
     const h = (up, rm, key = "id") => (p) => p.eventType === "DELETE" ? rm(p.old[key]) : up(p.new);
 
     const ch = supabase.channel("kibegnon-rt")
@@ -1153,6 +1158,7 @@ function useStore(userId) {
       .on("postgres_changes", { event: "*", schema: "public", table: "folder_files" }, h(upFf, rmFf))
       .on("postgres_changes", { event: "*", schema: "public", table: "cash_entries" }, h(upCe, rmCe))
       .on("postgres_changes", { event: "*", schema: "public", table: "former_tenants" }, h(upFt, rmFt))
+      .on("postgres_changes", { event: "*", schema: "public", table: "prospects" }, h(upPr, rmPr))
       .on("postgres_changes", { event: "*", schema: "public", table: "cash_handovers" }, (p) => {
         if (p.eventType === "DELETE") return rmHo(p.old.id);
         /* Le gardien du solde est prévenu dès qu'une remise lui est adressée */
@@ -1695,6 +1701,31 @@ function useStore(userId) {
     return { error: error?.message };
   };
 
+  /* ================= ACTIONS : PROSPECTS (CRM) ================= */
+  const saveProspect = async (f) => {
+    const row = { property_id: f.propertyId || null, unit_id: f.unitId || null,
+      operation: f.operation || "location", name: f.name || "", phone: f.phone || "",
+      email: f.email || "", source: f.source || "appel_entrant", interest: f.interest || "neutre",
+      status: f.status || "nouveau", next_contact: f.nextContact || null,
+      assigned_to: f.assignedTo || null, notes: f.notes || "", loss_reason: f.lossReason || "",
+      contacts: f.contacts || [] };
+    if (f.id) {
+      const { data, error } = await supabase.from("prospects").update(row).eq("id", f.id).select().single();
+      if (error) return { error: error.message };
+      if (data) setProspects((p) => p.map((x) => (x.id === f.id ? mProspect(data) : x)));
+      return { id: f.id };
+    }
+    const { data, error } = await supabase.from("prospects").insert({ ...row, created_by: userId }).select().single();
+    if (error) return { error: error.message };
+    if (data) setProspects((p) => (p.some((x) => x.id === data.id) ? p : [mProspect(data), ...p]));
+    return { id: data?.id };
+  };
+  const deleteProspect = async (id) => {
+    setProspects((p) => p.filter((x) => x.id !== id));
+    const { error } = await supabase.from("prospects").delete().eq("id", id);
+    return { error: error?.message };
+  };
+
   /* ================= ACTIONS : CAISSE ================= */
   const saveCashEntry = async (f) => {
     const row = { entry_date: f.date, direction: f.direction, amount: Number(f.amount) || 0,
@@ -1928,7 +1959,8 @@ function useStore(userId) {
       saveTaxRecord, deleteTaxRecord, saveComplaint, deleteComplaint, uploadAttachment,
       uploadFolderFile, deleteFolderFile, approveDocument, applyReceiptToRent,
       saveCashEntry, deleteCashEntry, createHandover, answerHandover,
-      applyAdvanceToPeriods, archiveTenant, deleteFormerTenant, reload: load,
+      applyAdvanceToPeriods, archiveTenant, deleteFormerTenant,
+      saveProspect, deleteProspect, reload: load,
     },
   };
 }
