@@ -6,7 +6,7 @@
  * ==========================================================================*/
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
-  AlertTriangle, AlignCenter, AlignJustify, AlignLeft, AlignRight, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, Banknote, BarChart3, Bell, BellOff, BellRing, Bold, Briefcase, Building2, CalendarClock, CalendarDays, CalendarOff, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, DoorClosed, DoorOpen, Download, Eraser, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Home, Image, Inbox, IndentDecrease, IndentIncrease, Italic, KeyRound, Landmark, Layers, LayoutDashboard, List, ListChecks, ListOrdered, Lock, LogOut, Mail, MapPin, MessageCircle, MessageCircleWarning, MessageSquare, Package, Palette, Paperclip, Pause, Pencil, Percent, Phone, Play, Plus, Printer, Receipt, Redo2, RotateCcw, Scale, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, Underline, Undo2, UserPlus, UserRound, Users, Wallet, X, Zap,
+  AlertTriangle, AlignCenter, AlignJustify, AlignLeft, AlignRight, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, Banknote, BarChart3, Bell, BellOff, BellRing, Bold, Briefcase, Building2, CalendarClock, CalendarDays, CalendarOff, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, DoorClosed, DoorOpen, Download, Eraser, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Home, Image, Inbox, IndentDecrease, IndentIncrease, Italic, KeyRound, Landmark, Layers, LayoutDashboard, List, ListChecks, ListOrdered, Lock, LogOut, Mail, MapPin, MessageCircle, MessageCircleWarning, MessageSquare, Package, Palette, Paperclip, Pause, Pencil, Percent, Phone, PhoneIncoming, Play, Plus, Printer, Receipt, Redo2, RotateCcw, Scale, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, Underline, Undo2, UserPlus, UserRound, Users, Wallet, X, Zap,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, CartesianGrid,
@@ -818,8 +818,8 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "20.0";
-const APP_BUILD = "2026-09-10";
+const APP_VERSION = "21.0";
+const APP_BUILD = "2026-09-14";
 
 /* ---- Papier à en-tête de l'agence ---- */
 const AGENCY = {
@@ -1914,7 +1914,7 @@ function useStore(userId) {
     loading, departments, members, tasks, timeEntries, activeTimers, channels, channelMembers, messages,
     owners, properties, products, stockEntries, releases, releaseLines, quotes, quoteLines, templates, documents,
     units, rentPeriods, rentLines, rentCharges, requests, taxRecords, complaints, folderFiles,
-    cashEntries, handovers, formerTenants,
+    cashEntries, handovers, formerTenants, prospects,
     actions: {
       createTask, updateTask, deleteTask, startTimer, stopTimer, pauseTask, finishTask, addManualTime, deleteEntry,
       ensureDm, sendMessage, markRead, saveDept, deleteDept, updateProfile, adminUsers,
@@ -3451,7 +3451,7 @@ function PropertyDetail({ property, owner, agent, units, tasks, quotes, releases
 }
 
 /* ---------------- Vue principale ---------------- */
-function Patrimoine({ store, me }) {
+function Patrimoine({ store, me, onSignalProspect }) {
   const { owners, properties, units, tasks, quotes, releases, releaseLines, products, members, actions } = store;
   const [tab, setTab] = useState("biens");
   const [search, setSearch] = useState("");
@@ -3654,7 +3654,7 @@ function Patrimoine({ store, me }) {
               <th className="px-3 py-2.5 font-medium">Type</th><th className="px-3 py-2.5 font-medium">Pièces</th>
               <th className="px-3 py-2.5 font-medium">Localisation</th>
               <th className="px-3 py-2.5 font-medium">Disponible pour</th><th className="px-3 py-2.5 font-medium">Loyer / prix</th>
-              <th className="px-3 py-2.5 font-medium">Agent</th></tr></thead>
+              <th className="px-3 py-2.5 font-medium">Agent</th><th /></tr></thead>
             <tbody>{filteredVacants.map((r) => (
               <tr key={r.key} className="border-t hover:bg-slate-50 cursor-pointer" style={{ borderColor: "var(--line)" }} onClick={() => setDetailId(r.property.id)}>
                 <td className="px-4 py-2.5 font-medium">{r.property.name}</td>
@@ -3665,6 +3665,13 @@ function Patrimoine({ store, me }) {
                 <td className="px-3 py-2.5"><Chip color="#EA580C">{r.forWhat}</Chip></td>
                 <td className="px-3 py-2.5 font-medium tabular-nums">{fcfa(r.rent)}</td>
                 <td className="px-3 py-2.5" style={{ color: r.agent ? "var(--ink)" : "#B6BEC9" }}>{r.agent?.name || "non attribué"}</td>
+                <td className="px-3 py-2.5">
+                  <button onClick={(e) => {
+                    e.stopPropagation();
+                    onSignalProspect({ propertyId: r.property.id, unitId: r.key === r.property.id ? "" : r.key,
+                      operation: r.forWhat === AVAILABLE_FOR.vente ? "vente" : "location" });
+                  }} className="kb-btn kb-btn-ghost text-xs px-2 py-1"><PhoneIncoming size={12} /> Prospect</button>
+                </td>
               </tr>
             ))}</tbody>
           </table></div>
@@ -6277,7 +6284,7 @@ function TenantModal({ unit, property, onSave, onClose }) {
             </select>
           </Field>
           <Field label="Premier mois couvert" hint="Obligatoire dès qu'il y a une avance">
-            <input type="date" className={inputCls} style={inputStyle} value={f.advanceStart || ""}
+            <input type="date" className={inputCls} value={f.advanceStart || ""}
               onChange={(e) => set("advanceStart", e.target.value)}
               style={{ ...inputStyle, borderColor: (Number(f.advanceMonths) > 0 && !f.advanceStart) ? "#D81F26" : inputStyle.borderColor }} />
           </Field>
@@ -7577,6 +7584,369 @@ function ArchiveTenantModal({ unit, property, arrears, onArchive, onClose }) {
         <button disabled={busy} onClick={submit} className="kb-btn kb-btn-primary disabled:opacity-40"><Check size={16} /> Enregistrer le départ</button>
       </div>
     </Modal>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   CRM DES PROSPECTS — personnes intéressées par un bien à louer ou à vendre
+   ══════════════════════════════════════════════════════════════════════ */
+
+const PROSPECT_SOURCE = {
+  appel_entrant:    "Appel entrant",
+  reseau_personnel: "Réseau personnel",
+  recommandation:   "Recommandation",
+  reseaux_sociaux:  "Réseaux sociaux",
+  porte_a_porte:    "Porte-à-porte",
+  petites_annonces: "Petites annonces",
+  site_web:         "Site web / Internet",
+  ancien_client:    "Ancien client",
+  autre:            "Autre",
+};
+const PROSPECT_INTEREST = {
+  tres_interesse: { label: "Très intéressé", color: "#4F9E2A", weight: 4 },
+  interesse:      { label: "Intéressé",      color: "#2E78A8", weight: 3 },
+  neutre:         { label: "Neutre",         color: "#C58A1B", weight: 2 },
+  peu_interesse:  { label: "Peu intéressé",  color: "#EA580C", weight: 1 },
+  pas_interesse:  { label: "Pas intéressé",  color: "#94A3B8", weight: 0 },
+};
+const PROSPECT_STATUS = {
+  nouveau:           { label: "Nouveau",            color: "#7C3AED" },
+  a_contacter:       { label: "À contacter",        color: "#C58A1B" },
+  contacte:          { label: "Contacté",           color: "#2E78A8" },
+  visite_programmee: { label: "Visite programmée",  color: "#0891B2" },
+  visite_effectuee:  { label: "Visite effectuée",   color: "#0D9488" },
+  dossier_depose:    { label: "Dossier déposé",     color: "#4F9E2A" },
+  converti:          { label: "Converti",           color: "#3d7d20" },
+  perdu:             { label: "Perdu",              color: "#94A3B8" },
+};
+const PROSPECT_STATUS_ORDER = ["nouveau", "a_contacter", "contacte", "visite_programmee",
+  "visite_effectuee", "dossier_depose", "converti", "perdu"];
+const PROSPECT_OPERATION = { location: "Location", vente: "Vente" };
+const CONTACT_CHANNEL = { telephone: "Téléphone", whatsapp: "WhatsApp", visite: "Visite", email: "E-mail", autre: "Autre" };
+
+/* Relance : en retard / aujourd'hui / bientôt / planifiée — pas de date = aucune */
+function relanceState(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr + "T00:00:00");
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const diff = Math.round((d - today) / 86400000);
+  if (diff < 0) return { label: "En retard", color: "#D81F26", bg: "#FDEAEA", days: diff };
+  if (diff === 0) return { label: "Aujourd'hui", color: "#EA580C", bg: "#FFF0E6", days: diff };
+  if (diff <= 3) return { label: "Bientôt", color: "#C58A1B", bg: "#FFF8EC", days: diff };
+  return { label: "Planifiée", color: "#4F9E2A", bg: "#EAF6E3", days: diff };
+}
+
+/* Priorité simple : niveau d'intérêt + urgence de la relance, sans la
+   formule pondérée du classeur d'origine (dont plusieurs entrées ne sont
+   pas suivies dans l'outil) — mais dans le même esprit. */
+function prospectPriority(p) {
+  const w = PROSPECT_INTEREST[p.interest]?.weight ?? 2;
+  const r = relanceState(p.nextContact);
+  const urgence = r?.days < 0 ? 3 : r?.days === 0 ? 2 : 0;
+  const score = w + urgence;
+  if (score >= 6) return { label: "🔥 Priorité maximale", color: "#D81F26" };
+  if (score >= 4) return { label: "🟠 Priorité élevée", color: "#EA580C" };
+  if (score >= 2) return { label: "🟡 Priorité moyenne", color: "#C58A1B" };
+  return { label: "🟢 Priorité faible", color: "#4F9E2A" };
+}
+
+/* ---------------- Modale : créer / modifier un prospect ---------------- */
+function ProspectModal({ initial, properties, units, members, onSave, onClose }) {
+  const [f, setF] = useState(() => ({
+    propertyId: "", unitId: "", operation: "location",
+    name: "", phone: "", email: "",
+    source: "appel_entrant", interest: "neutre", status: "nouveau",
+    nextContact: "", assignedTo: "", notes: "", ...initial,
+  }));
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const propUnits = units.filter((u) => u.propertyId === f.propertyId);
+
+  const pickProperty = (id) => {
+    const p = properties.find((x) => x.id === id);
+    setF((s) => ({ ...s, propertyId: id, unitId: "",
+      operation: p?.availableFor === "vente" ? "vente" : s.operation }));
+  };
+
+  const submit = async () => {
+    if (!f.name.trim()) { setErr("Le nom du prospect est requis."); return; }
+    setErr(""); setBusy(true);
+    const r = await onSave(f);
+    setBusy(false);
+    if (r?.error) { setErr(r.error); return; }
+    onClose();
+  };
+
+  return (
+    <Modal title={f.id ? `Prospect ${f.ref || ""}` : "Nouveau prospect"} onClose={onClose}>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Bien concerné">
+          <select className={inputCls} style={inputStyle} value={f.propertyId} onChange={(e) => pickProperty(e.target.value)}>
+            <option value="">— Choisir un bien —</option>
+            {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Lot" hint={!f.propertyId ? "Choisir un bien d'abord" : "Facultatif — bien entier si vide"}>
+          <select className={inputCls} style={inputStyle} value={f.unitId} onChange={(e) => set("unitId", e.target.value)} disabled={!f.propertyId}>
+            <option value="">— Bien entier —</option>
+            {propUnits.map((u) => <option key={u.id} value={u.id}>{u.label}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      <Field label="Intéressé par">
+        <div className="flex gap-2">
+          {Object.entries(PROSPECT_OPERATION).map(([k, l]) => (
+            <button key={k} onClick={() => set("operation", k)} className="flex-1 py-2 rounded-lg text-sm font-medium"
+              style={{ background: f.operation === k ? "var(--ink)" : "#fff", color: f.operation === k ? "#fff" : "var(--ink)", border: "1px solid var(--line)" }}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </Field>
+
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Nom du prospect"><input className={inputCls} style={inputStyle} value={f.name} autoFocus onChange={(e) => set("name", e.target.value)} placeholder="Ex. M. KOUAME Serge" /></Field>
+        <Field label="Téléphone"><input className={inputCls} style={inputStyle} value={f.phone} onChange={(e) => set("phone", e.target.value)} placeholder="+225 07 ..." /></Field>
+      </div>
+      <Field label="E-mail (facultatif)"><input className={inputCls} style={inputStyle} value={f.email} onChange={(e) => set("email", e.target.value)} /></Field>
+
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="D'où vient ce contact">
+          <select className={inputCls} style={inputStyle} value={f.source} onChange={(e) => set("source", e.target.value)}>
+            {Object.entries(PROSPECT_SOURCE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </Field>
+        <Field label="Niveau d'intérêt">
+          <select className={inputCls} style={inputStyle} value={f.interest} onChange={(e) => set("interest", e.target.value)}>
+            {Object.entries(PROSPECT_INTEREST).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      <div className="grid sm:grid-cols-3 gap-3">
+        <Field label="Statut">
+          <select className={inputCls} style={inputStyle} value={f.status} onChange={(e) => set("status", e.target.value)}>
+            {PROSPECT_STATUS_ORDER.map((k) => <option key={k} value={k}>{PROSPECT_STATUS[k].label}</option>)}
+          </select>
+        </Field>
+        <Field label="Prochaine relance"><input type="date" className={inputCls} style={inputStyle} value={f.nextContact || ""} onChange={(e) => set("nextContact", e.target.value)} /></Field>
+        <Field label="Suivi par">
+          <select className={inputCls} style={inputStyle} value={f.assignedTo || ""} onChange={(e) => set("assignedTo", e.target.value)}>
+            <option value="">— Non attribué —</option>
+            {members.filter((m) => m.active).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      {f.status === "perdu" && (
+        <Field label="Motif de la perte"><input className={inputCls} style={inputStyle} value={f.lossReason || ""} onChange={(e) => set("lossReason", e.target.value)} placeholder="Ex. a trouvé ailleurs, budget insuffisant…" /></Field>
+      )}
+
+      <Field label="Notes"><textarea className={inputCls} style={inputStyle} rows={2} value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Détails de l'appel, attentes du prospect…" /></Field>
+
+      {err && <p className="text-xs text-red-600 mb-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} className="kb-btn kb-btn-ghost">Annuler</button>
+        <button disabled={busy} onClick={submit} className="kb-btn kb-btn-primary disabled:opacity-40"><Check size={16} /> {busy ? "Enregistrement…" : "Enregistrer"}</button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ---------------- Fiche détaillée : historique des échanges ---------------- */
+function ProspectDetail({ prospect: p, property, unit, member, onAddContact, onEdit, onBack }) {
+  const [channel, setChannel] = useState("telephone");
+  const [result, setResult] = useState("");
+  const [busy, setBusy] = useState(false);
+  const st = PROSPECT_STATUS[p.status];
+  const it = PROSPECT_INTEREST[p.interest];
+  const pr = prospectPriority(p);
+  const rl = relanceState(p.nextContact);
+
+  const addContact = async () => {
+    if (!result.trim()) return;
+    setBusy(true);
+    await onAddContact(p, { date: isoDate(new Date()), channel, result, by: member?.name || "" });
+    setBusy(false);
+    setResult("");
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
+        <button onClick={() => onEdit(p)} className="kb-btn kb-btn-ghost text-sm"><Pencil size={14} /> Modifier</button>
+      </div>
+
+      <div className="bg-white rounded-xl border p-4 mb-4" style={{ borderColor: "var(--line)" }}>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <p className="text-xs" style={{ color: "var(--muted)" }}>{p.ref}</p>
+            <h1 className="text-xl font-bold">{p.name}</h1>
+            <p className="text-sm mt-0.5" style={{ color: "var(--muted)" }}>
+              {property?.name || "Bien non précisé"}{unit ? ` — ${unit.label}` : ""} · intéressé par la {PROSPECT_OPERATION[p.operation].toLowerCase()}
+            </p>
+          </div>
+          <div className="text-right">
+            <Chip color={pr.color}>{pr.label}</Chip>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 mt-3">
+          <Chip color={st.color}>{st.label}</Chip>
+          <Chip color={it.color} dot>{it.label}</Chip>
+          {p.phone && <a href={`tel:${p.phone}`} className="text-xs px-2 py-1 rounded-full flex items-center gap-1" style={{ background: "#F1F3F5", color: "#2E78A8" }}><Phone size={11} /> {p.phone}</a>}
+          {rl && <Chip color={rl.color} bg={rl.bg}>Relance : {rl.label} ({fr(p.nextContact + "T00:00:00", { day: "numeric", month: "short" })})</Chip>}
+        </div>
+        {p.notes && <p className="text-sm mt-3 p-2.5 rounded-lg" style={{ background: "#F6F8FA" }}>{p.notes}</p>}
+        {p.status === "perdu" && p.lossReason && <p className="text-sm mt-2" style={{ color: "#B5171D" }}>Motif de la perte : {p.lossReason}</p>}
+      </div>
+
+      <SectionCard title="Ajouter un échange" icon={MessageCircle}>
+        <div className="grid sm:grid-cols-3 gap-2 mb-2">
+          <select className={inputCls} style={inputStyle} value={channel} onChange={(e) => setChannel(e.target.value)}>
+            {Object.entries(CONTACT_CHANNEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+          <input className={inputCls + " sm:col-span-2"} style={inputStyle} value={result} onChange={(e) => setResult(e.target.value)}
+            placeholder="Ex. Rappelé, veut visiter samedi matin" onKeyDown={(e) => e.key === "Enter" && addContact()} />
+        </div>
+        <button onClick={addContact} disabled={!result.trim() || busy} className="kb-btn kb-btn-primary text-sm disabled:opacity-40"><Plus size={14} /> Ajouter</button>
+      </SectionCard>
+
+      <SectionCard title={`Historique des échanges (${(p.contacts || []).length})`} icon={Clock} pad={false}>
+        {(p.contacts || []).length ? (
+          <div className="divide-y" style={{ borderColor: "var(--line)" }}>
+            {[...(p.contacts || [])].reverse().map((c, i) => (
+              <div key={i} className="px-4 py-2.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-medium">{fr(c.date + "T00:00:00", { day: "numeric", month: "short", year: "numeric" })}</span>
+                  <Chip color="#2E78A8">{CONTACT_CHANNEL[c.channel] || c.channel}</Chip>
+                  {c.by && <span className="text-[11px]" style={{ color: "var(--muted)" }}>par {c.by}</span>}
+                </div>
+                <p className="text-sm mt-1">{c.result}</p>
+              </div>
+            ))}
+          </div>
+        ) : <p className="text-sm text-center py-6" style={{ color: "var(--muted)" }}>Aucun échange enregistré pour l'instant.</p>}
+      </SectionCard>
+    </div>
+  );
+}
+
+/* ---------------- Vue principale : liste des prospects ---------------- */
+function Prospects({ store, me, userId, initialModal, onModalConsumed }) {
+  const { prospects, properties, units, members, actions } = store;
+  const [search, setSearch] = useState("");
+  const [filterOp, setFilterOp] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("ouverts");
+  const [filterProp, setFilterProp] = useState("all");
+  const [modal, setModal] = useState(null);
+  const [detailId, setDetailId] = useState(null);
+
+  useEffect(() => { if (initialModal) { setModal(initialModal); onModalConsumed?.(); } }, [initialModal]);
+
+  const propById = useMemo(() => Object.fromEntries(properties.map((p) => [p.id, p])), [properties]);
+  const unitById = useMemo(() => Object.fromEntries(units.map((u) => [u.id, u])), [units]);
+  const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
+
+  const detail = prospects.find((p) => p.id === detailId);
+  if (detail) {
+    return <ProspectDetail prospect={detail} property={propById[detail.propertyId]} unit={unitById[detail.unitId]}
+      member={memberById[detail.assignedTo]}
+      onAddContact={async (p, entry) => actions.saveProspect({ ...p, contacts: [...(p.contacts || []), entry] })}
+      onEdit={(p) => setModal(p)} onBack={() => setDetailId(null)} />;
+  }
+
+  const open = prospects.filter((p) => !["converti", "perdu"].includes(p.status));
+  const overdue = open.filter((p) => relanceState(p.nextContact)?.days < 0);
+  const today = open.filter((p) => relanceState(p.nextContact)?.days === 0);
+
+  const list = prospects.filter((p) =>
+    (filterOp === "all" || p.operation === filterOp) &&
+    (filterProp === "all" || p.propertyId === filterProp) &&
+    (filterStatus === "all" || (filterStatus === "ouverts" ? !["converti", "perdu"].includes(p.status) : p.status === filterStatus)) &&
+    (!search || p.name.toLowerCase().includes(search.toLowerCase()) || (p.phone || "").includes(search)
+      || (propById[p.propertyId]?.name || "").toLowerCase().includes(search.toLowerCase())))
+    .sort((a, b) => {
+      const ra = relanceState(a.nextContact)?.days ?? 999, rb = relanceState(b.nextContact)?.days ?? 999;
+      return ra - rb;
+    });
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
+        <h1 className="text-xl font-bold">Prospects</h1>
+        <button onClick={() => setModal({})} className="kb-btn kb-btn-primary"><Plus size={16} /> Nouveau prospect</button>
+      </div>
+      <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>
+        Personnes intéressées par un bien à louer ou à vendre, signalées lors des appels et suivies jusqu'au bail ou à la vente.
+      </p>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <StatCard icon={Users} label="Prospects ouverts" value={open.length} sub={`${prospects.length} au total`} tint="#7C3AED" onClick={() => setFilterStatus("ouverts")} />
+        <StatCard icon={AlertTriangle} label="Relances en retard" value={overdue.length} tint="#D81F26" />
+        <StatCard icon={Clock} label="À relancer aujourd'hui" value={today.length} tint="#EA580C" />
+        <StatCard icon={CheckCircle2} label="Convertis" value={prospects.filter((p) => p.status === "converti").length} tint="#4F9E2A" onClick={() => setFilterStatus("converti")} />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="relative flex-1 min-w-[150px]">
+          <Search size={15} className="absolute left-2.5 top-2.5 text-slate-400" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nom, téléphone, bien…" className="w-full pl-8 pr-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle} />
+        </div>
+        <select value={filterOp} onChange={(e) => setFilterOp(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+          <option value="all">Location et vente</option>
+          {Object.entries(PROSPECT_OPERATION).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <select value={filterProp} onChange={(e) => setFilterProp(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+          <option value="all">Tous les biens</option>
+          {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+          <option value="ouverts">Prospects ouverts</option>
+          <option value="all">Tous les statuts</option>
+          {PROSPECT_STATUS_ORDER.map((k) => <option key={k} value={k}>{PROSPECT_STATUS[k].label}</option>)}
+        </select>
+      </div>
+
+      {list.length ? (
+        <div className="space-y-2">
+          {list.map((p) => {
+            const st = PROSPECT_STATUS[p.status];
+            const it = PROSPECT_INTEREST[p.interest];
+            const pr = prospectPriority(p);
+            const rl = relanceState(p.nextContact);
+            return (
+              <button key={p.id} onClick={() => setDetailId(p.id)}
+                className="w-full text-left bg-white rounded-xl border p-3 hover:shadow-sm transition-shadow" style={{ borderColor: "var(--line)" }}>
+                <div className="flex items-start justify-between gap-2 flex-wrap">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ background: "#F1F3F5", color: "var(--muted)" }}>{p.ref}</span>
+                      <span className="font-medium text-sm">{p.name}</span>
+                      <Chip color={st.color}>{st.label}</Chip>
+                      <Chip color={it.color} dot>{it.label}</Chip>
+                      <span className="text-[11px] font-medium" style={{ color: pr.color }}>{pr.label}</span>
+                    </div>
+                    <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>
+                      {propById[p.propertyId]?.name || "Bien non précisé"}{unitById[p.unitId] ? ` — ${unitById[p.unitId].label}` : ""}
+                      {" · "}{PROSPECT_OPERATION[p.operation]}
+                      {p.phone ? ` · ${p.phone}` : ""}
+                      {memberById[p.assignedTo] ? ` · suivi par ${memberById[p.assignedTo].name}` : ""}
+                    </p>
+                  </div>
+                  {rl && <span className="text-[11px] font-bold px-2 py-1 rounded-full shrink-0" style={{ background: rl.bg, color: rl.color }}>{rl.label}</span>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      ) : <EmptyState icon={Users} title="Aucun prospect" sub="Enregistrez les personnes intéressées par vos biens à louer ou à vendre."
+        action={<button onClick={() => setModal({})} className="kb-btn kb-btn-primary"><Plus size={15} /> Nouveau prospect</button>} />}
+
+      {modal && <ProspectModal initial={modal} properties={properties} units={units} members={members}
+        onSave={actions.saveProspect} onClose={() => setModal(null)} />}
+    </div>
   );
 }
 
@@ -8887,7 +9257,7 @@ function Workspace({ userId }) {
   const store = useStore(userId);
   const { loading, departments, members, tasks, timeEntries, activeTimers, channels, channelMembers, messages,
     owners, properties, products, releases, releaseLines, quotes, units, requests, complaints, documents,
-    cashEntries, handovers, formerTenants, folderFiles, rentPeriods, rentLines, actions } = store;
+    cashEntries, handovers, formerTenants, prospects, folderFiles, rentPeriods, rentLines, actions } = store;
 
   const [view, setView] = useState("dashboard");
   const [viewWeek, setViewWeek] = useState(mondayIso(new Date()));
@@ -8965,6 +9335,12 @@ function Workspace({ userId }) {
     else { const cid = await actions.ensureDm(dest); if (cid) await actions.sendMessage(cid, text, shareTask.id); if (reassign) await actions.updateTask(shareTask.id, { assigneeId: dest }); }
     setShareTask(null);
   };
+  const overdueProspects = useMemo(
+    () => prospects.filter((p) => !["converti", "perdu"].includes(p.status)
+      && p.nextContact && p.nextContact < isoDate(new Date())).length,
+    [prospects]);
+  const [prospectSeed, setProspectSeed] = useState(null);
+
   const pendingHandovers = useMemo(
     () => handovers.filter((h) => h.toUser === userId && h.status === "en_attente").length,
     [handovers, userId]);
@@ -9020,6 +9396,7 @@ function Workspace({ userId }) {
     { id: "planner", label: "Planning", icon: CalendarDays },
     { id: "patrimoine", label: "Patrimoine", icon: Building2 },
     { id: "locataires", label: "Locataires", icon: Users },
+    { id: "prospects", label: "Prospects", icon: PhoneIncoming, badge: overdueProspects },
     { id: "portefeuille", label: "Mon portefeuille", icon: BadgeCheck },
     { id: "plaintes", label: "Plaintes", icon: MessageCircleWarning, badge: openComplaints },
     { id: "devis", label: "Devis artisans", icon: FileText },
@@ -9091,8 +9468,11 @@ function Workspace({ userId }) {
             onPause={pauseTask} onFinish={finishTask}
             onNew={() => setTaskModal({ prefill: { assigneeId: userId, weekStart: viewWeek } })} />
         )}
-        {view === "patrimoine" && <Patrimoine store={store} me={me} />}
+        {view === "patrimoine" && <Patrimoine store={store} me={me}
+          onSignalProspect={(seed) => { setProspectSeed(seed); setView("prospects"); }} />}
         {view === "locataires" && <Locataires store={store} me={me} userId={userId} />}
+        {view === "prospects" && <Prospects store={store} me={me} userId={userId}
+          initialModal={prospectSeed} onModalConsumed={() => setProspectSeed(null)} />}
         {view === "portefeuille" && <Portefeuille store={store} me={me} userId={userId} />}
         {view === "plaintes" && <Plaintes store={store} me={me} userId={userId} />}
         {view === "devis" && <Devis store={store} me={me} />}
