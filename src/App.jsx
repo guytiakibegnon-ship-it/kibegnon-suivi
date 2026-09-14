@@ -594,37 +594,23 @@ function printSheet(orientation = "portrait") {
   el.textContent = `@page { size: A4 ${orientation}; margin: ${orientation === "landscape" ? "8mm" : "12mm"}; }`;
   document.head.appendChild(el);
 
-  /* On mesure le document à la largeur réelle d'impression, puis on insère
-     un vide juste avant le pied de page pour qu'il tombe au bas de la
-     dernière page — et non au milieu. */
+  /* Le pied de page est fixé au bas de chaque feuille. On mesure sa hauteur
+     à la largeur réelle d'impression, pour réserver exactement cet espace
+     en bas de chaque page — ni plus (page blanche), ni moins (chevauchement). */
   const area = document.getElementById("print-area");
-  const box = pageBox(orientation);
-  let spacer = null;
-  if (area) {
-    document.getElementById("kb-spacer")?.remove();
-    const clone = area.cloneNode(true);
-    clone.style.cssText = `position:absolute;left:-10000px;top:0;width:${box.w}px;`
-      + "border:none;padding:0;margin:0;box-shadow:none;";
+  const foot = area?.querySelector(".kb-foot");
+  if (area && foot) {
+    const box = pageBox(orientation);
+    const clone = foot.cloneNode(true);
+    clone.style.cssText = `position:absolute;left:-10000px;top:0;width:${box.w}px;margin:0;`;
     document.body.appendChild(clone);
-    const h = clone.scrollHeight;
-
-    const footEl = clone.querySelector(".kb-foot");
-    const footH = footEl ? footEl.getBoundingClientRect().height : 0;
-    const gap = printSpacerHeight(h, box.h, footH);
+    const h = clone.getBoundingClientRect().height;
     document.body.removeChild(clone);
-    if (gap > 12) {
-      spacer = document.createElement("div");
-      spacer.id = "kb-spacer";
-      spacer.setAttribute("aria-hidden", "true");
-      spacer.style.cssText = `height:${gap}px;flex:none;`;
-      const foot = area.querySelector(".kb-foot");
-      if (foot) area.insertBefore(spacer, foot); else spacer = null;
-    }
+    area.style.setProperty("--kb-foot-h", `${Math.ceil(h) + 8}px`);
   }
 
   const cleanup = () => {
     document.getElementById(id)?.remove();
-    document.getElementById("kb-spacer")?.remove();
     window.removeEventListener("afterprint", cleanup);
   };
   window.addEventListener("afterprint", cleanup);
@@ -818,7 +804,7 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "21.0";
+const APP_VERSION = "21.1";
 const APP_BUILD = "2026-09-14";
 
 /* ---- Papier à en-tête de l'agence ---- */
@@ -866,7 +852,24 @@ function PrintHead({ title, subtitle, extra }) {
   );
 }
 
-/* Pied de page légal, repris sur chaque document imprimé */
+/* ---- Gabarit d'impression ----
+   Le contenu vit dans un tableau dont le pied (tfoot) se répète en bas de
+   chaque page imprimée : il réserve la place du pied de page légal, lequel
+   est positionné en fixe au bas de chaque feuille. Aucun vide artificiel,
+   aucune hauteur minimale : impossible de générer une page superflue. */
+function PrintPage({ className, style, note, children }) {
+  return (
+    <div id="print-area" className={className} style={style}>
+      <table className="kb-page">
+        <tbody><tr><td className="kb-page-body">{children}</td></tr></tbody>
+        <tfoot><tr><td><div className="kb-foot-space" aria-hidden="true" /></td></tr></tfoot>
+      </table>
+      <PrintFoot note={note} />
+    </div>
+  );
+}
+
+/* Pied de page légal, repris au bas de chaque page imprimée */
 function PrintFoot({ note }) {
   return (
     <div className="kb-foot mt-5 pt-2 border-t text-center" style={{ borderColor: "var(--line)" }}>
@@ -2592,7 +2595,7 @@ function DocSheet({ doc, property, owner, author, onBack }) {
         <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
       </div>
 
-      <div id="print-area" className="bg-white rounded-xl border p-7 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
+      <PrintPage className="bg-white rounded-xl border p-7 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
         {/* En-tête */}
         <PrintHead title={doc.ref} extra={
           <p className="text-[11px] mt-0.5" style={{ color: "var(--muted)" }}>Abidjan, le {fr(doc.date + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
@@ -2695,8 +2698,7 @@ function DocSheet({ doc, property, owner, author, onBack }) {
           <p className="text-[10px]" style={{ color: "var(--muted)" }}>Document établi par {author?.name || "—"}</p>
           <span className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold print:hidden" style={{ background: st.color + "1A", color: st.color }}>{st.label}</span>
         </div>
-        <PrintFoot />
-      </div>
+      </PrintPage>
     </div>
   );
 }
@@ -2980,7 +2982,7 @@ function QuoteSheet({ quote, lines, property, owner, recorder, onBack }) {
         <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
       </div>
 
-      <div id="print-area" className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
+      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
         <PrintHead title={quote.ref} subtitle="Fiche de devis artisan" extra={
           <p className="text-[11px]" style={{ color: "var(--muted)" }}>{fr(quote.date + "T00:00:00", { day: "numeric", month: "long", year: "numeric" })}</p>
         } />
@@ -3044,8 +3046,7 @@ function QuoteSheet({ quote, lines, property, owner, recorder, onBack }) {
           </div>
           <span className="rounded-full px-3 py-1 text-xs font-semibold" style={{ background: st.color + "1A", color: st.color }}>{st.label}</span>
         </div>
-        <PrintFoot />
-      </div>
+      </PrintPage>
     </div>
   );
 }
@@ -3337,7 +3338,7 @@ function Register({ title, subtitle, columns, rows, onBack, footer }) {
         <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
         <button onClick={() => printSheet("landscape")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF (paysage)</button>
       </div>
-      <div id="print-area" className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
+      <PrintPage className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
         <PrintHead title={title} subtitle={subtitle} extra={
           <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
         } />
@@ -3353,8 +3354,7 @@ function Register({ title, subtitle, columns, rows, onBack, footer }) {
         </table>
         {rows.length === 0 && <p className="text-sm text-center py-8" style={{ color: "var(--muted)" }}>Aucune ligne.</p>}
         {footer && <div className="mt-4 pt-3 border-t text-xs" style={{ borderColor: "var(--line)" }}>{footer}</div>}
-        <PrintFoot />
-      </div>
+      </PrintPage>
     </div>
   );
 }
@@ -4523,7 +4523,7 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
         <button onClick={() => printSheet("landscape")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF (paysage)</button>
       </div>
 
-      <div id="print-area" className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
+      <PrintPage className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }} note={`État établi par ${author?.name || "—"} · Taux de recouvrement du mois : ${(t.rateCollected * 100).toFixed(1)} %`}>
         <PrintHead title={sc.label} subtitle={periodLabel(period.period)} extra={
           <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
         } />
@@ -4652,8 +4652,7 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
             <div className="border-t" style={{ borderColor: "var(--ink)" }} />
           </div>
         </div>
-        <PrintFoot note={`État établi par ${author?.name || "—"} · Taux de recouvrement du mois : ${(t.rateCollected * 100).toFixed(1)} %`} />
-      </div>
+      </PrintPage>
     </div>
   );
 }
@@ -4676,7 +4675,7 @@ function ArrearsSheet({ period, property, owner, lines, author, onBack }) {
         <button onClick={() => printSheet("landscape")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF (paysage)</button>
       </div>
 
-      <div id="print-area" className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
+      <PrintPage className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }} note={author ? `État établi par ${author.name}` : undefined}>
         <PrintHead title="ÉTAT DES ARRIÉRÉS" subtitle={periodLabel(period.period)} extra={
           <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
         } />
@@ -4740,8 +4739,7 @@ function ArrearsSheet({ period, property, owner, lines, author, onBack }) {
             <div className="border-t" style={{ borderColor: "var(--ink)" }} />
           </div>
         </div>
-        <PrintFoot note={author ? `État établi par ${author.name}` : undefined} />
-      </div>
+      </PrintPage>
     </div>
   );
 }
@@ -5074,7 +5072,7 @@ function RecapSheet({ period, requests, members, properties, onBack }) {
         <button onClick={() => printSheet("landscape")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF (paysage)</button>
       </div>
 
-      <div id="print-area" className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
+      <PrintPage className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
         <PrintHead title="FRAIS DE TRANSPORT" subtitle={trPeriodLabel(period)} />
 
         <table className="w-full text-[11px] my-4">
@@ -5119,8 +5117,7 @@ function RecapSheet({ period, requests, members, properties, onBack }) {
           <div className="text-center" style={{ minWidth: 170 }}><p className="text-[11px] font-semibold pb-20">La Comptabilité</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
           <div className="text-center" style={{ minWidth: 170 }}><p className="text-[11px] font-semibold pb-20">La Direction</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
         </div>
-        <PrintFoot />
-      </div>
+      </PrintPage>
     </div>
   );
 }
@@ -5870,7 +5867,7 @@ function TaxSheet({ records, year, title, propById, unitById, ownerById, onBack 
         <button onClick={() => printSheet("landscape")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF (paysage)</button>
       </div>
 
-      <div id="print-area" className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
+      <PrintPage className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
         <PrintHead title="ÉTAT DE L'IMPÔT FONCIER" subtitle={multiYear ? "Toutes années confondues" : `Année ${year}`} extra={
           <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
         } />
@@ -6011,8 +6008,7 @@ function TaxSheet({ records, year, title, propById, unitById, ownerById, onBack 
           <div className="text-center" style={{ minWidth: 180 }}><p className="text-[11px] font-semibold pb-20">Le Propriétaire</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
           <div className="text-center" style={{ minWidth: 180 }}><p className="text-[11px] font-semibold pb-20">Pour l'Agence</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
         </div>
-        <PrintFoot />
-      </div>
+      </PrintPage>
     </div>
   );
 }
@@ -6503,7 +6499,7 @@ function ReceiptSheet({ doc, unit, property, owner, author, validator, onBack })
         </div>
       )}
 
-      <div id="print-area" className="bg-white rounded-xl border p-6 max-w-3xl mx-auto relative overflow-hidden" style={{ borderColor: "var(--line)" }}>
+      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl mx-auto relative overflow-hidden" style={{ borderColor: "var(--line)" }} note="Cette quittance atteste du paiement des sommes ci-dessus pour la période indiquée. À conserver sans limitation de durée.">
         <PrintHead title={doc.ref} subtitle="Reçu de paiement de loyer" extra={
           <p className="text-[11px] mt-0.5" style={{ color: "var(--muted)" }}>Abidjan, le {fr(doc.date + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
         } />
@@ -6596,8 +6592,7 @@ function ReceiptSheet({ doc, unit, property, owner, author, validator, onBack })
           </div>
         </div>
 
-        <PrintFoot note="Cette quittance atteste du paiement des sommes ci-dessus pour la période indiquée. À conserver sans limitation de durée." />
-      </div>
+      </PrintPage>
     </div>
   );
 }
@@ -6819,7 +6814,7 @@ function SoldeSheet({ doc, property, owner, author, onBack }) {
         <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
       </div>
 
-      <div id="print-area" className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
+      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }} note="Document établi contradictoirement entre les parties, valant solde de tout compte.">
         <PrintHead title="SOLDE DE TOUT COMPTE" subtitle={doc.ref} extra={
           <p className="text-[11px]" style={{ color: "var(--muted)" }}>
             Établi le {fr(doc.date + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" })}
@@ -6969,8 +6964,7 @@ function SoldeSheet({ doc, property, owner, author, onBack }) {
             <div className="border-t" style={{ borderColor: "var(--ink)" }} />
           </div>
         </div>
-        <PrintFoot note="Document établi contradictoirement entre les parties, valant solde de tout compte." />
-      </div>
+      </PrintPage>
     </div>
   );
 }
@@ -7465,7 +7459,7 @@ function ComplaintSheet({ complaint: c, property, unit, members, quote, onBack }
         <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
       </div>
 
-      <div id="print-area" className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
+      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
         <PrintHead title="FICHE DE PLAINTE" subtitle={c.ref} extra={
           <p className="text-[11px]" style={{ color: "var(--muted)" }}>
             Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}
@@ -7561,8 +7555,7 @@ function ComplaintSheet({ complaint: c, property, unit, members, quote, onBack }
             <div className="border-t" style={{ borderColor: "var(--ink)" }} />
           </div>
         </div>
-        <PrintFoot />
-      </div>
+      </PrintPage>
     </div>
   );
 }
@@ -8439,7 +8432,7 @@ function DechargeSheet({ doc, author, onBack }) {
         <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
       </div>
 
-      <div id="print-area" className="bg-white rounded-xl border p-7 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
+      <PrintPage className="bg-white rounded-xl border p-7 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }} note={author ? `Établie par ${author.name}` : undefined}>
         <PrintHead extra={
           <p className="text-[10px] leading-snug" style={{ color: "var(--muted)" }}>
             Par l'État suivant arrêté<br />ministériel n° AB 0005262<br />du 15 JAN. 2026
@@ -8510,8 +8503,7 @@ function DechargeSheet({ doc, author, onBack }) {
         <p className="text-[11px] italic text-center mt-5" style={{ color: "var(--muted)" }}>
           Décharge à conserver par l'ENTREPRISE KIBEGNON SARL — photocopie de la pièce au dos.
         </p>
-        <PrintFoot note={author ? `Établie par ${author.name}` : undefined} />
-      </div>
+      </PrintPage>
     </div>
   );
 }
@@ -8912,7 +8904,7 @@ function CashSheet({ day, mode = "jour", range, data, members, handover, onBack 
         <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
         <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
       </div>
-      <div id="print-area" className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
+      <PrintPage className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
         <PrintHead title={titre} subtitle={range?.label || fr(day + "T00:00:00", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} />
 
         <table className="w-full text-[11px] mt-4">
@@ -8987,8 +8979,7 @@ function CashSheet({ day, mode = "jour", range, data, members, handover, onBack 
             <div className="border-t" style={{ borderColor: "var(--ink)" }} />
           </div>
         </div>
-        <PrintFoot />
-      </div>
+      </PrintPage>
     </div>
   );
 }
@@ -9236,14 +9227,23 @@ select,input,textarea{font-family:inherit;color:var(--ink);background:#fff}
 select:focus,input:focus,textarea:focus{border-color:var(--brass)!important;outline:none}
 select:disabled,input:disabled{background:#F6F8FA;color:#6B7280}
 button{cursor:pointer}
+.kb-page{width:100%;border-collapse:collapse}
+.kb-page>tbody>tr>td.kb-page-body{padding:0;vertical-align:top}
+.kb-page>tfoot{display:none}
 @media print{
   body{background:#fff}
   header,nav,.print\:hidden{display:none!important}
   main{padding:0!important;max-width:100%!important}
   #print-area{border:none!important;box-shadow:none!important;padding:0!important;max-width:100%!important;
-    display:flex;flex-direction:column;min-height:100vh}
-  /* Le pied est repoussé en bas de page et n'est jamais coupé */
-  .kb-foot{margin-top:auto;break-inside:avoid;page-break-inside:avoid}
+    overflow:visible!important}
+  /* Gabarit : le contenu peut couper librement entre les pages ;
+     le tfoot répété réserve la place du pied sur CHAQUE page. */
+  .kb-page{width:100%;border-collapse:collapse}
+  .kb-page>tbody>tr,.kb-page>tbody>tr>td{page-break-inside:auto!important;break-inside:auto!important}
+  .kb-page>tfoot{display:table-footer-group}
+  .kb-foot-space{display:block;height:var(--kb-foot-h,26mm)}
+  /* Pied de page fixé au bas de chaque feuille imprimée */
+  .kb-foot{position:fixed;bottom:0;left:0;right:0;margin:0!important;padding-top:6px;background:#fff}
   .kb-letter:empty:before{content:attr(data-placeholder);color:#9AA6B5}
   .kb-letter h3{font-size:1.05em;font-weight:700;margin:.9em 0 .35em}
   .kb-letter p{margin:0 0 .7em}
@@ -9258,7 +9258,7 @@ button{cursor:pointer}
   /* L'en-tête se répète en haut de chaque page, mais les totaux ne doivent
      apparaître qu'une seule fois, à la fin réelle du tableau. */
   thead{display:table-header-group}
-  tfoot{display:table-row-group}
+  table:not(.kb-page)>tfoot{display:table-row-group}
   @page{margin:12mm;size:A4}
 }
 `;
