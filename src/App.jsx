@@ -802,7 +802,7 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "22.0";
+const APP_VERSION = "22.1";
 const APP_BUILD = "2026-09-17";
 
 /* ---- Papier à en-tête de l'agence ---- */
@@ -5080,6 +5080,17 @@ function Recouvrement({ store, me, userId }) {
   const propById = useMemo(() => Object.fromEntries(properties.map((p) => [p.id, p])), [properties]);
   const ownerById = useMemo(() => Object.fromEntries(owners.map((o) => [o.id, o])), [owners]);
   const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
+
+  /* Propriétaires ayant plusieurs bâtiments avec un tableau sur le mois filtré */
+  const consolidables = useMemo(() => {
+    if (filterPeriod === "all") return [];
+    const m = {};
+    rentPeriods.filter((p) => p.scope === scope && p.period === filterPeriod).forEach((p) => {
+      const oid = propById[p.propertyId]?.ownerId; if (!oid) return;
+      m[oid] = (m[oid] || 0) + 1;
+    });
+    return Object.entries(m).filter(([, n]) => n > 1).map(([oid]) => ownerById[oid]).filter(Boolean);
+  }, [rentPeriods, scope, filterPeriod, propById, ownerById]);
   /* Suivi commercial : modifiable par son auteur (et l'administrateur).
      État comptable : lecture pour tous, modification réservée aux administrateurs. */
   const canEditPeriod = (p) => p.scope === "comptable"
@@ -5127,16 +5138,7 @@ function Recouvrement({ store, me, userId }) {
       || (ownerById[propById[p.propertyId]?.ownerId]?.name || "").toLowerCase().includes(q)
       || periodLabel(p.period).toLowerCase().includes(q)));
 
-  /* Propriétaires ayant plusieurs bâtiments avec un tableau sur le mois filtré */
-  const consolidables = useMemo(() => {
-    if (filterPeriod === "all") return [];
-    const m = {};
-    rentPeriods.filter((p) => p.scope === scope && p.period === filterPeriod).forEach((p) => {
-      const oid = propById[p.propertyId]?.ownerId; if (!oid) return;
-      m[oid] = (m[oid] || 0) + 1;
-    });
-    return Object.entries(m).filter(([, n]) => n > 1).map(([oid]) => ownerById[oid]).filter(Boolean);
-  }, [rentPeriods, scope, filterPeriod, propById, ownerById]);
+
 
   /* Consolidé du mois affiché */
   const global = list.reduce((acc, p) => {
