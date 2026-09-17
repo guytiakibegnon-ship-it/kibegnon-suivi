@@ -802,7 +802,7 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "22.1";
+const APP_VERSION = "22.2";
 const APP_BUILD = "2026-09-17";
 
 /* ---- Papier à en-tête de l'agence ---- */
@@ -6040,6 +6040,7 @@ function TaxModal({ initial, properties, units, owners, onSave, onClose }) {
     initial?.installments?.length ? initial.installments.map((t) => ({ ...t }))
       : buildInstallments(initial?.taxYear || new Date().getFullYear(), initial?.taxedAmount || 0));
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const propById = useMemo(() => Object.fromEntries((properties || []).map((p) => [p.id, p])), [properties]);
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const setT = (i, k, v) => setInst((p) => p.map((t, j) => (j === i ? { ...t, [k]: v } : t)));
 
