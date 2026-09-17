@@ -6,11 +6,9 @@
  * ==========================================================================*/
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
-  AlertTriangle, AlignCenter, AlignJustify, AlignLeft, AlignRight, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, Banknote, BarChart3, Bell, BellOff, BellRing, Bold, Briefcase, Building2, CalendarClock, CalendarDays, CalendarOff, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, DoorClosed, DoorOpen, Download, Eraser, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Home, Image, Inbox, IndentDecrease, IndentIncrease, Italic, KeyRound, Landmark, Layers, LayoutDashboard, List, ListChecks, ListOrdered, Lock, LogOut, Mail, MapPin, MessageCircle, MessageCircleWarning, MessageSquare, Package, Palette, Paperclip, Pause, Pencil, Percent, Phone, PhoneIncoming, Play, Plus, Printer, Receipt, Redo2, RotateCcw, Scale, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, Underline, Undo2, UserPlus, UserRound, Users, Wallet, X, Zap,
+  AlertTriangle, AlignCenter, AlignJustify, AlignLeft, AlignRight, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, Banknote, BarChart3, Bell, BellOff, BellRing, Bold, Briefcase, Building2, CalendarClock, CalendarDays, CalendarOff, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, DoorClosed, DoorOpen, Download, Eraser, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Highlighter, Home, Image, Inbox, IndentDecrease, IndentIncrease, Italic, KeyRound, Landmark, Layers, LayoutDashboard, Link2, List, ListChecks, ListOrdered, Lock, LogOut, Mail, MapPin, Maximize2, MessageCircle, MessageCircleWarning, MessageSquare, Minimize2, Minus, Package, Palette, Paperclip, Pause, Pencil, Percent, Phone, PhoneIncoming, Play, Plus, Printer, Receipt, Redo2, RotateCcw, Scale, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, Strikethrough, Subscript, Superscript, Table2, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, Underline, Undo2, UserPlus, UserRound, Users, Wallet, X, Zap,
 } from "lucide-react";
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, CartesianGrid,
-} from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { supabase, AUTH_DOMAIN } from "./supabaseClient";
 
 
@@ -804,8 +802,8 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "21.1";
-const APP_BUILD = "2026-09-14";
+const APP_VERSION = "22.0";
+const APP_BUILD = "2026-09-17";
 
 /* ---- Papier à en-tête de l'agence ---- */
 const AGENCY = {
@@ -970,6 +968,8 @@ const mPeriod  = (r) => ({ id: r.id, propertyId: r.property_id, period: r.period
 const mRLine   = (r) => ({ id: r.id, periodId: r.period_id, unitId: r.unit_id, unitLabel: r.unit_label, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, expected: Number(r.expected), collected: Number(r.collected), paidAt: r.paid_at, charges: Number(r.charges), comment: r.comment, position: r.position, vacant: !!r.vacant, months: Math.max(1, Number(r.months) || 1), prepaid: !!r.prepaid });
 const mRCharge = (r) => ({ id: r.id, periodId: r.period_id, label: r.label, amount: Number(r.amount), observation: r.observation, position: r.position, kind: r.kind || "charge" });
 const mFormer   = (r) => ({ id: r.id, unitId: r.unit_id, propertyId: r.property_id, unitLabel: r.unit_label, name: r.name, phone: r.phone, email: r.email, leaseStart: r.lease_start, leaseEnd: r.lease_end, departureDate: r.departure_date, reason: r.reason, rent: Number(r.rent_amount) || 0, deposit: Number(r.deposit) || 0, depositRefund: Number(r.deposit_refund) || 0, balanceDue: Number(r.balance_due) || 0, notes: r.notes, archivedBy: r.archived_by });
+const mProspected = (r) => ({ id: r.id, ref: r.ref, ownerName: r.owner_name, ownerPhone: r.owner_phone, ownerPhone2: r.owner_phone2, ownerWhatsapp: r.owner_whatsapp, ownerType: r.owner_type, ownerNotes: r.owner_notes, kind: r.kind, commune: r.commune, quartier: r.quartier, address: r.address, landmark: r.landmark, rooms: r.rooms, bedrooms: r.bedrooms, bathrooms: r.bathrooms, floor: r.floor, surface: r.surface, furnished: !!r.furnished, condition: r.condition, availability: r.availability, operation: r.operation, rent: r.rent, salePrice: r.sale_price, negotiable: !!r.negotiable, ownerInterest: r.owner_interest, potential: r.potential, prospectedAt: r.prospected_at, agentId: r.agent_id, method: r.method, identifiedHow: r.identified_how, nextAction: r.next_action, nextContact: r.next_contact, notes: r.notes, status: r.status, photos: r.photos || [], history: r.history || [], propertyId: r.property_id, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
+const mReport    = (r) => ({ id: r.id, agentId: r.agent_id, weekStart: r.week_start, zone: r.zone, objectives: r.objectives || {}, manual: r.manual || {}, qualitative: r.qualitative || {}, top: r.top || [], status: r.status, submittedAt: r.submitted_at, validatedBy: r.validated_by, validatedAt: r.validated_at, managerNote: r.manager_note || "", createdAt: Date.parse(r.created_at) });
 const mProspect = (r) => ({ id: r.id, ref: r.ref, propertyId: r.property_id, unitId: r.unit_id, operation: r.operation, name: r.name, phone: r.phone, email: r.email, source: r.source, interest: r.interest, status: r.status, nextContact: r.next_contact, assignedTo: r.assigned_to, notes: r.notes, lossReason: r.loss_reason || "", contacts: r.contacts || [], createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
 const mCash     = (r) => ({ id: r.id, date: r.entry_date, direction: r.direction, amount: Number(r.amount), label: r.label, category: r.category, method: r.method, propertyId: r.property_id, ownerId: r.owner_id, reference: r.reference, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
 const mHandover = (r) => ({ id: r.id, date: r.handover_date, amount: Number(r.amount), fromUser: r.from_user, toUser: r.to_user, status: r.status, approvedAt: r.approved_at, note: r.note, responseNote: r.response_note, createdAt: Date.parse(r.created_at) });
@@ -1015,6 +1015,8 @@ function useStore(userId) {
   const [cashEntries, setCashEntries] = useState([]);
   const [formerTenants, setFormerTenants] = useState([]);
   const [prospects, setProspects] = useState([]);
+  const [prospected, setProspected] = useState([]);
+  const [weeklyReports, setWeeklyReports] = useState([]);
   const [handovers, setHandovers] = useState([]);
 
   /* Référence vivante des membres, utilisée par les notifications */
@@ -1022,7 +1024,7 @@ function useStore(userId) {
   useEffect(() => { membersRef.current = members; }, [members]);
 
   const load = useCallback(async () => {
-    const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc, un, rp, rlin, rch, rq, tax, cp, ff, ce, ho, ft, prs] = await Promise.all([
+    const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc, un, rp, rlin, rch, rq, tax, cp, ff, ce, ho, ft, prs, ppr, wrp] = await Promise.all([
       supabase.from("departments").select("*").order("created_at"),
       supabase.from("profiles").select("*").order("created_at"),
       supabase.from("tasks").select("*"),
@@ -1053,6 +1055,8 @@ function useStore(userId) {
       supabase.from("cash_handovers").select("*").order("handover_date", { ascending: false }),
       supabase.from("former_tenants").select("*").order("departure_date", { ascending: false }),
       supabase.from("prospects").select("*").order("created_at", { ascending: false }),
+      supabase.from("prospected_properties").select("*").order("prospected_at", { ascending: false }),
+      supabase.from("weekly_reports").select("*").order("week_start", { ascending: false }),
     ]);
     setDepartments((dep.data || []).map(mDept));
     setMembers((prof.data || []).map(mProfile));
@@ -1084,6 +1088,8 @@ function useStore(userId) {
     setHandovers((ho.data || []).map(mHandover));
     setFormerTenants((ft.data || []).map(mFormer));
     setProspects((prs.data || []).map(mProspect));
+    setProspected((ppr.data || []).map(mProspected));
+    setWeeklyReports((wrp.data || []).map(mReport));
     setLoading(false);
   }, []);
 
@@ -1119,6 +1125,8 @@ function useStore(userId) {
     const upHo = upsertBy("id", mHandover)(setHandovers), rmHo = removeBy("id")(setHandovers);
     const upFt = upsertBy("id", mFormer)(setFormerTenants), rmFt = removeBy("id")(setFormerTenants);
     const upPr = upsertBy("id", mProspect)(setProspects), rmPr = removeBy("id")(setProspects);
+    const upPp = upsertBy("id", mProspected)(setProspected), rmPp = removeBy("id")(setProspected);
+    const upWr = upsertBy("id", mReport)(setWeeklyReports), rmWr = removeBy("id")(setWeeklyReports);
     const h = (up, rm, key = "id") => (p) => p.eventType === "DELETE" ? rm(p.old[key]) : up(p.new);
 
     const ch = supabase.channel("kibegnon-rt")
@@ -1162,6 +1170,20 @@ function useStore(userId) {
       .on("postgres_changes", { event: "*", schema: "public", table: "cash_entries" }, h(upCe, rmCe))
       .on("postgres_changes", { event: "*", schema: "public", table: "former_tenants" }, h(upFt, rmFt))
       .on("postgres_changes", { event: "*", schema: "public", table: "prospects" }, h(upPr, rmPr))
+      .on("postgres_changes", { event: "*", schema: "public", table: "prospected_properties" }, h(upPp, rmPp))
+      .on("postgres_changes", { event: "*", schema: "public", table: "weekly_reports" }, (p) => {
+        if (p.eventType === "DELETE") return rmWr(p.old.id);
+        /* La direction est prévenue à la soumission, le commercial à la validation ou au renvoi */
+        const nom = membersRef.current.find((m) => m.id === p.new.agent_id)?.name || "un commercial";
+        if (p.new.status === "soumis" && p.old?.status !== "soumis" && p.new.agent_id !== userId) {
+          notify("Rapport hebdomadaire soumis", `Le rapport de ${nom} a été soumis.`);
+        }
+        if (p.new.agent_id === userId && p.old?.status !== p.new.status) {
+          if (p.new.status === "valide") notify("Rapport validé", "Votre rapport hebdomadaire a été validé par la direction.");
+          if (p.new.status === "a_corriger") notify("Rapport à corriger", p.new.manager_note || "La direction vous renvoie votre rapport.");
+        }
+        upWr(p.new);
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "cash_handovers" }, (p) => {
         if (p.eventType === "DELETE") return rmHo(p.old.id);
         /* Le gardien du solde est prévenu dès qu'une remise lui est adressée */
@@ -1704,6 +1726,69 @@ function useStore(userId) {
     return { error: error?.message };
   };
 
+  /* ================= ACTIONS : NOUVEAUX BIENS PROSPECTÉS ================= */
+  const saveProspected = async (f) => {
+    const num = (v) => (v === "" || v === null || v === undefined) ? null : Number(v);
+    const row = { owner_name: f.ownerName || "", owner_phone: f.ownerPhone || "", owner_phone2: f.ownerPhone2 || "",
+      owner_whatsapp: f.ownerWhatsapp || "", owner_type: f.ownerType || "particulier", owner_notes: f.ownerNotes || "",
+      kind: f.kind, commune: f.commune || "", quartier: f.quartier || "", address: f.address || "", landmark: f.landmark || "",
+      rooms: num(f.rooms), bedrooms: num(f.bedrooms), bathrooms: num(f.bathrooms), floor: f.floor || "", surface: num(f.surface),
+      furnished: !!f.furnished, condition: f.condition || "", availability: f.availability || "",
+      operation: f.operation, rent: num(f.rent), sale_price: num(f.salePrice), negotiable: !!f.negotiable,
+      owner_interest: f.ownerInterest, potential: f.potential, prospected_at: f.prospectedAt, agent_id: f.agentId || null,
+      method: f.method, identified_how: f.identifiedHow || "", next_action: f.nextAction || "", next_contact: f.nextContact || null,
+      notes: f.notes || "", status: f.status || "nouveau", photos: f.photos || [], history: f.history || [] };
+    if (f.id) {
+      const { data, error } = await supabase.from("prospected_properties").update(row).eq("id", f.id).select().single();
+      if (error) return { error: error.message };
+      if (data) setProspected((p) => p.map((x) => (x.id === f.id ? mProspected(data) : x)));
+      return { id: f.id };
+    }
+    const { data, error } = await supabase.from("prospected_properties").insert({ ...row, created_by: userId }).select().single();
+    if (error) return { error: error.message };
+    if (data) setProspected((p) => (p.some((x) => x.id === data.id) ? p : [mProspected(data), ...p]));
+    return { id: data?.id };
+  };
+  const deleteProspected = async (id) => {
+    setProspected((p) => p.filter((x) => x.id !== id));
+    const { error } = await supabase.from("prospected_properties").delete().eq("id", id);
+    return { error: error?.message };
+  };
+  const uploadProspectedPhoto = async (bien, file) => {
+    if (!file || file.size > 10 * 1024 * 1024) return { error: "Photo trop volumineuse (10 Mo maximum)." };
+    const safe = file.name.replace(/[^\w.\-]/g, "_");
+    const path = `${bien.id}/${Date.now()}-${safe}`;
+    const up = await supabase.storage.from("prospection").upload(path, file, { upsert: false });
+    if (up.error) return { error: up.error.message };
+    const { data: pub } = supabase.storage.from("prospection").getPublicUrl(path);
+    const photos = [...(bien.photos || []), { url: pub.publicUrl, name: file.name }];
+    const history = [...(bien.history || []), { date: isoDate(new Date()), type: "photo", text: `Photo ajoutée : ${file.name}`, by: "", byId: userId }];
+    return saveProspected({ ...bien, photos, history });
+  };
+
+  /* ================= ACTIONS : RAPPORTS HEBDOMADAIRES ================= */
+  const saveWeeklyReport = async (f) => {
+    const row = { agent_id: f.agentId, week_start: f.weekStart, zone: f.zone || "",
+      objectives: f.objectives || {}, manual: f.manual || {}, qualitative: f.qualitative || {}, top: f.top || [],
+      status: f.status || "brouillon", submitted_at: f.submittedAt || null,
+      validated_by: f.validatedBy || null, validated_at: f.validatedAt || null, manager_note: f.managerNote || "" };
+    if (f.id) {
+      const { data, error } = await supabase.from("weekly_reports").update(row).eq("id", f.id).select().single();
+      if (error) return { error: error.message };
+      if (data) setWeeklyReports((p) => p.map((x) => (x.id === f.id ? mReport(data) : x)));
+      return { id: f.id };
+    }
+    const { data, error } = await supabase.from("weekly_reports").insert(row).select().single();
+    if (error) return { error: /duplicate|unique/i.test(error.message) ? "Un rapport existe déjà pour cette semaine." : error.message };
+    if (data) setWeeklyReports((p) => (p.some((x) => x.id === data.id) ? p : [mReport(data), ...p]));
+    return { id: data?.id };
+  };
+  const deleteWeeklyReport = async (id) => {
+    setWeeklyReports((p) => p.filter((x) => x.id !== id));
+    const { error } = await supabase.from("weekly_reports").delete().eq("id", id);
+    return { error: error?.message };
+  };
+
   /* ================= ACTIONS : PROSPECTS (CRM) ================= */
   const saveProspect = async (f) => {
     const row = { property_id: f.propertyId || null, unit_id: f.unitId || null,
@@ -1803,16 +1888,44 @@ function useStore(userId) {
     const paidOn = doc.fields?.paidOn || doc.date;
     /* Une quittance de plusieurs mois se répartit sur chaque mois concerné */
     const parMois = Math.round(Number(doc.total) / mois.length);
-    let done = 0; const manquants = [];
+    let done = 0; const manquants = []; const crees = [];
 
     for (const m of mois) {
-      const period = rentPeriods.find((p) => p.propertyId === doc.propertyId
+      let period = rentPeriods.find((p) => p.propertyId === doc.propertyId
         && p.period === m && p.scope === "comptable");
-      if (!period) { manquants.push(m); continue; }
-      const line = rentLines.find((l) => l.periodId === period.id
-        && (l.unitId === doc.unitId
+      if (!period) {
+        /* Première quittance du mois : l'état comptable est créé et amorcé
+           depuis le mois précédent, puis la quittance y est reportée. */
+        const prop = properties.find((p) => p.id === doc.propertyId);
+        const ins = await supabase.from("rent_periods").insert({
+          property_id: doc.propertyId, period: m, scope: "comptable",
+          agency_rate: prop?.feeRate ?? 0.10, status: "brouillon", created_by: userId,
+        }).select().single();
+        if (ins.error || !ins.data) { manquants.push(m); continue; }
+        period = mPeriod(ins.data);
+        const seed = seedPeriod({ period, rentPeriods, rentLines, rentCharges, units });
+        if (seed.lines.length) {
+          await supabase.from("rent_lines").insert(seed.lines.map((l, i) => ({
+            period_id: period.id, unit_id: l.unitId || null, unit_label: l.unitLabel || "",
+            tenant_name: l.tenantName || "", tenant_phone: l.tenantPhone || "",
+            expected: Number(l.expected) || 0, collected: Number(l.collected) || 0,
+            paid_at: l.paidAt || null, charges: Number(l.charges) || 0, comment: l.comment || "",
+            position: i, vacant: !!l.vacant, months: l.months || 1, prepaid: !!l.prepaid })));
+        }
+        if (seed.charges.length) {
+          await supabase.from("rent_charges").insert(seed.charges.map((c, i) => ({
+            period_id: period.id, label: c.label, amount: Number(c.amount) || 0,
+            observation: c.observation || "", kind: c.kind || "charge", position: i })));
+        }
+        const fresh = await supabase.from("rent_lines").select("*").order("position");
+        if (fresh.data) setRentLines(fresh.data.map(mRLine));
+        setRentPeriods((p) => [period, ...p]);
+        crees.push(m);
+      }
+      const lignesPeriode = (await supabase.from("rent_lines").select("*").eq("period_id", period.id)).data?.map(mRLine) || [];
+      const line = lignesPeriode.find((l) => l.unitId === doc.unitId
           || (unit && (l.unitLabel || "").toLowerCase() === (unit.label || "").toLowerCase())
-          || (l.tenantName || "").toLowerCase() === (doc.clientName || "").toLowerCase()));
+          || (l.tenantName || "").toLowerCase() === (doc.clientName || "").toLowerCase());
       const montant = line ? Math.max(Number(line.expected) || 0, parMois) : parMois;
 
       if (line) {
@@ -1836,9 +1949,9 @@ function useStore(userId) {
       const { data } = await supabase.from("rent_lines").select("*").order("position");
       if (data) setRentLines(data.map(mRLine));
     }
-    if (!done) return { skipped: `aucun état comptable pour ${mois.join(", ")}` };
-    if (manquants.length) return { ok: true, skipped: `mois sans état comptable : ${manquants.join(", ")}` };
-    return { ok: true, months: done };
+    if (!done) return { skipped: `report impossible pour ${mois.join(", ")}` };
+    if (manquants.length) return { ok: true, skipped: `report impossible pour : ${manquants.join(", ")}` };
+    return { ok: true, months: done, created: crees };
   };
 
   /* Validation d'une quittance par un administrateur */
@@ -1948,7 +2061,7 @@ function useStore(userId) {
     loading, departments, members, tasks, timeEntries, activeTimers, channels, channelMembers, messages,
     owners, properties, products, stockEntries, releases, releaseLines, quotes, quoteLines, templates, documents,
     units, rentPeriods, rentLines, rentCharges, requests, taxRecords, complaints, folderFiles,
-    cashEntries, handovers, formerTenants, prospects,
+    cashEntries, handovers, formerTenants, prospects, prospected, weeklyReports,
     actions: {
       createTask, updateTask, deleteTask, startTimer, stopTimer, pauseTask, finishTask, addManualTime, deleteEntry,
       ensureDm, sendMessage, markRead, saveDept, deleteDept, updateProfile, adminUsers,
@@ -1963,7 +2076,8 @@ function useStore(userId) {
       uploadFolderFile, deleteFolderFile, approveDocument, applyReceiptToRent,
       saveCashEntry, deleteCashEntry, createHandover, answerHandover,
       applyAdvanceToPeriods, archiveTenant, deleteFormerTenant,
-      saveProspect, deleteProspect, reload: load,
+      saveProspect, deleteProspect, saveProspected, deleteProspected, uploadProspectedPhoto,
+      saveWeeklyReport, deleteWeeklyReport, reload: load,
     },
   };
 }
@@ -2224,6 +2338,8 @@ function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onC
           <Field label="Corps du courrier"
             hint={f.docType === "relance" ? "Laissez vide pour utiliser le texte type généré automatiquement" : "Mise en forme complète : gras, listes, alignements, titres"}>
             <LetterEditor value={f.body} onChange={(html) => set("body", html)}
+              context={{ clientName: f.clientName, propertyName: properties.find((p) => p.id === f.propertyId)?.name,
+                unitLabel: (units || []).find((u) => u.id === f.unitId)?.label, total }}
               placeholder={f.docType === "relance" ? "Laissez vide pour le texte type…" : "Rédigez votre courrier…"} />
           </Field>
         </>
@@ -2406,10 +2522,57 @@ function ToolBtn({ onClick, active, title, children, wide }) {
   );
 }
 
-function LetterEditor({ value, onChange, placeholder }) {
+const LETTER_FIELDS = [
+  ["{{DATE}}", "Date du jour"], ["{{DESTINATAIRE}}", "Nom du destinataire"], ["{{BIEN}}", "Nom du bien"],
+  ["{{LOT}}", "Lot / appartement"], ["{{MONTANT}}", "Montant du document"], ["{{AGENCE}}", "Entreprise Kibegnon SARL"],
+];
+const LETTER_HIGHLIGHTS = ["#FFF59D", "#C8E6C9", "#BBDEFB", "#F8BBD0", "transparent"];
+
+function LetterEditor({ value, onChange, placeholder, context = {} }) {
   const ref = useRef(null);
   const [etat, setEtat] = useState({});
   const [couleurs, setCouleurs] = useState(false);
+  const [surlign, setSurlign] = useState(false);
+  const [plein, setPlein] = useState(false);
+  const [stats, setStats] = useState({ mots: 0, car: 0 });
+  const [tableau, setTableau] = useState(false);
+  const [tRows, setTRows] = useState(3); const [tCols, setTCols] = useState(3);
+
+  const compter = () => {
+    const txt = ref.current?.innerText || "";
+    setStats({ mots: (txt.trim().match(/\S+/g) || []).length, car: txt.length });
+  };
+  useEffect(() => { compter(); /* eslint-disable-line */ }, []);
+
+  /* Remplit les champs dynamiques avec le contexte du document */
+  const substitute = (code) => ({
+    "{{DATE}}": fr(new Date(), { day: "numeric", month: "long", year: "numeric" }),
+    "{{DESTINATAIRE}}": context.clientName || "[destinataire]",
+    "{{BIEN}}": context.propertyName || "[bien]",
+    "{{LOT}}": context.unitLabel || "[lot]",
+    "{{MONTANT}}": context.total ? fcfa(context.total) : "[montant]",
+    "{{AGENCE}}": "Entreprise Kibegnon SARL",
+  }[code] || code);
+
+  const insertHtml = (html) => {
+    ref.current?.focus();
+    try { document.execCommand("insertHTML", false, html); } catch { /* ignoré */ }
+    onChange(ref.current?.innerHTML || ""); compter();
+  };
+  const insertTable = () => {
+    const r = Math.max(1, Math.min(12, Number(tRows) || 3)), c = Math.max(1, Math.min(8, Number(tCols) || 3));
+    const cell = '<td style="border:1px solid #9AA6B5;padding:4px 8px;min-width:60px">&nbsp;</td>';
+    const rows = Array.from({ length: r }, (_, i) => `<tr>${Array.from({ length: c }, () => (i === 0 ? cell.replace("<td", '<td style="background:#F1F3F5;font-weight:700;border:1px solid #9AA6B5;padding:4px 8px"').replace('style="border:1px solid #9AA6B5;padding:4px 8px;min-width:60px" ', "") : cell)).join("")}</tr>`).join("");
+    insertHtml(`<table style="border-collapse:collapse;width:100%;margin:8px 0">${rows}</table><p></p>`);
+    setTableau(false);
+  };
+  const setLineHeight = (lh) => {
+    ref.current?.focus();
+    const sel = window.getSelection();
+    let node = sel?.anchorNode; while (node && node !== ref.current && !(node.nodeType === 1 && /^(P|DIV|H[1-3]|LI)$/.test(node.tagName))) node = node.parentNode;
+    if (node && node !== ref.current) node.style.lineHeight = lh; else if (ref.current) ref.current.style.lineHeight = lh;
+    onChange(ref.current?.innerHTML || "");
+  };
 
   /* Le contenu n'est injecté qu'au montage : réécrire à chaque frappe
      replacerait le curseur au début du texte. */
@@ -2432,6 +2595,9 @@ function LetterEditor({ value, onChange, placeholder }) {
         center: document.queryCommandState("justifyCenter"),
         right: document.queryCommandState("justifyRight"),
         justify: document.queryCommandState("justifyFull"),
+        strike: document.queryCommandState("strikeThrough"),
+        sup: document.queryCommandState("superscript"),
+        sub: document.queryCommandState("subscript"),
       });
     } catch { /* certains navigateurs restreignent queryCommandState */ }
   };
@@ -2440,13 +2606,15 @@ function LetterEditor({ value, onChange, placeholder }) {
     ref.current?.focus();
     try { document.execCommand(nom, false, arg); } catch { /* ignoré */ }
     onChange(ref.current?.innerHTML || "");
-    majEtat();
+    majEtat(); compter();
   };
 
   const sep = <span style={{ width: 1, height: 20, background: "var(--line)", margin: "0 3px", flexShrink: 0 }} />;
 
   return (
-    <div className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--line)" }}>
+    <div className="rounded-xl border overflow-hidden" style={plein
+      ? { position: "fixed", inset: 0, zIndex: 60, borderRadius: 0, background: "#EEF1F5", display: "flex", flexDirection: "column" }
+      : { borderColor: "var(--line)" }}>
       {/* Barre d'outils */}
       <div className="flex flex-wrap items-center gap-0.5 p-1.5 border-b print:hidden"
         style={{ borderColor: "var(--line)", background: "#F7F9FB" }}>
@@ -2467,6 +2635,20 @@ function LetterEditor({ value, onChange, placeholder }) {
         <ToolBtn title="Gras (Ctrl+B)" active={etat.bold} onClick={() => cmd("bold")}><Bold size={15} /></ToolBtn>
         <ToolBtn title="Italique (Ctrl+I)" active={etat.italic} onClick={() => cmd("italic")}><Italic size={15} /></ToolBtn>
         <ToolBtn title="Souligné (Ctrl+U)" active={etat.underline} onClick={() => cmd("underline")}><Underline size={15} /></ToolBtn>
+        <ToolBtn title="Barré" active={etat.strike} onClick={() => cmd("strikeThrough")}><Strikethrough size={15} /></ToolBtn>
+        <ToolBtn title="Exposant" active={etat.sup} onClick={() => cmd("superscript")}><Superscript size={15} /></ToolBtn>
+        <ToolBtn title="Indice" active={etat.sub} onClick={() => cmd("subscript")}><Subscript size={15} /></ToolBtn>
+        <div className="relative">
+          <ToolBtn title="Surlignage" onClick={() => setSurlign((c) => !c)}><Highlighter size={15} /></ToolBtn>
+          {surlign && (
+            <div className="absolute z-20 mt-1 p-1.5 rounded-lg border bg-white flex gap-1" style={{ borderColor: "var(--line)", boxShadow: "0 6px 20px rgba(0,0,0,.10)" }}>
+              {LETTER_HIGHLIGHTS.map((c) => (
+                <button key={c} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { cmd("hiliteColor", c); setSurlign(false); }}
+                  className="rounded" style={{ width: 20, height: 20, background: c === "transparent" ? "#fff" : c, border: "1px solid var(--line)" }} title={c === "transparent" ? "Aucun" : ""} />
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="relative">
           <ToolBtn title="Couleur du texte" onClick={() => setCouleurs((c) => !c)}><Palette size={15} /></ToolBtn>
@@ -2495,28 +2677,64 @@ function LetterEditor({ value, onChange, placeholder }) {
         <ToolBtn title="Augmenter le retrait" onClick={() => cmd("indent")}><IndentIncrease size={15} /></ToolBtn>
 
         {sep}
-        <ToolBtn wide title="Titre de partie" onClick={() => cmd("formatBlock", "<h3>")}>
-          <span className="text-xs font-bold">Titre</span>
-        </ToolBtn>
-        <ToolBtn wide title="Paragraphe normal" onClick={() => cmd("formatBlock", "<p>")}>
-          <span className="text-xs">Normal</span>
-        </ToolBtn>
+        <select onChange={(e) => { cmd("formatBlock", e.target.value); e.target.value = ""; }}
+          className="rounded-md border text-xs px-1.5" style={{ ...inputStyle, height: 30, width: 96 }} defaultValue="">
+          <option value="" disabled>Style</option>
+          <option value="<p>">Normal</option><option value="<h1>">Titre 1</option><option value="<h2>">Titre 2</option><option value="<h3>">Titre 3</option>
+          <option value="<blockquote>">Citation</option>
+        </select>
+        <select onChange={(e) => { setLineHeight(e.target.value); e.target.value = ""; }}
+          className="rounded-md border text-xs px-1.5" style={{ ...inputStyle, height: 30, width: 92 }} defaultValue="" title="Interligne">
+          <option value="" disabled>Interligne</option>
+          <option value="1.15">Simple</option><option value="1.5">1,5</option><option value="2">Double</option>
+        </select>
         <ToolBtn title="Effacer la mise en forme" onClick={() => cmd("removeFormat")}><Eraser size={15} /></ToolBtn>
 
         {sep}
         <ToolBtn title="Annuler (Ctrl+Z)" onClick={() => cmd("undo")}><Undo2 size={15} /></ToolBtn>
         <ToolBtn title="Rétablir (Ctrl+Y)" onClick={() => cmd("redo")}><Redo2 size={15} /></ToolBtn>
+
+        {sep}
+        <div className="relative">
+          <ToolBtn wide title="Insérer un tableau" onClick={() => setTableau((t) => !t)}><Table2 size={15} /><span className="text-xs ml-1">Tableau</span></ToolBtn>
+          {tableau && (
+            <div className="absolute z-20 mt-1 p-2 rounded-lg border bg-white flex items-center gap-1.5" style={{ borderColor: "var(--line)", boxShadow: "0 6px 20px rgba(0,0,0,.10)" }}>
+              <input type="number" min={1} max={12} value={tRows} onChange={(e) => setTRows(e.target.value)} className="w-12 px-1 py-1 rounded border text-xs" style={inputStyle} /><span className="text-xs">lignes ×</span>
+              <input type="number" min={1} max={8} value={tCols} onChange={(e) => setTCols(e.target.value)} className="w-12 px-1 py-1 rounded border text-xs" style={inputStyle} /><span className="text-xs">colonnes</span>
+              <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={insertTable} className="kb-btn kb-btn-primary text-xs px-2 py-1">Insérer</button>
+            </div>
+          )}
+        </div>
+        <ToolBtn title="Insérer un lien" onClick={() => { const u = prompt("Adresse du lien :", "https://"); if (u) cmd("createLink", u); }}><Link2 size={15} /></ToolBtn>
+        <ToolBtn title="Ligne de séparation" onClick={() => cmd("insertHorizontalRule")}><Minus size={15} /></ToolBtn>
+        <ToolBtn title="Saut de page à l'impression" onClick={() => insertHtml('<div class="kb-pagebreak" style="border-top:1px dashed #9AA6B5;margin:12px 0;text-align:center;font-size:10px;color:#9AA6B5">— saut de page —</div><p></p>')}><FileText size={15} /></ToolBtn>
+        <select onChange={(e) => { if (e.target.value) insertHtml(substitute(e.target.value)); e.target.value = ""; }}
+          className="rounded-md border text-xs px-1.5" style={{ ...inputStyle, height: 30, width: 130 }} defaultValue="" title="Insérer une information du dossier">
+          <option value="" disabled>Insérer un champ…</option>
+          {LETTER_FIELDS.map(([code, l]) => <option key={code} value={code}>{l}</option>)}
+        </select>
+
+        <span className="flex-1" />
+        <ToolBtn title={plein ? "Quitter le plein écran" : "Plein écran"} onClick={() => setPlein((p) => !p)}>{plein ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</ToolBtn>
       </div>
 
       {/* Zone de rédaction, aux dimensions d'une page */}
-      <div style={{ background: "#EEF1F5", padding: "14px 0" }}>
+      <div style={{ background: "#EEF1F5", padding: "14px 0", ...(plein ? { flex: 1, overflow: "auto" } : {}) }}>
         <div
           ref={ref}
           contentEditable
           suppressContentEditableWarning
-          onInput={() => onChange(ref.current?.innerHTML || "")}
+          onInput={() => { onChange(ref.current?.innerHTML || ""); compter(); }}
           onKeyUp={majEtat}
           onMouseUp={majEtat}
+          onKeyDown={(e) => {
+            /* Raccourcis clavier habituels des traitements de texte */
+            if (!(e.ctrlKey || e.metaKey)) return;
+            const k = e.key.toLowerCase();
+            const map = { b: "bold", i: "italic", u: "underline", e: "justifyCenter", l: "justifyLeft", r: "justifyRight", j: "justifyFull" };
+            if (map[k]) { e.preventDefault(); cmd(map[k]); }
+            if (k === "s") { e.preventDefault(); onChange(ref.current?.innerHTML || ""); }
+          }}
           onBlur={() => onChange(ref.current?.innerHTML || "")}
           onPaste={(e) => {
             /* Collage en texte simple : évite d'importer la mise en forme
@@ -2532,8 +2750,13 @@ function LetterEditor({ value, onChange, placeholder }) {
             outline: "none", fontFamily: "Calibri, sans-serif", fontSize: 14.5,
             lineHeight: 1.65, color: "var(--ink)", textAlign: "justify",
             boxShadow: "0 1px 4px rgba(0,0,0,.08)",
+            ...(plein ? { width: "min(100%, 760px)", minHeight: "80vh" } : {}),
           }}
         />
+      </div>
+      <div className="flex items-center justify-between px-3 py-1.5 border-t text-[11px] print:hidden" style={{ borderColor: "var(--line)", background: "#F7F9FB", color: "var(--muted)" }}>
+        <span>{stats.mots} mot{stats.mots > 1 ? "s" : ""} · {stats.car} caractère{stats.car > 1 ? "s" : ""}</span>
+        <span>Ctrl+B gras · Ctrl+I italique · Ctrl+U souligné · Ctrl+E centrer · Ctrl+J justifier</span>
       </div>
     </div>
   );
@@ -3196,7 +3419,7 @@ function PropertyModal({ initial, owners, members, units, onSave, onSaveUnits, o
   const [f, setF] = useState(() => ({
     ref: "", name: "", kind: "immeuble", address: "", commune: "Cocody", quartier: "", ownerId: "",
     lotsCount: 1, surface: "", rent: "", mandate: "gestion", status: "actif", notes: "",
-    agentId: "", salePrice: "", availableFor: "aucun", ...initial,
+    agentId: "", salePrice: "", availableFor: "aucun", feeRate: 0.10, taxCenter: "", ...initial,
   }));
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
@@ -3265,6 +3488,17 @@ function PropertyModal({ initial, owners, members, units, onSave, onSaveUnits, o
       </div>
       <div className="grid sm:grid-cols-2 gap-3">
         <Field label="Type de mandat"><select className={inputCls} style={inputStyle} value={f.mandate} onChange={(e) => set("mandate", e.target.value)}>{Object.entries(MANDATE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+        <Field label="Taux de prestation agence" hint="Appliqué automatiquement aux tableaux à venir (9,5 accepté)">
+          <div className="flex items-center gap-2">
+            <input type="number" min={0} max={50} step={0.5} className={inputCls} style={inputStyle}
+              value={f.feeRate === "" || f.feeRate === undefined || f.feeRate === null ? "" : Math.round(Number(f.feeRate) * 10000) / 100}
+              onChange={(e) => set("feeRate", e.target.value === "" ? "" : Number(e.target.value) / 100)} />
+            <span className="text-sm font-medium shrink-0" style={{ color: "var(--brass)" }}>%</span>
+          </div>
+        </Field>
+        <Field label="Centre des impôts de rattachement" hint="Receveur destinataire des paiements d'impôt foncier">
+          <input className={inputCls} style={inputStyle} value={f.taxCenter || ""} onChange={(e) => set("taxCenter", e.target.value)} placeholder="Ex. Centre des impôts de Cocody" />
+        </Field>
         <Field label="Disponibilité commerciale" hint="Alimente le tableau des biens vacants">
           <select className={inputCls} style={inputStyle} value={f.availableFor} onChange={(e) => set("availableFor", e.target.value)}>
             {Object.entries(AVAILABLE_FOR).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -4508,7 +4742,7 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
 }
 
 /* ================= État imprimable ================= */
-function PeriodSheet({ period, property, owner, lines, charges, author, onBack }) {
+function PeriodSheet({ period, property, owner, lines, charges, author, cumul = {}, onBack }) {
   const t = periodTotals(lines, charges, period.rate);
   const sc = RENT_SCOPE[period.scope] || RENT_SCOPE.commercial;
   const arrearsRows = lines
@@ -4545,7 +4779,7 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
             <th className="text-right px-2 py-1.5 font-semibold">Encaissé</th>
             <th className="text-left px-2 py-1.5 font-semibold">Date</th>
             <th className="text-center px-2 py-1.5 font-semibold">Statut</th>
-            <th className="text-right px-2 py-1.5 font-semibold">Arriéré</th>
+            <th className="text-right px-2 py-1.5 font-semibold" title="Total des sommes restant dues, tous mois confondus">Arriéré cumulé</th>
             <th className="text-right px-2 py-1.5 font-semibold">Charges</th>
             <th className="text-right px-2 py-1.5 font-semibold">Net</th>
             <th className="text-left px-2 py-1.5 font-semibold">Observations</th>
@@ -4566,7 +4800,13 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
                 <td className="px-2 py-1.5 text-right tabular-nums">{prepaid ? "—" : fcfa(l.collected)}</td>
                 <td className="px-2 py-1.5">{l.paidAt ? fr(l.paidAt + "T00:00:00", { day: "2-digit", month: "2-digit" }) : "—"}</td>
                 <td className="px-2 py-1.5 text-center"><span className="font-bold" style={{ color: st.color }}>{st.label}</span></td>
-                <td className="px-2 py-1.5 text-right tabular-nums" style={{ color: arr > 0 ? "#D81F26" : "inherit" }}>{(vacant || prepaid) ? "—" : fcfa(arr)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums" style={{ color: (cumul[l.unitId || l.unitLabel]?.total || arr) > 0 ? "#D81F26" : "inherit" }}>
+                  {(vacant || prepaid) ? "—" : (() => {
+                    const c = cumul[l.unitId] || cumul[l.unitLabel];
+                    if (c && c.total > 0) return <><strong>{fcfa(c.total)}</strong><div style={{ fontSize: 8, fontWeight: 700 }}>{c.months} mois</div></>;
+                    return fcfa(arr);
+                  })()}
+                </td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(l.charges)}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums font-medium">{prepaid ? "—" : fcfa((Number(l.collected) || 0) - (Number(l.charges) || 0))}</td>
                 <td className="px-2 py-1.5" style={{ fontSize: "9px", lineHeight: 1.3, maxWidth: 160 }}>{l.comment || ""}</td>
@@ -4640,11 +4880,21 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
 
         {t.netOwner > 0 && <p className="text-[11px] italic mt-3">Arrêté le présent état à la somme de <strong>{amountInWords(t.netOwner)}</strong> à verser au propriétaire.</p>}
 
-        {arrearsRows.length > 0 && (
-          <p className="text-[11px] italic mt-3 print:hidden" style={{ color: "var(--muted)" }}>
-            {arrearsRows.length} locataire(s) en arriéré pour {fcfa(t.arrears)} — l'état des arriérés s'édite séparément.
-          </p>
-        )}
+        {(() => {
+          const enArriere = lines.filter((l) => !isVacantLine(l) && !isPrepaidLine(l) && (cumul[l.unitId] || cumul[l.unitLabel])?.total > 0);
+          if (!enArriere.length) return null;
+          return (
+            <div className="rounded p-2 mt-3" style={{ background: "#FDEAEA", border: "1px solid #F5C6C7" }}>
+              <p className="text-[11px] font-bold" style={{ color: "#B5171D" }}>
+                LOCATAIRES EN ARRIÉRÉ ({enArriere.length}) — même après paiement partiel ce mois-ci :
+              </p>
+              <p className="text-[10px] mt-0.5" style={{ color: "#B5171D" }}>
+                {enArriere.map((l) => { const c = cumul[l.unitId] || cumul[l.unitLabel]; return `${l.tenantName || l.unitLabel} : ${c.months} mois (${fcfa(c.total)})`; }).join(" · ")}
+              </p>
+              <p className="text-[9px] mt-0.5 italic" style={{ color: "var(--muted)" }}>Détail mois par mois dans l'état des arriérés, éditable séparément. Ces sommes n'entrent pas dans le règlement du propriétaire.</p>
+            </div>
+          );
+        })()}
 
         <div className="kb-sign flex justify-end pt-10 mt-6">
           <div className="text-center" style={{ minWidth: 210 }}>
@@ -4657,6 +4907,75 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
   );
 }
 
+
+/* ---------------- Relevé consolidé : un propriétaire, plusieurs bâtiments ---------------- */
+function OwnerConsolidatedSheet({ owner, period, scope, blocs, author, onBack }) {
+  const sc = RENT_SCOPE[scope] || RENT_SCOPE.comptable;
+  const total = blocs.reduce((a, b) => a + b.t.netOwner, 0);
+  const totCol = blocs.reduce((a, b) => a + b.t.collected, 0);
+  const totFee = blocs.reduce((a, b) => a + b.t.fee, 0);
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
+        <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
+        <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+      </div>
+      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}
+        note={`Relevé établi par ${author?.name || "—"} — ${sc.label}`}>
+        <PrintHead title="RELEVÉ GÉNÉRAL DU PROPRIÉTAIRE" subtitle={periodLabel(period)} extra={
+          <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
+        } />
+        <div className="grid sm:grid-cols-3 gap-3 py-3 text-xs">
+          <div><p style={{ color: "var(--muted)" }}>Propriétaire</p><p className="font-semibold">{owner?.name}</p>{owner?.phone && <p style={{ color: "var(--muted)" }}>{owner.phone}</p>}</div>
+          <div><p style={{ color: "var(--muted)" }}>Biens concernés</p><p className="font-semibold">{blocs.length}</p></div>
+          <div><p style={{ color: "var(--muted)" }}>Nature</p><p className="font-semibold">{sc.label}</p></div>
+        </div>
+
+        <table className="w-full text-[11px] mt-2">
+          <thead><tr style={{ background: "#F1F3F5" }}>
+            <th className="text-left px-2 py-1.5 font-semibold">Bien</th>
+            <th className="text-right px-2 py-1.5 font-semibold">Loyers encaissés</th>
+            <th className="text-right px-2 py-1.5 font-semibold">Charges retenues</th>
+            <th className="text-right px-2 py-1.5 font-semibold">Charges du mois</th>
+            <th className="text-right px-2 py-1.5 font-semibold">Prestation</th>
+            <th className="text-right px-2 py-1.5 font-semibold">À verser en plus</th>
+            <th className="text-right px-2 py-1.5 font-semibold">Net à payer</th>
+          </tr></thead>
+          <tbody>{blocs.map((b) => (
+            <tr key={b.property.id} className="border-b" style={{ borderColor: "var(--line)" }}>
+              <td className="px-2 py-1.5 font-medium">{b.property.name}<div style={{ fontSize: 9, color: "var(--muted)" }}>{b.t.nActive} locataire(s) · {b.t.nUnpaid + b.t.nPartial} en arriéré · {pctLabel(b.period.rate)}</div></td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(b.t.collected)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">− {fcfa(b.t.deducted)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">− {fcfa(b.t.chargesTotal)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">− {fcfa(b.t.fee)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums" style={{ color: "#3d7d20" }}>+ {fcfa(b.t.supplementsTotal)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums font-bold">{fcfa(b.t.netOwner)}</td>
+            </tr>
+          ))}</tbody>
+          <tfoot><tr style={{ background: "#F1F3F5" }}>
+            <td className="px-2 py-2 font-bold">TOTAL GÉNÉRAL</td>
+            <td className="px-2 py-2 text-right font-bold tabular-nums">{fcfa(totCol)}</td>
+            <td className="px-2 py-2 text-right tabular-nums">− {fcfa(blocs.reduce((a, b) => a + b.t.deducted, 0))}</td>
+            <td className="px-2 py-2 text-right tabular-nums">− {fcfa(blocs.reduce((a, b) => a + b.t.chargesTotal, 0))}</td>
+            <td className="px-2 py-2 text-right tabular-nums">− {fcfa(totFee)}</td>
+            <td className="px-2 py-2 text-right tabular-nums" style={{ color: "#3d7d20" }}>+ {fcfa(blocs.reduce((a, b) => a + b.t.supplementsTotal, 0))}</td>
+            <td className="px-2 py-2 text-right font-bold tabular-nums" style={{ color: "var(--brass)", fontSize: 13 }}>{fcfa(total)}</td>
+          </tr></tfoot>
+        </table>
+
+        <div className="rounded-lg p-3 mt-4 text-center" style={{ background: "#F6F8FA" }}>
+          <p className="text-xs" style={{ color: "var(--muted)" }}>TOTAL GÉNÉRAL À PAYER AU PROPRIÉTAIRE</p>
+          <p className="text-2xl font-bold tabular-nums" style={{ color: "var(--brass)" }}>{fcfa(total)}</p>
+          <p className="text-[11px] italic mt-1">{amountInWords(Math.max(0, total))}</p>
+        </div>
+        <p className="text-[10px] mt-3 italic" style={{ color: "var(--muted)" }}>
+          Chaque bien fait l'objet d'un état de recouvrement détaillé, disponible séparément. Les arriérés des locataires ne sont pas encaissés et n'entrent pas dans ce relevé.
+        </p>
+        <div className="kb-sign flex justify-end pt-10 mt-4"><div className="text-center" style={{ minWidth: 210 }}><p className="text-[11px] font-semibold pb-14">Pour l'Agence</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div></div>
+      </PrintPage>
+    </div>
+  );
+}
 
 /* ---------------- État des arriérés (document distinct, à la demande) ---------------- */
 function ArrearsSheet({ period, property, owner, lines, author, onBack }) {
@@ -4749,6 +5068,9 @@ function Recouvrement({ store, me, userId }) {
   const { properties, owners, units, rentPeriods, rentLines, rentCharges, members, actions } = store;
   const [scope, setScope] = useState("commercial");
   const [filterProp, setFilterProp] = useState("all");
+  const [filterOwner, setFilterOwner] = useState("all");
+  const [search, setSearch] = useState("");
+  const [consolidated, setConsolidated] = useState(null);   // { ownerId, period }
   const [filterPeriod, setFilterPeriod] = useState(currentPeriod());
   const [editor, setEditor] = useState(null);
   const [sheetId, setSheetId] = useState(null);
@@ -4772,16 +5094,49 @@ function Recouvrement({ store, me, userId }) {
       author={memberById[arrSheet.createdBy]} onBack={() => setArrearsId(null)} />;
   }
 
-  const sheet = rentPeriods.find((p) => p.id === sheetId);
-  if (sheet) {
-    return <PeriodSheet period={sheet} property={propById[sheet.propertyId]} owner={ownerById[propById[sheet.propertyId]?.ownerId]}
-      lines={rentLines.filter((l) => l.periodId === sheet.id)} charges={rentCharges.filter((c) => c.periodId === sheet.id)}
-      author={memberById[sheet.createdBy]} onBack={() => setSheetId(null)} />;
+  if (consolidated) {
+    const owner = ownerById[consolidated.ownerId];
+    const blocs = rentPeriods
+      .filter((p) => p.scope === scope && p.period === consolidated.period && propById[p.propertyId]?.ownerId === consolidated.ownerId)
+      .map((p) => ({ period: p, property: propById[p.propertyId],
+        t: periodTotals(rentLines.filter((l) => l.periodId === p.id), rentCharges.filter((c) => c.periodId === p.id), p.rate) }))
+      .sort((a, b) => a.property.name.localeCompare(b.property.name));
+    return <OwnerConsolidatedSheet owner={owner} period={consolidated.period} scope={scope} blocs={blocs}
+      author={me} onBack={() => setConsolidated(null)} />;
   }
 
+  const sheet = rentPeriods.find((p) => p.id === sheetId);
+  if (sheet) {
+    /* Arriérés cumulés par lot, calculés sur tout l'historique (tableaux + quittances) */
+    const cumul = {};
+    units.filter((u) => u.propertyId === sheet.propertyId).forEach((u) => {
+      const a = arrearsOf(u, store);
+      if (a.hasArrears) { cumul[u.id] = { total: a.total, months: a.months }; cumul[u.label] = cumul[u.id]; }
+    });
+    return <PeriodSheet period={sheet} property={propById[sheet.propertyId]} owner={ownerById[propById[sheet.propertyId]?.ownerId]}
+      lines={rentLines.filter((l) => l.periodId === sheet.id)} charges={rentCharges.filter((c) => c.periodId === sheet.id)}
+      author={memberById[sheet.createdBy]} cumul={cumul} onBack={() => setSheetId(null)} />;
+  }
+
+  const q = search.trim().toLowerCase();
   const list = rentPeriods.filter((p) => p.scope === scope &&
     (filterProp === "all" || p.propertyId === filterProp) &&
-    (filterPeriod === "all" || p.period === filterPeriod));
+    (filterOwner === "all" || propById[p.propertyId]?.ownerId === filterOwner) &&
+    (filterPeriod === "all" || p.period === filterPeriod) &&
+    (!q || (propById[p.propertyId]?.name || "").toLowerCase().includes(q)
+      || (ownerById[propById[p.propertyId]?.ownerId]?.name || "").toLowerCase().includes(q)
+      || periodLabel(p.period).toLowerCase().includes(q)));
+
+  /* Propriétaires ayant plusieurs bâtiments avec un tableau sur le mois filtré */
+  const consolidables = useMemo(() => {
+    if (filterPeriod === "all") return [];
+    const m = {};
+    rentPeriods.filter((p) => p.scope === scope && p.period === filterPeriod).forEach((p) => {
+      const oid = propById[p.propertyId]?.ownerId; if (!oid) return;
+      m[oid] = (m[oid] || 0) + 1;
+    });
+    return Object.entries(m).filter(([, n]) => n > 1).map(([oid]) => ownerById[oid]).filter(Boolean);
+  }, [rentPeriods, scope, filterPeriod, propById, ownerById]);
 
   /* Consolidé du mois affiché */
   const global = list.reduce((acc, p) => {
@@ -4823,7 +5178,30 @@ function Recouvrement({ store, me, userId }) {
           <option value="all">Tous les bâtiments</option>
           {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
+        <select value={filterOwner} onChange={(e) => setFilterOwner(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+          <option value="all">Tous les propriétaires</option>
+          {owners.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+        </select>
+        <div className="relative flex-1 min-w-[160px]">
+          <Search size={15} className="absolute left-2.5 top-2.5 text-slate-400" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Propriétaire, bâtiment, mois…" className="w-full pl-8 pr-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle} />
+        </div>
       </div>
+
+      {consolidables.length > 0 && (
+        <div className="rounded-xl border p-3 mb-3 flex items-center justify-between gap-2 flex-wrap" style={{ borderColor: "#BFDBFE", background: "#EFF6FF" }}>
+          <p className="text-xs" style={{ color: "#1F5C82" }}>
+            <FileText size={13} className="inline mb-0.5" /> Propriétaires ayant plusieurs bâtiments sur {periodLabel(filterPeriod)} :
+          </p>
+          <div className="flex gap-1.5 flex-wrap">
+            {consolidables.filter((o) => filterOwner === "all" || o.id === filterOwner).map((o) => (
+              <button key={o.id} onClick={() => setConsolidated({ ownerId: o.id, period: filterPeriod })} className="kb-btn kb-btn-ghost text-xs">
+                <Printer size={12} /> Relevé général — {o.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <p className="text-xs mb-3" style={{ color: "var(--muted)" }}>
         {RENT_SCOPE[scope].desc}
@@ -5653,7 +6031,7 @@ function taxOwnerLabel(rec, ownerById, propById) {
 function TaxModal({ initial, properties, units, owners, onSave, onClose }) {
   const [f, setF] = useState(() => ({
     propertyId: "", unitId: "", customLabel: "", ownerId: "", ownerLabel: "",
-    taxYear: new Date().getFullYear(), noticeNumber: "", taxedAmount: "", ncc: "",
+    taxYear: new Date().getFullYear(), noticeNumber: "", taxedAmount: "", ncc: "", taxCenter: "",
     receipts: "non", declarationNext: "non", declarationDate: "", nextBase: "", notes: "", withholdings: [], ...initial,
   }));
   const [inst, setInst] = useState(() =>
@@ -5713,6 +6091,12 @@ function TaxModal({ initial, properties, units, owners, onSave, onClose }) {
       </div>
 
       <p className="text-xs font-semibold mb-2 mt-1" style={{ color: "var(--ink)" }}>Avis d'imposition</p>
+      {f.propertyId && !f.taxCenter && propById[f.propertyId]?.taxCenter && (
+        <p className="text-[11px] mb-2 p-2 rounded" style={{ background: "#EFF6FF", color: "#1F5C82" }}>
+          Centre des impôts du bien : <strong>{propById[f.propertyId].taxCenter}</strong> —
+          <button onClick={() => set("taxCenter", propById[f.propertyId].taxCenter)} className="ml-1 underline">reprendre</button>
+        </p>
+      )}
       <div className="grid sm:grid-cols-4 gap-3">
         <Field label="Année d'imposition">
           <input type="number" min={2000} max={2100} className={inputCls} style={inputStyle} value={f.taxYear}
@@ -5722,6 +6106,9 @@ function TaxModal({ initial, properties, units, owners, onSave, onClose }) {
         <Field label="Somme imposée (FCFA)">
           <input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.taxedAmount}
             onChange={(e) => { set("taxedAmount", e.target.value); recompute(f.taxYear, e.target.value); }} />
+        </Field>
+        <Field label="Centre des impôts" hint="À l'ordre du receveur de ce centre">
+          <input className={inputCls} style={inputStyle} value={f.taxCenter || ""} onChange={(e) => set("taxCenter", e.target.value)} placeholder="Ex. Cocody" />
         </Field>
         <Field label="NCC du propriétaire" hint="Numéro de Compte Contribuable">
           <input className={inputCls} style={inputStyle} value={f.ncc} onChange={(e) => set("ncc", e.target.value)} placeholder="Ex. 1234567 A" />
@@ -5739,6 +6126,8 @@ function TaxModal({ initial, properties, units, owners, onSave, onClose }) {
             <th className="text-left px-2 py-2 font-semibold w-28">N° chèque / réf.</th>
             <th className="text-right px-2 py-2 font-semibold w-28">Somme versée</th>
             <th className="text-left px-2 py-2 font-semibold w-32">Date versement</th>
+            <th className="text-left px-2 py-2 font-semibold w-32" title="Numéro de la quittance reçue pour ce paiement">Quittance n°</th>
+            <th className="text-left px-2 py-2 font-semibold w-32">Reçue le</th>
           </tr></thead>
           <tbody>{inst.map((t, i) => {
             const late = isLate(t);
@@ -5755,6 +6144,8 @@ function TaxModal({ initial, properties, units, owners, onSave, onClose }) {
                 <td className="px-1 py-1"><input className="w-full px-2 py-1.5 rounded border text-xs" style={inputStyle} value={t.chequeNo || ""} onChange={(e) => setT(i, "chequeNo", e.target.value)} placeholder="0045123" /></td>
                 <td className="px-1 py-1"><input type="number" min={0} step={1000} className="w-full px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={t.amountPaid} onChange={(e) => setT(i, "amountPaid", e.target.value)} /></td>
                 <td className="px-1 py-1"><input type="date" className="w-full px-2 py-1.5 rounded border text-xs" style={inputStyle} value={t.paidAt || ""} onChange={(e) => setT(i, "paidAt", e.target.value)} /></td>
+                <td className="px-1 py-1"><input className="w-full px-2 py-1.5 rounded border text-xs" style={{ ...inputStyle, borderColor: Number(t.amountPaid) > 0 && !t.receiptNo ? "#C58A1B" : "var(--line)" }} value={t.receiptNo || ""} onChange={(e) => setT(i, "receiptNo", e.target.value)} placeholder={Number(t.amountPaid) > 0 ? "à réceptionner" : ""} /></td>
+                <td className="px-1 py-1"><input type="date" className="w-full px-2 py-1.5 rounded border text-xs" style={inputStyle} value={t.receiptDate || ""} onChange={(e) => setT(i, "receiptDate", e.target.value)} /></td>
               </tr>
             );
           })}</tbody>
@@ -5875,7 +6266,12 @@ function TaxSheet({ records, year, title, propById, unitById, ownerById, onBack 
         {(title || nccs.length > 0) && (
           <div className="flex items-center justify-between gap-4 mt-3">
             {title && <p className="text-sm font-semibold">{title}</p>}
-            {nccs.length > 0 && <p className="text-xs" style={{ color: "var(--muted)" }}>NCC : <strong style={{ color: "var(--ink)" }}>{nccs.join(" · ")}</strong></p>}
+            <div className="text-right">
+              {nccs.length > 0 && <p className="text-xs" style={{ color: "var(--muted)" }}>NCC : <strong style={{ color: "var(--ink)" }}>{nccs.join(" · ")}</strong></p>}
+              {[...new Set(records.map((r) => r.taxCenter).filter(Boolean))].length > 0 && (
+                <p className="text-xs" style={{ color: "var(--muted)" }}>Centre des impôts : <strong style={{ color: "var(--ink)" }}>{[...new Set(records.map((r) => r.taxCenter).filter(Boolean))].join(" · ")}</strong></p>
+              )}
+            </div>
           </div>
         )}
 
@@ -5917,6 +6313,7 @@ function TaxSheet({ records, year, title, propById, unitById, ownerById, onBack 
                     </td>,
                     <td key={i + "p"} className="px-1.5 py-1.5 text-right tabular-nums" style={{ color: paid > 0 ? "#3d7d20" : "var(--muted)" }}>
                       {paid > 0 ? fcfa(paid) : "non versé"}
+                      {paid > 0 && <div style={{ fontSize: 8, color: tr.receiptNo ? "var(--muted)" : "#C58A1B" }}>{tr.receiptNo ? `Quitt. ${tr.receiptNo}` : "quittance attendue"}</div>}
                     </td>,
                   ];
                 })}
@@ -7237,7 +7634,13 @@ function Locataires({ store, me, userId }) {
                       {(() => {
                         const st = documents.find((d) => d.docType === "solde_tout_compte" && d.formerTenantId === ft.id);
                         return st
-                          ? <button onClick={() => setSheetId(st.id)} className="p-1.5 rounded-lg hover:bg-slate-100" style={{ color: "#7C3AED" }} title={`Solde de tout compte ${st.ref}`}><Scale size={14} /></button>
+                          ? <>
+                              <button onClick={() => setSheetId(st.id)} className="p-1.5 rounded-lg hover:bg-slate-100" style={{ color: "#7C3AED" }} title={`Solde de tout compte ${st.ref}`}><Scale size={14} /></button>
+                              <button onClick={() => setSoldeModal({ former: ft, property: propById[ft.propertyId], unit: unitById[ft.unitId], doc: st })}
+                                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Modifier le solde de tout compte"><Pencil size={14} /></button>
+                              {isAdmin(me.role) && <button onClick={async () => { if (confirm(`Supprimer le solde de tout compte ${st.ref} ?`)) { const r = await actions.deleteDocument(st.id); if (r?.error) alert(r.error); } }}
+                                className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500" title="Supprimer (administrateur)"><Trash2 size={14} /></button>}
+                            </>
                           : <button onClick={() => setSoldeModal({ former: ft, property: propById[ft.propertyId], unit: unitById[ft.unitId] })}
                               className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Établir le solde de tout compte"><Scale size={14} /></button>;
                       })()}
@@ -7273,6 +7676,13 @@ function Locataires({ store, me, userId }) {
                   <span className="text-sm font-semibold tabular-nums">{fcfa(d.total)}</span>
                   <button onClick={() => setSheetId(d.id)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Imprimer"><Printer size={14} /></button>
                   {canEditReceipt(d) && <button onClick={() => setReceiptModal({ doc: d, unit: unitById[d.unitId], property: propById[d.propertyId] })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Modifier la quittance"><Pencil size={14} /></button>}
+                  {isAdmin(me.role) && (
+                    <button onClick={async () => {
+                      if (!confirm(`Supprimer la quittance ${d.ref} (${d.clientName}, ${fcfa(d.total)}) ?\n\nSi elle avait été reportée dans un tableau de recouvrement, corrigez ce tableau manuellement.`)) return;
+                      const r = await actions.deleteDocument(d.id);
+                      if (r?.error) alert(r.error);
+                    }} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500" title="Supprimer cette quittance (administrateur)"><Trash2 size={14} /></button>
+                  )}
                 </div>
               </div>
             ))}
@@ -7296,7 +7706,7 @@ function Locataires({ store, me, userId }) {
       {archiveModal && <ArchiveTenantModal unit={archiveModal.unit} property={archiveModal.property}
         arrears={situation(archiveModal.unit)} onArchive={actions.archiveTenant} onClose={() => setArchiveModal(null)} />}
 
-      {soldeModal && <SoldeModal former={soldeModal.former} unit={soldeModal.unit} property={soldeModal.property}
+      {soldeModal && <SoldeModal initial={soldeModal.doc} former={soldeModal.former} unit={soldeModal.unit} property={soldeModal.property}
         owner={ownerById[soldeModal.property?.ownerId]}
         arrears={soldeModal.unit ? situation(soldeModal.unit) : null}
         onSave={actions.saveDocument}
@@ -7971,6 +8381,1051 @@ function Prospects({ store, me, userId, initialModal, onModalConsumed }) {
 
       {modal && <ProspectModal initial={modal} properties={properties} units={units} members={members}
         onSave={actions.saveProspect} onClose={() => setModal(null)} />}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   NOUVEAUX BIENS PROSPECTÉS — démarchage des propriétaires
+   Saisi une seule fois, un bien alimente automatiquement le rapport
+   hebdomadaire de la semaine de sa prospection.
+   ══════════════════════════════════════════════════════════════════════ */
+
+const PP_KIND = { appartement: "Appartement", villa: "Villa", immeuble: "Immeuble", terrain: "Terrain",
+  bureau: "Bureau", local_commercial: "Local commercial", entrepot: "Entrepôt", autre: "Autre" };
+const PP_OWNER_TYPE = { particulier: "Particulier", entreprise: "Entreprise", autre: "Autre" };
+const PP_OPERATION = { location: "Location", vente: "Vente", gestion: "Gestion locative",
+  location_gestion: "Location + gestion", vente_gestion: "Vente + gestion" };
+const PP_LEVEL = { faible: { label: "Faible", color: "#94A3B8" }, moyen: { label: "Moyen", color: "#C58A1B" }, eleve: { label: "Élevé", color: "#4F9E2A" } };
+const PP_METHOD = { appel: "Appel téléphonique", terrain: "Terrain", recommandation: "Recommandation",
+  reseau_pro: "Réseau professionnel", internet: "Internet", ancien_prospect: "Ancien prospect", autre: "Autre" };
+const PP_STATUS = {
+  nouveau:                  { label: "Nouveau",                        color: "#7C3AED", step: 1 },
+  a_visiter:                { label: "À visiter",                      color: "#C58A1B", step: 2 },
+  visite:                   { label: "Visité",                         color: "#0891B2", step: 3 },
+  en_negociation:           { label: "En négociation",                 color: "#2E78A8", step: 4 },
+  mandat_obtenu:            { label: "Mandat obtenu",                  color: "#3d7d20", step: 5 },
+  non_retenu:               { label: "Non retenu",                     color: "#94A3B8" },
+  proprietaire_indisponible:{ label: "Propriétaire non disponible",    color: "#94A3B8" },
+  relance_necessaire:       { label: "Relance nécessaire",             color: "#EA580C" },
+  autre_agence:             { label: "Confié à une autre agence",      color: "#94A3B8" },
+  loue:                     { label: "Bien loué",                      color: "#64748B" },
+  vendu:                    { label: "Bien vendu",                     color: "#64748B" },
+};
+const PP_STATUS_ORDER = Object.keys(PP_STATUS);
+const PP_PIPELINE = ["nouveau", "a_visiter", "visite", "en_negociation", "mandat_obtenu"];
+const PP_OPEN = ["nouveau", "a_visiter", "visite", "en_negociation", "relance_necessaire"];
+const PP_LOST = ["non_retenu", "proprietaire_indisponible", "autre_agence", "loue", "vendu"];
+const PP_HISTORY_TYPE = { contact: "Contact", visite: "Visite", rdv: "Rendez-vous", relance: "Relance", statut: "Changement de statut", note: "Note", photo: "Photos" };
+
+const normPhone = (p) => (p || "").replace(/\D/g, "").slice(-8);   // 8 derniers chiffres : ignore l'indicatif
+const normText = (t) => (t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+
+/* Détection des doublons avant création */
+function findSimilarProspected(f, list, excludeId) {
+  const phones = [f.ownerPhone, f.ownerPhone2, f.ownerWhatsapp].map(normPhone).filter((p) => p.length >= 8);
+  const addr = normText(f.address);
+  const loc = normText(`${f.commune} ${f.quartier} ${f.landmark}`);
+  const owner = normText(f.ownerName);
+  return list.filter((b) => {
+    if (b.id === excludeId) return false;
+    const bPhones = [b.ownerPhone, b.ownerPhone2, b.ownerWhatsapp].map(normPhone).filter((p) => p.length >= 8);
+    if (phones.some((p) => bPhones.includes(p))) return true;
+    if (addr && addr.length > 6 && normText(b.address) === addr) return true;
+    if (loc.length > 10 && normText(`${b.commune} ${b.quartier} ${b.landmark}`) === loc && normText(b.commune) === normText(f.commune) && f.landmark) return true;
+    if (owner && owner === normText(b.ownerName) && b.kind === f.kind) return true;
+    return false;
+  });
+}
+
+/* ---------------- Formulaire : nouveau bien prospecté ---------------- */
+function ProspectedModal({ initial, existing, members, userId, onSave, onClose, onOpenExisting }) {
+  const [f, setF] = useState(() => ({
+    ownerName: "", ownerPhone: "", ownerPhone2: "", ownerWhatsapp: "", ownerType: "particulier", ownerNotes: "",
+    kind: "appartement", commune: "", quartier: "", address: "", landmark: "", rooms: "", bedrooms: "", bathrooms: "",
+    floor: "", surface: "", furnished: false, condition: "", availability: "",
+    operation: "location", rent: "", salePrice: "", negotiable: false, ownerInterest: "moyen", potential: "moyen",
+    prospectedAt: isoDate(new Date()), agentId: userId, method: "terrain", identifiedHow: "", nextAction: "",
+    nextContact: "", notes: "", status: "nouveau", ...initial,
+  }));
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const [dupes, setDupes] = useState(null);
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const isSale = ["vente", "vente_gestion"].includes(f.operation);
+
+  const check = () => findSimilarProspected(f, existing, f.id);
+  const submit = async (force = false) => {
+    if (!f.ownerName.trim()) { setErr("Le nom du propriétaire est requis."); return; }
+    if (!f.commune.trim()) { setErr("La commune est requise."); return; }
+    if (!force && !f.id) {
+      const d = check();
+      if (d.length) { setDupes(d); return; }
+    }
+    setErr(""); setBusy(true);
+    const r = await onSave(f);
+    setBusy(false);
+    if (r?.error) { setErr(r.error); return; }
+    onClose(r);
+  };
+
+  const Sec = ({ t }) => <p className="text-xs font-semibold mt-2 mb-2" style={{ color: "var(--brass)" }}>{t}</p>;
+
+  return (
+    <Modal title={f.id ? `Bien ${f.ref || ""}` : "Nouveau bien prospecté"} onClose={onClose} wide>
+      {dupes && (
+        <div className="rounded-xl border p-3 mb-3" style={{ borderColor: "#FCD9A6", background: "#FFF8EC" }}>
+          <p className="text-sm font-semibold mb-1" style={{ color: "#8A6212" }}>
+            <AlertTriangle size={14} className="inline mb-0.5" /> Un bien similaire existe déjà dans la base
+          </p>
+          <div className="divide-y mb-2" style={{ borderColor: "#F3E2C6" }}>
+            {dupes.map((d) => (
+              <div key={d.id} className="py-1.5 flex items-center justify-between gap-2">
+                <span className="text-xs">{d.ref} · {d.ownerName} · {PP_KIND[d.kind]} · {d.commune}{d.quartier ? `, ${d.quartier}` : ""}{d.ownerPhone ? ` · ${d.ownerPhone}` : ""}</span>
+                <button onClick={() => { onClose(); onOpenExisting?.(d); }} className="kb-btn kb-btn-ghost text-xs">Consulter la fiche</button>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setDupes(null)} className="kb-btn kb-btn-ghost text-xs">Revenir</button>
+            <button onClick={() => submit(true)} className="kb-btn text-xs px-2.5 py-1.5" style={{ background: "#C58A1B", color: "#fff" }}>Créer quand même</button>
+          </div>
+        </div>
+      )}
+
+      <Sec t="PROPRIÉTAIRE" />
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Nom et prénom"><input className={inputCls} style={inputStyle} value={f.ownerName} autoFocus onChange={(e) => set("ownerName", e.target.value)} /></Field>
+        <Field label="Type">
+          <select className={inputCls} style={inputStyle} value={f.ownerType} onChange={(e) => set("ownerType", e.target.value)}>
+            {Object.entries(PP_OWNER_TYPE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </Field>
+      </div>
+      <div className="grid sm:grid-cols-3 gap-3">
+        <Field label="Téléphone"><input className={inputCls} style={inputStyle} value={f.ownerPhone} onChange={(e) => set("ownerPhone", e.target.value)} placeholder="+225 07 …" /></Field>
+        <Field label="Deuxième numéro"><input className={inputCls} style={inputStyle} value={f.ownerPhone2} onChange={(e) => set("ownerPhone2", e.target.value)} /></Field>
+        <Field label="WhatsApp"><input className={inputCls} style={inputStyle} value={f.ownerWhatsapp} onChange={(e) => set("ownerWhatsapp", e.target.value)} /></Field>
+      </div>
+      <Field label="Commentaires sur le propriétaire"><input className={inputCls} style={inputStyle} value={f.ownerNotes} onChange={(e) => set("ownerNotes", e.target.value)} /></Field>
+
+      <Sec t="LE BIEN" />
+      <div className="grid sm:grid-cols-3 gap-3">
+        <Field label="Type de bien">
+          <select className={inputCls} style={inputStyle} value={f.kind} onChange={(e) => set("kind", e.target.value)}>
+            {Object.entries(PP_KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </Field>
+        <Field label="Commune"><input className={inputCls} style={inputStyle} value={f.commune} onChange={(e) => set("commune", e.target.value)} placeholder="Cocody" /></Field>
+        <Field label="Quartier"><input className={inputCls} style={inputStyle} value={f.quartier} onChange={(e) => set("quartier", e.target.value)} placeholder="Riviera 3" /></Field>
+      </div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Adresse / localisation"><input className={inputCls} style={inputStyle} value={f.address} onChange={(e) => set("address", e.target.value)} /></Field>
+        <Field label="Repère"><input className={inputCls} style={inputStyle} value={f.landmark} onChange={(e) => set("landmark", e.target.value)} placeholder="Ex. derrière la pharmacie…" /></Field>
+      </div>
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+        <Field label="Pièces"><input type="number" min={0} className={inputCls} style={inputStyle} value={f.rooms} onChange={(e) => set("rooms", e.target.value)} /></Field>
+        <Field label="Chambres"><input type="number" min={0} className={inputCls} style={inputStyle} value={f.bedrooms} onChange={(e) => set("bedrooms", e.target.value)} /></Field>
+        <Field label="S. de bain"><input type="number" min={0} className={inputCls} style={inputStyle} value={f.bathrooms} onChange={(e) => set("bathrooms", e.target.value)} /></Field>
+        <Field label="Étage"><input className={inputCls} style={inputStyle} value={f.floor} onChange={(e) => set("floor", e.target.value)} /></Field>
+        <Field label="Superficie m²"><input type="number" min={0} className={inputCls} style={inputStyle} value={f.surface} onChange={(e) => set("surface", e.target.value)} /></Field>
+        <Field label="Meublé">
+          <select className={inputCls} style={inputStyle} value={f.furnished ? "1" : "0"} onChange={(e) => set("furnished", e.target.value === "1")}>
+            <option value="0">Non</option><option value="1">Oui</option>
+          </select>
+        </Field>
+      </div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="État du bien"><input className={inputCls} style={inputStyle} value={f.condition} onChange={(e) => set("condition", e.target.value)} placeholder="Neuf, bon état, à rafraîchir…" /></Field>
+        <Field label="Disponibilité"><input className={inputCls} style={inputStyle} value={f.availability} onChange={(e) => set("availability", e.target.value)} placeholder="Immédiate, fin octobre…" /></Field>
+      </div>
+
+      <Sec t="INFORMATIONS COMMERCIALES" />
+      <div className="grid sm:grid-cols-3 gap-3">
+        <Field label="Type d'opération">
+          <select className={inputCls} style={inputStyle} value={f.operation} onChange={(e) => set("operation", e.target.value)}>
+            {Object.entries(PP_OPERATION).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </Field>
+        {!isSale && <Field label="Loyer souhaité (FCFA)"><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.rent} onChange={(e) => set("rent", e.target.value)} /></Field>}
+        {(isSale || f.operation === "gestion") && <Field label="Prix de vente (FCFA)"><input type="number" min={0} step={100000} className={inputCls} style={inputStyle} value={f.salePrice} onChange={(e) => set("salePrice", e.target.value)} /></Field>}
+        <Field label="Prix négociable">
+          <select className={inputCls} style={inputStyle} value={f.negotiable ? "1" : "0"} onChange={(e) => set("negotiable", e.target.value === "1")}>
+            <option value="0">Non</option><option value="1">Oui</option>
+          </select>
+        </Field>
+      </div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Intérêt du propriétaire">
+          <select className={inputCls} style={inputStyle} value={f.ownerInterest} onChange={(e) => set("ownerInterest", e.target.value)}>
+            {Object.entries(PP_LEVEL).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+        </Field>
+        <Field label="Potentiel commercial">
+          <select className={inputCls} style={inputStyle} value={f.potential} onChange={(e) => set("potential", e.target.value)}>
+            {Object.entries(PP_LEVEL).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      <Sec t="PROSPECTION" />
+      <div className="grid sm:grid-cols-3 gap-3">
+        <Field label="Date de prospection"><input type="date" className={inputCls} style={inputStyle} value={f.prospectedAt} onChange={(e) => set("prospectedAt", e.target.value)} /></Field>
+        <Field label="Commercial responsable">
+          <select className={inputCls} style={inputStyle} value={f.agentId || ""} onChange={(e) => set("agentId", e.target.value)}>
+            {members.filter((m) => m.active).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Méthode">
+          <select className={inputCls} style={inputStyle} value={f.method} onChange={(e) => set("method", e.target.value)}>
+            {Object.entries(PP_METHOD).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </Field>
+      </div>
+      <Field label="Comment le bien a-t-il été identifié ?"><input className={inputCls} style={inputStyle} value={f.identifiedHow} onChange={(e) => set("identifiedHow", e.target.value)} /></Field>
+      <div className="grid sm:grid-cols-3 gap-3">
+        <Field label="Statut">
+          <select className={inputCls} style={inputStyle} value={f.status} onChange={(e) => set("status", e.target.value)}>
+            {PP_STATUS_ORDER.map((k) => <option key={k} value={k}>{PP_STATUS[k].label}</option>)}
+          </select>
+        </Field>
+        <Field label="Prochaine action"><input className={inputCls} style={inputStyle} value={f.nextAction} onChange={(e) => set("nextAction", e.target.value)} placeholder="Ex. Visite du bien avec le propriétaire" /></Field>
+        <Field label="Date prévue de relance"><input type="date" className={inputCls} style={inputStyle} value={f.nextContact || ""} onChange={(e) => set("nextContact", e.target.value)} /></Field>
+      </div>
+      <Field label="Commentaires"><textarea className={inputCls} style={inputStyle} rows={2} value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
+
+      {err && <p className="text-xs text-red-600 mb-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
+      <div className="flex justify-end gap-2">
+        <button onClick={() => onClose()} className="kb-btn kb-btn-ghost">Annuler</button>
+        <button disabled={busy} onClick={() => submit(false)} className="kb-btn kb-btn-primary disabled:opacity-40"><Check size={16} /> {busy ? "Enregistrement…" : "Enregistrer"}</button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ---------------- Fiche détaillée ---------------- */
+function ProspectedDetail({ bien: b, members, me, onEdit, onAddHistory, onSetStatus, onUploadPhoto, onDelete, onBack }) {
+  const memberById = Object.fromEntries(members.map((m) => [m.id, m]));
+  const [type, setType] = useState("contact");
+  const [text, setText] = useState("");
+  const [date, setDate] = useState(isoDate(new Date()));
+  const [time, setTime] = useState("");
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef(null);
+  const st = PP_STATUS[b.status] || PP_STATUS.nouveau;
+  const rl = relanceState(b.nextContact);
+  const hist = [...(b.history || [])].sort((a, c) => (a.date < c.date ? 1 : a.date > c.date ? -1 : 0));
+  const last = hist[0];
+
+  const add = async () => {
+    if (!text.trim()) return;
+    setBusy(true);
+    await onAddHistory(b, { date, time: time || undefined, type, text, by: me.name, byId: me.id });
+    setBusy(false); setText(""); setTime("");
+  };
+
+  const Bloc = ({ t, children }) => (
+    <div className="rounded-lg border p-3" style={{ borderColor: "var(--line)" }}>
+      <p className="text-[11px] font-bold mb-1.5" style={{ color: "var(--brass)" }}>{t}</p>
+      {children}
+    </div>
+  );
+  const L = ({ k, v }) => v ? <p className="text-xs"><span style={{ color: "var(--muted)" }}>{k} : </span>{v}</p> : null;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
+        <div className="flex gap-1.5 flex-wrap">
+          <button onClick={() => onEdit(b)} className="kb-btn kb-btn-ghost text-sm"><Pencil size={14} /> Modifier</button>
+          <button onClick={() => { setType("relance"); document.getElementById("pp-add")?.scrollIntoView({ behavior: "smooth" }); }} className="kb-btn kb-btn-ghost text-sm"><Bell size={14} /> Ajouter une relance</button>
+          <button onClick={() => { setType("rdv"); document.getElementById("pp-add")?.scrollIntoView({ behavior: "smooth" }); }} className="kb-btn kb-btn-ghost text-sm"><CalendarClock size={14} /> Programmer une visite</button>
+          <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={async (e) => { for (const f of e.target.files || []) await onUploadPhoto(b, f); e.target.value = ""; }} />
+          <button onClick={() => fileRef.current?.click()} className="kb-btn kb-btn-ghost text-sm"><Image size={14} /> Ajouter des photos</button>
+          {(canSupervise(me.role) || b.createdBy === me.id) && (
+            <button onClick={async () => { if (confirm(`Supprimer définitivement ${b.ref} ?`)) { await onDelete(b.id); onBack(); } }} className="kb-btn kb-btn-ghost text-sm" style={{ color: "#D81F26" }}><Trash2 size={14} /></button>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border p-4 mb-4" style={{ borderColor: "var(--line)" }}>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <p className="text-xs font-semibold" style={{ color: "var(--muted)" }}>{b.ref}</p>
+            <h1 className="text-xl font-bold">{PP_KIND[b.kind]} — {b.commune}{b.quartier ? `, ${b.quartier}` : ""}</h1>
+            <p className="text-sm mt-0.5" style={{ color: "var(--muted)" }}>
+              {PP_OPERATION[b.operation]} · {b.rent ? `${fcfa(b.rent)}/mois` : ""}{b.salePrice ? `${b.rent ? " · " : ""}${fcfa(b.salePrice)}` : ""}{b.negotiable ? " · négociable" : ""}
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-1.5">
+            <select value={b.status} onChange={(e) => onSetStatus(b, e.target.value)} className="text-xs px-2 py-1.5 rounded-lg border bg-white font-semibold"
+              style={{ borderColor: st.color + "66", color: st.color }}>
+              {PP_STATUS_ORDER.map((k) => <option key={k} value={k}>{PP_STATUS[k].label}</option>)}
+            </select>
+            <div className="flex gap-1.5">
+              <Chip color={PP_LEVEL[b.potential].color}>Potentiel {PP_LEVEL[b.potential].label.toLowerCase()}</Chip>
+              <Chip color={PP_LEVEL[b.ownerInterest].color}>Intérêt {PP_LEVEL[b.ownerInterest].label.toLowerCase()}</Chip>
+            </div>
+          </div>
+        </div>
+
+        {/* Parcours */}
+        <div className="flex items-center mt-4">
+          {PP_PIPELINE.map((k, i) => {
+            const reached = st.step ? PP_STATUS[k].step <= st.step : false;
+            return (
+              <div key={k} className="flex items-center" style={{ flex: i < PP_PIPELINE.length - 1 ? 1 : "0 0 auto" }}>
+                <div className="text-center" style={{ minWidth: 70 }}>
+                  <div className="mx-auto rounded-full flex items-center justify-center text-[11px] font-bold"
+                    style={{ width: 24, height: 24, background: reached ? PP_STATUS[k].color : "#E6EAEF", color: reached ? "#fff" : "var(--muted)" }}>{i + 1}</div>
+                  <p className="text-[10px] mt-1" style={{ color: reached ? "var(--ink)" : "var(--muted)", fontWeight: b.status === k ? 700 : 400 }}>{PP_STATUS[k].label}</p>
+                </div>
+                {i < PP_PIPELINE.length - 1 && <div style={{ flex: 1, height: 2, background: reached && PP_STATUS[PP_PIPELINE[i + 1]].step <= (st.step || 0) ? PP_STATUS[k].color : "#E6EAEF", marginBottom: 16 }} />}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-3 gap-3 mb-4">
+        <Bloc t="PROPRIÉTAIRE">
+          <p className="text-sm font-medium">{b.ownerName}</p>
+          <p className="text-xs" style={{ color: "var(--muted)" }}>{PP_OWNER_TYPE[b.ownerType]}</p>
+          {b.ownerPhone && <a href={`tel:${b.ownerPhone}`} className="text-xs flex items-center gap-1 mt-1" style={{ color: "#2E78A8" }}><Phone size={11} /> {b.ownerPhone}</a>}
+          <L k="2e numéro" v={b.ownerPhone2} /><L k="WhatsApp" v={b.ownerWhatsapp} /><L k="Notes" v={b.ownerNotes} />
+        </Bloc>
+        <Bloc t="LE BIEN">
+          <L k="Adresse" v={b.address} /><L k="Repère" v={b.landmark} />
+          <L k="Pièces" v={[b.rooms && `${b.rooms} pièces`, b.bedrooms && `${b.bedrooms} ch.`, b.bathrooms && `${b.bathrooms} sdb`].filter(Boolean).join(" · ")} />
+          <L k="Étage" v={b.floor} /><L k="Superficie" v={b.surface ? `${b.surface} m²` : ""} />
+          <L k="Meublé" v={b.furnished ? "Oui" : "Non"} /><L k="État" v={b.condition} /><L k="Disponibilité" v={b.availability} />
+        </Bloc>
+        <Bloc t="PROSPECTION">
+          <L k="Commercial" v={memberById[b.agentId]?.name} />
+          <L k="Date" v={b.prospectedAt ? fr(b.prospectedAt + "T00:00:00", { day: "numeric", month: "long", year: "numeric" }) : ""} />
+          <L k="Méthode" v={PP_METHOD[b.method]} /><L k="Identifié via" v={b.identifiedHow} />
+          <L k="Prochaine action" v={b.nextAction} />
+          {rl && <p className="text-xs mt-1"><span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: rl.bg, color: rl.color }}>Relance {rl.label.toLowerCase()} · {fr(b.nextContact + "T00:00:00", { day: "numeric", month: "short" })}</span></p>}
+          <L k="Dernière action" v={last ? `${PP_HISTORY_TYPE[last.type] || last.type} le ${fr(last.date + "T00:00:00", { day: "numeric", month: "short" })}` : ""} />
+          <L k="Créé le" v={b.createdAt ? fr(b.createdAt, { day: "numeric", month: "short", year: "numeric" }) : ""} />
+        </Bloc>
+      </div>
+
+      {b.notes && <div className="rounded-lg p-3 mb-4 text-sm" style={{ background: "#F6F8FA" }}>{b.notes}</div>}
+
+      {(b.photos || []).length > 0 && (
+        <SectionCard title={`Photos (${b.photos.length})`} icon={Image}>
+          <div className="flex flex-wrap gap-2">
+            {b.photos.map((p, i) => (
+              <a key={i} href={p.url} target="_blank" rel="noreferrer">
+                <img src={p.url} alt={p.name || ""} className="h-24 w-32 object-cover rounded-lg border" style={{ borderColor: "var(--line)" }} />
+              </a>
+            ))}
+          </div>
+        </SectionCard>
+      )}
+
+      <div id="pp-add">
+        <SectionCard title="Ajouter à l'historique" icon={MessageCircle}>
+          <div className="grid sm:grid-cols-4 gap-2 mb-2">
+            <select className={inputCls} style={inputStyle} value={type} onChange={(e) => setType(e.target.value)}>
+              {Object.entries(PP_HISTORY_TYPE).filter(([k]) => k !== "statut" && k !== "photo").map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+            <input type="date" className={inputCls} style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+            {(type === "rdv" || type === "visite") && <input type="time" className={inputCls} style={inputStyle} value={time} onChange={(e) => setTime(e.target.value)} />}
+            <input className={inputCls + " sm:col-span-" + ((type === "rdv" || type === "visite") ? "1" : "2")} style={inputStyle} value={text} onChange={(e) => setText(e.target.value)}
+              placeholder={type === "rdv" ? "Ex. Visite avec le propriétaire, résultat attendu…" : "Résultat, observations…"} onKeyDown={(e) => e.key === "Enter" && add()} />
+          </div>
+          <button onClick={add} disabled={!text.trim() || busy} className="kb-btn kb-btn-primary text-sm disabled:opacity-40"><Plus size={14} /> Ajouter</button>
+        </SectionCard>
+      </div>
+
+      <SectionCard title={`Historique (${hist.length})`} icon={Clock} pad={false}>
+        {hist.length ? <div className="divide-y" style={{ borderColor: "var(--line)" }}>
+          {hist.map((h, i) => (
+            <div key={i} className="px-4 py-2.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-medium">{fr(h.date + "T00:00:00", { day: "numeric", month: "short", year: "numeric" })}{h.time ? ` à ${h.time}` : ""}</span>
+                <Chip color={h.type === "statut" ? "#7C3AED" : h.type === "relance" ? "#EA580C" : h.type === "visite" || h.type === "rdv" ? "#0891B2" : "#2E78A8"}>{PP_HISTORY_TYPE[h.type] || h.type}</Chip>
+                {h.by && <span className="text-[11px]" style={{ color: "var(--muted)" }}>par {h.by}</span>}
+              </div>
+              <p className="text-sm mt-1">{h.text}</p>
+            </div>
+          ))}
+        </div> : <p className="text-sm text-center py-6" style={{ color: "var(--muted)" }}>Aucun échange enregistré.</p>}
+      </SectionCard>
+    </div>
+  );
+}
+
+/* ---------------- Liste : Nouveaux biens ---------------- */
+function NouveauxBiens({ store, me, userId }) {
+  const { prospected, members, actions } = store;
+  const sup = canSupervise(me.role);
+  const [tab, setTab] = useState("mes");
+  const [search, setSearch] = useState("");
+  const [fAgent, setFAgent] = useState(sup ? "all" : userId);
+  const [fCommune, setFCommune] = useState("all");
+  const [fKind, setFKind] = useState("all");
+  const [fPotential, setFPotential] = useState("all");
+  const [fFrom, setFFrom] = useState(""); const [fTo, setFTo] = useState("");
+  const [modal, setModal] = useState(null);
+  const [detailId, setDetailId] = useState(null);
+
+  const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
+  const communes = useMemo(() => [...new Set(prospected.map((b) => b.commune).filter(Boolean))].sort(), [prospected]);
+
+  const detail = prospected.find((b) => b.id === detailId);
+  if (detail) {
+    return <ProspectedDetail bien={detail} members={members} me={me}
+      onEdit={(b) => setModal(b)}
+      onAddHistory={(b, h) => actions.saveProspected({ ...b, history: [...(b.history || []), h] })}
+      onSetStatus={(b, s) => actions.saveProspected({ ...b, status: s,
+        history: [...(b.history || []), { date: isoDate(new Date()), type: "statut", text: `${PP_STATUS[b.status]?.label || b.status} → ${PP_STATUS[s].label}`, by: me.name, byId: me.id }] })}
+      onUploadPhoto={actions.uploadProspectedPhoto}
+      onDelete={actions.deleteProspected}
+      onBack={() => setDetailId(null)} />;
+  }
+
+  const monday = mondayIso(new Date());
+  const inWeek = (d) => d >= monday && d <= isoDate(addDays(monday + "T00:00:00", 6));
+  const mine = prospected.filter((b) => b.agentId === userId);
+  const weekMine = mine.filter((b) => inWeek(b.prospectedAt));
+  const histWeek = (b, t) => (b.history || []).some((h) => h.type === t && inWeek(h.date));
+
+  const base = tab === "mes" ? mine
+    : tab === "a_visiter" ? prospected.filter((b) => b.status === "a_visiter")
+    : tab === "negociation" ? prospected.filter((b) => b.status === "en_negociation")
+    : tab === "mandats" ? prospected.filter((b) => b.status === "mandat_obtenu")
+    : prospected;
+  const list = base.filter((b) =>
+    (fAgent === "all" || b.agentId === fAgent) &&
+    (fCommune === "all" || b.commune === fCommune) &&
+    (fKind === "all" || b.kind === fKind) &&
+    (fPotential === "all" || b.potential === fPotential) &&
+    (!fFrom || b.prospectedAt >= fFrom) && (!fTo || b.prospectedAt <= fTo) &&
+    (!search || [b.ref, b.ownerName, b.ownerPhone, b.commune, b.quartier, b.address].some((x) => (x || "").toLowerCase().includes(search.toLowerCase()))));
+
+  const relances = mine.filter((b) => PP_OPEN.includes(b.status) && relanceState(b.nextContact)?.days <= 0).length;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
+        <h1 className="text-xl font-bold">Nouveaux biens</h1>
+        <button onClick={() => setModal({})} className="kb-btn kb-btn-primary"><Plus size={16} /> Nouveau bien</button>
+      </div>
+      <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>Biens identifiés en prospection. Saisis une fois, ils alimentent automatiquement votre rapport hebdomadaire.</p>
+
+      {/* Tableau de bord du commercial */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+        <StatCard icon={Building2} label="Nouveaux cette semaine" value={weekMine.length} tint="#7C3AED" onClick={() => { setTab("mes"); setFFrom(monday); setFTo(""); }} />
+        <StatCard icon={Eye} label="Visités cette semaine" value={mine.filter((b) => histWeek(b, "visite") || (b.status === "visite" && inWeek(b.prospectedAt))).length} tint="#0891B2" />
+        <StatCard icon={TrendingUp} label="En négociation" value={mine.filter((b) => b.status === "en_negociation").length} tint="#2E78A8" onClick={() => setTab("negociation")} />
+        <StatCard icon={BadgeCheck} label="Mandats obtenus" value={mine.filter((b) => b.status === "mandat_obtenu").length} sub={`${mine.length} prospectés au total`} tint="#4F9E2A" onClick={() => setTab("mandats")} />
+        <StatCard icon={Bell} label="Relances à effectuer" value={relances} tint="#D81F26" />
+      </div>
+
+      <div className="flex gap-1 mb-4 border-b overflow-x-auto" style={{ borderColor: "var(--line)" }}>
+        {[["mes", `Mes biens prospectés (${mine.length})`], ["a_visiter", "Biens à visiter"], ["negociation", "En négociation"], ["mandats", "Mandats obtenus"], ["tous", `Tous les biens (${prospected.length})`]].map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} className="px-3 py-2.5 text-sm font-medium relative whitespace-nowrap" style={{ color: tab === k ? "var(--brass)" : "var(--muted)" }}>
+            {l}{tab === k && <span className="absolute left-0 right-0 bottom-0" style={{ height: 2, background: "var(--brass)" }} />}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="relative flex-1 min-w-[160px]">
+          <Search size={15} className="absolute left-2.5 top-2.5 text-slate-400" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Référence, propriétaire, téléphone, quartier…" className="w-full pl-8 pr-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle} />
+        </div>
+        {sup && <select value={fAgent} onChange={(e) => setFAgent(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+          <option value="all">Tous les commerciaux</option>{members.filter((m) => m.active).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+        </select>}
+        <select value={fCommune} onChange={(e) => setFCommune(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+          <option value="all">Toutes les communes</option>{communes.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select value={fKind} onChange={(e) => setFKind(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+          <option value="all">Tous les types</option>{Object.entries(PP_KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <select value={fPotential} onChange={(e) => setFPotential(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+          <option value="all">Tout potentiel</option>{Object.entries(PP_LEVEL).map(([k, v]) => <option key={k} value={k}>Potentiel {v.label.toLowerCase()}</option>)}
+        </select>
+        <input type="date" value={fFrom} onChange={(e) => setFFrom(e.target.value)} className="px-2 py-2 rounded-lg border text-sm bg-white" style={inputStyle} title="Du" />
+        <input type="date" value={fTo} onChange={(e) => setFTo(e.target.value)} className="px-2 py-2 rounded-lg border text-sm bg-white" style={inputStyle} title="Au" />
+      </div>
+
+      {list.length ? <div className="space-y-2">
+        {list.map((b) => {
+          const st = PP_STATUS[b.status] || PP_STATUS.nouveau;
+          const rl = relanceState(b.nextContact);
+          return (
+            <button key={b.id} onClick={() => setDetailId(b.id)} className="w-full text-left bg-white rounded-xl border p-3 hover:shadow-sm transition-shadow" style={{ borderColor: "var(--line)" }}>
+              <div className="flex items-start justify-between gap-2 flex-wrap">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ background: "#F1F3F5", color: "var(--muted)" }}>{b.ref}</span>
+                    <span className="font-medium text-sm">{PP_KIND[b.kind]} · {b.commune}{b.quartier ? `, ${b.quartier}` : ""}</span>
+                    <Chip color={st.color}>{st.label}</Chip>
+                    <Chip color={PP_LEVEL[b.potential].color} dot>Potentiel {PP_LEVEL[b.potential].label.toLowerCase()}</Chip>
+                  </div>
+                  <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>
+                    {b.ownerName}{b.ownerPhone ? ` · ${b.ownerPhone}` : ""} · {PP_OPERATION[b.operation]}
+                    {b.rent ? ` · ${fcfa(b.rent)}/mois` : ""}{b.salePrice ? ` · ${fcfa(b.salePrice)}` : ""}
+                    {" · "}{fr(b.prospectedAt + "T00:00:00", { day: "numeric", month: "short" })} · {memberById[b.agentId]?.name || "—"}
+                    {b.nextAction ? ` · à faire : ${b.nextAction}` : ""}
+                  </p>
+                </div>
+                {rl && PP_OPEN.includes(b.status) && <span className="text-[11px] font-bold px-2 py-1 rounded-full shrink-0" style={{ background: rl.bg, color: rl.color }}>{rl.label}</span>}
+              </div>
+            </button>
+          );
+        })}
+      </div> : <EmptyState icon={Building2} title="Aucun bien prospecté" sub="Enregistrez les biens identifiés lors de vos actions de prospection."
+        action={<button onClick={() => setModal({})} className="kb-btn kb-btn-primary"><Plus size={15} /> Nouveau bien</button>} />}
+
+      {modal && <ProspectedModal initial={modal} existing={prospected} members={members} userId={userId}
+        onSave={actions.saveProspected} onOpenExisting={(b) => setDetailId(b.id)}
+        onClose={(r) => { setModal(null); if (r?.id) setDetailId(r.id); }} />}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   RAPPORT HEBDOMADAIRE DE PROSPECTION
+   Un résumé intelligent de l'activité déjà saisie : le commercial ne
+   complète que le bilan qualitatif et ses objectifs.
+   ══════════════════════════════════════════════════════════════════════ */
+
+const WR_STATUS = {
+  brouillon:  { label: "Brouillon",              color: "#94A3B8" },
+  soumis:     { label: "Soumis",                 color: "#C58A1B" },
+  a_corriger: { label: "Renvoyé pour correction", color: "#D81F26" },
+  valide:     { label: "Validé",                 color: "#4F9E2A" },
+};
+const WR_KPI = [
+  ["appels", "Appels"], ["prospects", "Prospects contactés"], ["proprietaires", "Propriétaires contactés"],
+  ["visites", "Visites terrain"], ["rdv", "Rendez-vous"], ["biens", "Biens identifiés"],
+  ["mandats", "Mandats obtenus"], ["relances", "Relances"],
+];
+const WR_DEFAULT_OBJ = { appels: 30, prospects: 15, proprietaires: 10, visites: 5, rdv: 5, biens: 5, mandats: 1, relances: 10 };
+const WR_QUALI = [
+  ["actions", "Principales actions réalisées cette semaine"],
+  ["resultats", "Principaux résultats obtenus"],
+  ["difficultes", "Difficultés rencontrées"],
+  ["opportunites", "Principales opportunités identifiées"],
+  ["biensPotentiel", "Biens immobiliers présentant un fort potentiel"],
+  ["prochaines", "Actions prioritaires prévues pour la semaine prochaine"],
+  ["besoins", "Besoin d'accompagnement ou de soutien de la direction"],
+];
+
+const weekEndIso = (monday) => isoDate(addDays(monday + "T00:00:00", 6));
+const wrWeekLabel = (monday) => `du ${fr(monday + "T00:00:00", { day: "numeric", month: "long" })} au ${fr(weekEndIso(monday) + "T00:00:00", { day: "numeric", month: "long", year: "numeric" })}`;
+
+/* Toute l'activité d'un commercial sur une semaine, calculée depuis les
+   biens prospectés et le CRM des prospects — aucune ressaisie. */
+function computeWeekActivity({ agentId, monday, prospected, prospects, manual = {} }) {
+  const end = weekEndIso(monday);
+  const inW = (d) => d && d >= monday && d <= end;
+  const byMe = (h) => !agentId || h.byId === agentId;
+  const mineB = prospected.filter((b) => !agentId || b.agentId === agentId);
+  const mineP = prospects.filter((p) => !agentId || p.assignedTo === agentId || p.createdBy === agentId);
+
+  const newBiens = mineB.filter((b) => inW(b.prospectedAt));
+  const hist = mineB.flatMap((b) => (b.history || []).filter((h) => inW(h.date) && byMe(h)).map((h) => ({ ...h, bien: b })));
+  const contactsP = mineP.flatMap((p) => (p.contacts || []).filter((c) => inW(c.date) && (!c.byId || c.byId === agentId)).map((c) => ({ ...c, prospect: p })));
+
+  const visites = hist.filter((h) => h.type === "visite").length
+    + contactsP.filter((c) => c.channel === "visite").length;
+  const rdv = hist.filter((h) => h.type === "rdv").length;
+  const relances = hist.filter((h) => h.type === "relance").length;
+  const appels = hist.filter((h) => h.type === "contact").length
+    + contactsP.filter((c) => c.channel === "telephone").length
+    + (Number(manual.appels) || 0);
+  const proprietaires = new Set(hist.filter((h) => ["contact", "relance", "rdv", "visite"].includes(h.type)).map((h) => h.bien.id)).size
+    + newBiens.filter((b) => !hist.some((h) => h.bien.id === b.id)).length;
+  const prospectsContact = new Set(contactsP.map((c) => c.prospect.id)).size;
+  const nouveauxProspects = mineP.filter((p) => inW(isoDate(new Date(p.createdAt || 0)))).length;
+  const statutW = hist.filter((h) => h.type === "statut");
+  const mandats = mineB.filter((b) => b.status === "mandat_obtenu" && statutW.some((h) => h.bien.id === b.id && /Mandat obtenu/.test(h.text))).length
+    + newBiens.filter((b) => b.status === "mandat_obtenu" && !statutW.some((h) => h.bien.id === b.id)).length;
+  const negociation = mineB.filter((b) => b.status === "en_negociation").length;
+  const disponibles = mineB.filter((b) => PP_OPEN.includes(b.status)).length;
+  const perdus = mineB.filter((b) => PP_LOST.includes(b.status) && (inW(b.prospectedAt) || statutW.some((h) => h.bien.id === b.id))).length;
+  const convertis = mineP.filter((p) => p.status === "converti" && (p.contacts || []).some((c) => inW(c.date))).length;
+  const opportunites = mineB.filter((b) => b.potential === "eleve" && PP_OPEN.includes(b.status)).length
+    + mineP.filter((p) => p.interest === "tres_interesse" && !["converti", "perdu"].includes(p.status)).length;
+  const biensVisites = mineB.filter((b) => hist.some((h) => h.bien.id === b.id && h.type === "visite")).length;
+
+  const rdvList = hist.filter((h) => h.type === "rdv" || h.type === "visite")
+    .concat(contactsP.filter((c) => c.channel === "visite").map((c) => ({ date: c.date, type: "visite", text: c.result, prospect: c.prospect })))
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+
+  const aRelancer = mineB.filter((b) => PP_OPEN.includes(b.status) && b.nextContact)
+    .map((b) => ({ kind: "bien", id: b.id, name: b.ownerName, phone: b.ownerPhone, motif: b.nextAction || "Relance", date: b.nextContact,
+      niveau: PP_LEVEL[b.ownerInterest]?.label, bien: `${PP_KIND[b.kind]} · ${b.commune}`, statut: PP_STATUS[b.status]?.label }))
+    .concat(mineP.filter((p) => !["converti", "perdu"].includes(p.status) && p.nextContact)
+      .map((p) => ({ kind: "prospect", id: p.id, name: p.name, phone: p.phone, motif: "Relance prospect", date: p.nextContact,
+        niveau: PROSPECT_INTEREST[p.interest]?.label, bien: PROSPECT_OPERATION[p.operation], statut: PROSPECT_STATUS[p.status]?.label })))
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+
+  const taux = newBiens.length ? Math.round((mandats / newBiens.length) * 1000) / 10 : null;
+
+  return {
+    kpi: { appels, prospects: prospectsContact, proprietaires, visites, rdv: rdv + (Number(manual.rdv_obtenus) || 0), biens: newBiens.length, mandats, relances },
+    extra: { entreprises: Number(manual.entreprises) || 0, rdvRealises: rdv + (Number(manual.rdv_realises) || 0), nouveauxProspects, opportunites, convertis, negociation, disponibles, perdus, biensVisites, taux },
+    newBiens, hist, contactsP, rdvList, aRelancer,
+    topAuto: [...mineB.filter((b) => PP_OPEN.includes(b.status))].sort((a, b) =>
+      ({ eleve: 3, moyen: 2, faible: 1 }[b.potential] - { eleve: 3, moyen: 2, faible: 1 }[a.potential])).slice(0, 5),
+  };
+}
+
+/* ---------------- Édition d'un rapport ---------------- */
+function WeeklyReportEditor({ report, agent, activity, store, me, onSave, onSubmit, onValidate, onReturn, onPrint, onBack }) {
+  const { prospected, prospects } = store;
+  const sup = canSupervise(me.role);
+  const mine = report.agentId === me.id;
+  const locked = !sup && !["brouillon", "a_corriger"].includes(report.status);
+  const [f, setF] = useState(report);
+  const [busy, setBusy] = useState(false);
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const setObj = (k, v) => setF((p) => ({ ...p, objectives: { ...p.objectives, [k]: v } }));
+  const setMan = (k, v) => setF((p) => ({ ...p, manual: { ...p.manual, [k]: v } }));
+  const setQ = (k, v) => setF((p) => ({ ...p, qualitative: { ...p.qualitative, [k]: v } }));
+  const st = WR_STATUS[f.status];
+  const act = useMemo(() => computeWeekActivity({ agentId: report.agentId, monday: report.weekStart, prospected, prospects, manual: f.manual }), [report.agentId, report.weekStart, prospected, prospects, f.manual]);
+
+  const save = async () => { setBusy(true); const r = await onSave(f); setBusy(false); return r; };
+  const topIds = (f.top || []).map((t) => t.id);
+  const toggleTop = (kind, id) => set("top", topIds.includes(id) ? f.top.filter((t) => t.id !== id) : (f.top.length >= 5 ? f.top : [...f.top, { kind, id }]));
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
+        <div className="flex gap-1.5 flex-wrap">
+          <button onClick={() => onPrint(f)} className="kb-btn kb-btn-ghost text-sm"><Printer size={14} /> Générer le rapport (PDF)</button>
+          {!locked && <button onClick={save} disabled={busy} className="kb-btn kb-btn-ghost text-sm"><Check size={14} /> Enregistrer</button>}
+          {mine && ["brouillon", "a_corriger"].includes(f.status) && (
+            <button onClick={async () => { await save(); if (confirm("Soumettre ce rapport ? Il ne sera plus modifiable sans renvoi par la direction.")) await onSubmit(f); }}
+              className="kb-btn kb-btn-primary text-sm"><Send size={14} /> Soumettre</button>
+          )}
+          {sup && f.status === "soumis" && (<>
+            <button onClick={async () => { const n = prompt("Observation du responsable (facultatif) :", f.managerNote || ""); if (n !== null) await onValidate(f, n); }}
+              className="kb-btn text-sm" style={{ background: "#4F9E2A", color: "#fff" }}><ThumbsUp size={14} /> Valider</button>
+            <button onClick={async () => { const n = prompt("Motif du renvoi pour correction :", ""); if (n) await onReturn(f, n); }}
+              className="kb-btn text-sm" style={{ background: "#fff", color: "#D81F26", border: "1px solid #D81F2655" }}><ThumbsDown size={14} /> Renvoyer</button>
+          </>)}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border p-4 mb-4" style={{ borderColor: "var(--line)" }}>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h1 className="text-xl font-bold">Rapport hebdomadaire de prospection</h1>
+            <p className="text-sm" style={{ color: "var(--muted)" }}>{agent?.name} · {ROLES[agent?.role] || ""} · Semaine {wrWeekLabel(report.weekStart)}</p>
+          </div>
+          <Chip color={st.color}>{st.label}</Chip>
+        </div>
+        {f.status === "a_corriger" && f.managerNote && <p className="text-xs mt-2 p-2 rounded" style={{ background: "#FDF2F2", color: "#B5171D" }}>Motif du renvoi : {f.managerNote}</p>}
+        {f.status === "valide" && f.managerNote && <p className="text-xs mt-2 p-2 rounded" style={{ background: "#F6FBF3", color: "#3d7d20" }}>Observation du responsable : {f.managerNote}</p>}
+        <div className="mt-3">
+          <Field label="Zone de prospection"><input disabled={locked} className={inputCls} style={inputStyle} value={f.zone || ""} onChange={(e) => set("zone", e.target.value)} placeholder="Ex. Cocody / Riviera / Deux-Plateaux" /></Field>
+        </div>
+      </div>
+
+      {/* Résumé automatique */}
+      <SectionCard title="Résumé de l'activité — calculé automatiquement" icon={BarChart3}>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {[["Appels", act.kpi.appels], ["Prospects contactés", act.kpi.prospects], ["Propriétaires contactés", act.kpi.proprietaires],
+            ["Entreprises prospectées", act.extra.entreprises], ["Visites terrain", act.kpi.visites], ["RDV obtenus", act.kpi.rdv],
+            ["RDV réalisés", act.extra.rdvRealises], ["Biens identifiés", act.kpi.biens], ["Mandats obtenus", act.kpi.mandats],
+            ["Relances effectuées", act.kpi.relances], ["Nouveaux prospects", act.extra.nouveauxProspects], ["Opportunités", act.extra.opportunites],
+            ["Prospects convertis", act.extra.convertis]].map(([k, v]) => (
+            <div key={k} className="rounded-lg p-2.5" style={{ background: "#F6F8FA" }}>
+              <p className="text-[11px]" style={{ color: "var(--muted)" }}>{k}</p>
+              <p className="text-lg font-bold">{v}</p>
+            </div>
+          ))}
+        </div>
+        <p className="text-[11px] mt-3" style={{ color: "var(--muted)" }}>
+          Compléments non suivis par l'outil (appels sans trace, entreprises démarchées, rendez-vous obtenus ou réalisés hors fiches) :
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1">
+          {[["appels", "Appels supplémentaires"], ["entreprises", "Entreprises prospectées"], ["rdv_obtenus", "RDV obtenus (hors fiches)"], ["rdv_realises", "RDV réalisés (hors fiches)"]].map(([k, l]) => (
+            <Field key={k} label={l}><input disabled={locked} type="number" min={0} className={inputCls} style={inputStyle} value={f.manual?.[k] ?? ""} onChange={(e) => setMan(k, e.target.value)} /></Field>
+          ))}
+        </div>
+      </SectionCard>
+
+      {/* Objectifs / résultats */}
+      <SectionCard title="Objectifs et résultats" icon={TrendingUp} pad={false}>
+        <div className="overflow-x-auto"><table className="w-full text-sm">
+          <thead><tr className="text-left" style={{ color: "var(--muted)" }}>
+            <th className="px-4 py-2.5 font-medium">Indicateur</th><th className="px-3 py-2.5 font-medium text-right">Objectif</th>
+            <th className="px-3 py-2.5 font-medium text-right">Réalisé</th><th className="px-3 py-2.5 font-medium text-right">Écart</th><th className="px-3 py-2.5 font-medium text-right">Taux</th>
+          </tr></thead>
+          <tbody>{WR_KPI.map(([k, l]) => {
+            const obj = Number(f.objectives?.[k] ?? WR_DEFAULT_OBJ[k]) || 0; const real = act.kpi[k]; const ec = real - obj;
+            const taux = obj ? Math.round((real / obj) * 100) : null;
+            return (
+              <tr key={k} className="border-t" style={{ borderColor: "var(--line)" }}>
+                <td className="px-4 py-2">{l}</td>
+                <td className="px-3 py-2 text-right"><input disabled={locked} type="number" min={0} className="w-20 px-2 py-1 rounded border text-sm text-right" style={inputStyle} value={f.objectives?.[k] ?? WR_DEFAULT_OBJ[k]} onChange={(e) => setObj(k, e.target.value)} /></td>
+                <td className="px-3 py-2 text-right font-semibold tabular-nums">{real}</td>
+                <td className="px-3 py-2 text-right tabular-nums font-medium" style={{ color: ec >= 0 ? "#4F9E2A" : "#D81F26" }}>{ec >= 0 ? "+" : ""}{ec}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{taux === null ? "—" : <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: taux >= 100 ? "#EAF6E3" : taux >= 60 ? "#FFF8EC" : "#FDEAEA", color: taux >= 100 ? "#3d7d20" : taux >= 60 ? "#8A6212" : "#B5171D" }}>{taux} %</span>}</td>
+              </tr>
+            );
+          })}</tbody>
+        </table></div>
+      </SectionCard>
+
+      {/* Biens prospectés cette semaine */}
+      <SectionCard title={`Biens prospectés cette semaine (${act.newBiens.length})`} icon={Building2} pad={false}>
+        {act.newBiens.length ? <div className="overflow-x-auto"><table className="w-full text-xs">
+          <thead><tr className="text-left" style={{ color: "var(--muted)" }}>
+            <th className="px-3 py-2 font-medium">Top</th><th className="px-3 py-2 font-medium">Date</th><th className="px-3 py-2 font-medium">Bien</th>
+            <th className="px-3 py-2 font-medium">Propriétaire</th><th className="px-3 py-2 font-medium">Localisation</th><th className="px-3 py-2 font-medium">Loyer / prix</th>
+            <th className="px-3 py-2 font-medium">Potentiel</th><th className="px-3 py-2 font-medium">Statut</th><th className="px-3 py-2 font-medium">Prochaine action</th>
+          </tr></thead>
+          <tbody>{act.newBiens.map((b) => (
+            <tr key={b.id} className="border-t" style={{ borderColor: "var(--line)" }}>
+              <td className="px-3 py-2"><input type="checkbox" disabled={locked} checked={topIds.includes(b.id)} onChange={() => toggleTop("bien", b.id)} title="Mettre en avant (5 max)" /></td>
+              <td className="px-3 py-2">{fr(b.prospectedAt + "T00:00:00", { day: "2-digit", month: "2-digit" })}</td>
+              <td className="px-3 py-2 font-medium">{b.ref} · {PP_KIND[b.kind]}{b.rooms ? ` ${b.rooms}p` : ""}{b.surface ? ` · ${b.surface} m²` : ""}</td>
+              <td className="px-3 py-2">{b.ownerName}<br /><span style={{ color: "var(--muted)" }}>{b.ownerPhone}</span></td>
+              <td className="px-3 py-2">{b.commune}{b.quartier ? `, ${b.quartier}` : ""}</td>
+              <td className="px-3 py-2 tabular-nums">{b.rent ? fcfa(b.rent) : ""}{b.salePrice ? (b.rent ? " / " : "") + fcfa(b.salePrice) : ""}</td>
+              <td className="px-3 py-2"><Chip color={PP_LEVEL[b.potential].color}>{PP_LEVEL[b.potential].label}</Chip></td>
+              <td className="px-3 py-2"><Chip color={PP_STATUS[b.status].color}>{PP_STATUS[b.status].label}</Chip></td>
+              <td className="px-3 py-2">{b.nextAction || "—"}{b.nextContact ? ` (${fr(b.nextContact + "T00:00:00", { day: "2-digit", month: "2-digit" })})` : ""}</td>
+            </tr>
+          ))}</tbody>
+        </table></div> : <p className="text-sm text-center py-5" style={{ color: "var(--muted)" }}>Aucun bien enregistré sur cette semaine.</p>}
+      </SectionCard>
+
+      {/* Prospects contactés */}
+      <SectionCard title={`Prospects contactés (${act.contactsP.length} échange(s))`} icon={Users} pad={false}>
+        {act.contactsP.length ? <div className="overflow-x-auto"><table className="w-full text-xs">
+          <thead><tr className="text-left" style={{ color: "var(--muted)" }}>
+            <th className="px-3 py-2 font-medium">Top</th><th className="px-3 py-2 font-medium">Date</th><th className="px-3 py-2 font-medium">Prospect</th><th className="px-3 py-2 font-medium">Téléphone</th>
+            <th className="px-3 py-2 font-medium">Canal</th><th className="px-3 py-2 font-medium">Résultat</th><th className="px-3 py-2 font-medium">Intérêt</th><th className="px-3 py-2 font-medium">Statut</th><th className="px-3 py-2 font-medium">Relance</th>
+          </tr></thead>
+          <tbody>{act.contactsP.map((c, i) => (
+            <tr key={i} className="border-t" style={{ borderColor: "var(--line)" }}>
+              <td className="px-3 py-2"><input type="checkbox" disabled={locked} checked={topIds.includes(c.prospect.id)} onChange={() => toggleTop("prospect", c.prospect.id)} /></td>
+              <td className="px-3 py-2">{fr(c.date + "T00:00:00", { day: "2-digit", month: "2-digit" })}</td>
+              <td className="px-3 py-2 font-medium">{c.prospect.name}</td><td className="px-3 py-2">{c.prospect.phone}</td>
+              <td className="px-3 py-2">{CONTACT_CHANNEL[c.channel] || c.channel}</td><td className="px-3 py-2">{c.result}</td>
+              <td className="px-3 py-2"><Chip color={PROSPECT_INTEREST[c.prospect.interest].color}>{PROSPECT_INTEREST[c.prospect.interest].label}</Chip></td>
+              <td className="px-3 py-2"><Chip color={PROSPECT_STATUS[c.prospect.status].color}>{PROSPECT_STATUS[c.prospect.status].label}</Chip></td>
+              <td className="px-3 py-2">{c.prospect.nextContact ? fr(c.prospect.nextContact + "T00:00:00", { day: "2-digit", month: "2-digit" }) : "—"}</td>
+            </tr>
+          ))}</tbody>
+        </table></div> : <p className="text-sm text-center py-5" style={{ color: "var(--muted)" }}>Aucun échange enregistré cette semaine dans le CRM.</p>}
+      </SectionCard>
+
+      {/* Relances prioritaires */}
+      <SectionCard title={`Relances prioritaires (${act.aRelancer.length})`} icon={Bell} pad={false}>
+        {act.aRelancer.length ? <div className="divide-y" style={{ borderColor: "var(--line)" }}>
+          {act.aRelancer.slice(0, 15).map((r, i) => {
+            const rl = relanceState(r.date);
+            return (
+              <div key={i} className="flex items-center justify-between px-4 py-2 gap-2 flex-wrap">
+                <div className="text-xs"><span className="font-medium">{r.name}</span>{r.phone ? ` · ${r.phone}` : ""} · {r.bien} · {r.motif} · {r.niveau}</div>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: rl.bg, color: rl.color }}>{rl.days < 0 ? "🔴" : rl.days <= 3 ? "🟠" : "🟢"} {rl.label} · {fr(r.date + "T00:00:00", { day: "2-digit", month: "2-digit" })}</span>
+              </div>
+            );
+          })}
+        </div> : <p className="text-sm text-center py-5" style={{ color: "var(--muted)" }}>Aucune relance planifiée.</p>}
+      </SectionCard>
+
+      {/* Bilan qualitatif */}
+      <SectionCard title="Bilan qualitatif" icon={FileText}>
+        {WR_QUALI.map(([k, l], i) => (
+          <Field key={k} label={`${i + 1}. ${l}`}>
+            <textarea disabled={locked} className={inputCls} style={inputStyle} rows={2} value={f.qualitative?.[k] || ""} onChange={(e) => setQ(k, e.target.value)} />
+          </Field>
+        ))}
+        <p className="text-[11px]" style={{ color: "var(--muted)" }}>Top opportunités sélectionnées : {f.top?.length || 0} / 5 (cochez dans les tableaux ci-dessus).</p>
+      </SectionCard>
+    </div>
+  );
+}
+
+/* ---------------- Rapport imprimable ---------------- */
+function WeeklyReportSheet({ report, agent, store, onBack }) {
+  const { prospected, prospects, members } = store;
+  const memberById = Object.fromEntries(members.map((m) => [m.id, m]));
+  const act = computeWeekActivity({ agentId: report.agentId, monday: report.weekStart, prospected, prospects, manual: report.manual });
+  const top = (report.top || []).map((t) => t.kind === "bien" ? { kind: "bien", b: prospected.find((x) => x.id === t.id) } : { kind: "prospect", p: prospects.find((x) => x.id === t.id) }).filter((t) => t.b || t.p);
+  const topShown = top.length ? top : act.topAuto.map((b) => ({ kind: "bien", b }));
+  const T = ({ children }) => <p className="text-[11px] font-bold mt-4 mb-1.5" style={{ color: "var(--brass)" }}>{children}</p>;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
+        <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
+        <div className="flex gap-2">
+          <a className="kb-btn kb-btn-ghost" href={`mailto:?subject=${encodeURIComponent(`Rapport hebdomadaire de prospection – ${agent?.name || ""} – Semaine ${wrWeekLabel(report.weekStart)}`)}&body=${encodeURIComponent("Bonjour,\n\nVeuillez trouver ci-joint mon rapport hebdomadaire de prospection.\n\nCordialement,\n" + (agent?.name || ""))}`}>
+            <Send size={15} /> Envoyer à la Directrice
+          </a>
+          <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Télécharger PDF</button>
+        </div>
+      </div>
+      <p className="text-[11px] mb-3 print:hidden" style={{ color: "var(--muted)" }}>
+        « Télécharger PDF » ouvre l'impression : choisissez « Enregistrer au format PDF ». « Envoyer à la Directrice » prépare l'e-mail avec l'objet ; joignez le PDF enregistré (ou envoyez-le par WhatsApp).
+      </p>
+
+      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
+        <PrintHead title="RAPPORT HEBDOMADAIRE" subtitle="de prospection commerciale" extra={
+          <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
+        } />
+        <div className="grid sm:grid-cols-3 gap-3 py-3 text-xs">
+          <div><p style={{ color: "var(--muted)" }}>Commercial</p><p className="font-semibold">{agent?.name}</p><p style={{ color: "var(--muted)" }}>{ROLES[agent?.role]}</p></div>
+          <div><p style={{ color: "var(--muted)" }}>Semaine</p><p className="font-semibold">{wrWeekLabel(report.weekStart)}</p></div>
+          <div><p style={{ color: "var(--muted)" }}>Zone de prospection</p><p className="font-semibold">{report.zone || "—"}</p></div>
+        </div>
+
+        <T>RÉSUMÉ DES PERFORMANCES</T>
+        <div className="grid grid-cols-4 gap-2">
+          {[["Appels", act.kpi.appels], ["Prospects contactés", act.kpi.prospects], ["Propriétaires contactés", act.kpi.proprietaires], ["Visites terrain", act.kpi.visites],
+            ["Rendez-vous", act.kpi.rdv], ["Biens identifiés", act.kpi.biens], ["Mandats obtenus", act.kpi.mandats], ["Relances", act.kpi.relances]].map(([k, v]) => (
+            <div key={k} className="rounded p-2 text-center" style={{ background: "#F6F8FA" }}><p className="text-lg font-bold">{v}</p><p className="text-[10px]" style={{ color: "var(--muted)" }}>{k}</p></div>
+          ))}
+        </div>
+        {act.extra.taux !== null && <p className="text-[11px] mt-2">Taux de conversion (mandats / biens identifiés) : <strong>{act.extra.taux} %</strong></p>}
+
+        <T>OBJECTIFS / RÉSULTATS</T>
+        <table className="w-full text-[10px]">
+          <thead><tr style={{ background: "#F1F3F5" }}><th className="text-left px-2 py-1 font-semibold">Indicateur</th><th className="text-right px-2 py-1 font-semibold">Objectif</th><th className="text-right px-2 py-1 font-semibold">Réalisé</th><th className="text-right px-2 py-1 font-semibold">Écart</th><th className="text-right px-2 py-1 font-semibold">Taux</th></tr></thead>
+          <tbody>{WR_KPI.map(([k, l]) => { const o = Number(report.objectives?.[k] ?? WR_DEFAULT_OBJ[k]) || 0; const r = act.kpi[k]; return (
+            <tr key={k} className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-2 py-1">{l}</td><td className="px-2 py-1 text-right">{o}</td><td className="px-2 py-1 text-right font-semibold">{r}</td>
+              <td className="px-2 py-1 text-right" style={{ color: r - o >= 0 ? "#3d7d20" : "#B5171D" }}>{r - o >= 0 ? "+" : ""}{r - o}</td><td className="px-2 py-1 text-right">{o ? Math.round((r / o) * 100) + " %" : "—"}</td></tr>); })}</tbody>
+        </table>
+
+        <T>BIENS PROSPECTÉS CETTE SEMAINE — {act.newBiens.length}</T>
+        {act.newBiens.length ? <table className="w-full text-[10px]">
+          <thead><tr style={{ background: "#F1F3F5" }}><th className="text-left px-2 py-1 font-semibold">Date</th><th className="text-left px-2 py-1 font-semibold">Bien</th><th className="text-left px-2 py-1 font-semibold">Propriétaire</th><th className="text-left px-2 py-1 font-semibold">Localisation</th><th className="text-right px-2 py-1 font-semibold">Loyer / prix</th><th className="text-left px-2 py-1 font-semibold">Potentiel</th><th className="text-left px-2 py-1 font-semibold">Statut</th><th className="text-left px-2 py-1 font-semibold">Prochaine action</th></tr></thead>
+          <tbody>{act.newBiens.map((b) => (
+            <tr key={b.id} className="border-b" style={{ borderColor: "var(--line)" }}>
+              <td className="px-2 py-1">{fr(b.prospectedAt + "T00:00:00", { day: "2-digit", month: "2-digit" })}</td>
+              <td className="px-2 py-1">{b.ref}<br />{PP_KIND[b.kind]}{b.rooms ? ` ${b.rooms}p` : ""}{b.surface ? ` · ${b.surface} m²` : ""} · {PP_OPERATION[b.operation]}</td>
+              <td className="px-2 py-1">{b.ownerName}<br />{b.ownerPhone}</td>
+              <td className="px-2 py-1">{b.commune}{b.quartier ? `, ${b.quartier}` : ""}</td>
+              <td className="px-2 py-1 text-right tabular-nums">{b.rent ? fcfa(b.rent) : ""}{b.salePrice ? (b.rent ? " / " : "") + fcfa(b.salePrice) : ""}</td>
+              <td className="px-2 py-1">{PP_LEVEL[b.potential].label}</td><td className="px-2 py-1">{PP_STATUS[b.status].label}</td>
+              <td className="px-2 py-1">{b.nextAction || "—"}{b.nextContact ? ` (${fr(b.nextContact + "T00:00:00", { day: "2-digit", month: "2-digit" })})` : ""}</td>
+            </tr>))}</tbody>
+        </table> : <p className="text-[11px] italic" style={{ color: "var(--muted)" }}>Aucun bien enregistré cette semaine.</p>}
+
+        <T>PROSPECTS CONTACTÉS — {act.contactsP.length}</T>
+        {act.contactsP.length ? <table className="w-full text-[10px]">
+          <thead><tr style={{ background: "#F1F3F5" }}><th className="text-left px-2 py-1 font-semibold">Date</th><th className="text-left px-2 py-1 font-semibold">Prospect</th><th className="text-left px-2 py-1 font-semibold">Téléphone</th><th className="text-left px-2 py-1 font-semibold">Canal</th><th className="text-left px-2 py-1 font-semibold">Résultat</th><th className="text-left px-2 py-1 font-semibold">Intérêt</th><th className="text-left px-2 py-1 font-semibold">Statut</th></tr></thead>
+          <tbody>{act.contactsP.map((c, i) => (<tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
+            <td className="px-2 py-1">{fr(c.date + "T00:00:00", { day: "2-digit", month: "2-digit" })}</td><td className="px-2 py-1">{c.prospect.name}</td><td className="px-2 py-1">{c.prospect.phone}</td>
+            <td className="px-2 py-1">{CONTACT_CHANNEL[c.channel] || c.channel}</td><td className="px-2 py-1">{c.result}</td>
+            <td className="px-2 py-1">{PROSPECT_INTEREST[c.prospect.interest].label}</td><td className="px-2 py-1">{PROSPECT_STATUS[c.prospect.status].label}</td></tr>))}</tbody>
+        </table> : <p className="text-[11px] italic" style={{ color: "var(--muted)" }}>Aucun échange enregistré.</p>}
+
+        <T>RENDEZ-VOUS ET VISITES — {act.rdvList.length}</T>
+        {act.rdvList.length ? <table className="w-full text-[10px]">
+          <thead><tr style={{ background: "#F1F3F5" }}><th className="text-left px-2 py-1 font-semibold">Date</th><th className="text-left px-2 py-1 font-semibold">Heure</th><th className="text-left px-2 py-1 font-semibold">Type</th><th className="text-left px-2 py-1 font-semibold">Prospect / client</th><th className="text-left px-2 py-1 font-semibold">Bien concerné</th><th className="text-left px-2 py-1 font-semibold">Résultat</th></tr></thead>
+          <tbody>{act.rdvList.map((r, i) => (<tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
+            <td className="px-2 py-1">{fr(r.date + "T00:00:00", { day: "2-digit", month: "2-digit" })}</td><td className="px-2 py-1">{r.time || "—"}</td><td className="px-2 py-1">{PP_HISTORY_TYPE[r.type] || r.type}</td>
+            <td className="px-2 py-1">{r.bien ? r.bien.ownerName : r.prospect?.name}</td><td className="px-2 py-1">{r.bien ? `${PP_KIND[r.bien.kind]} · ${r.bien.commune}` : "—"}</td><td className="px-2 py-1">{r.text}</td></tr>))}</tbody>
+        </table> : <p className="text-[11px] italic" style={{ color: "var(--muted)" }}>Aucun rendez-vous cette semaine.</p>}
+
+        <T>RELANCES PRIORITAIRES — {act.aRelancer.length}</T>
+        {act.aRelancer.length ? <table className="w-full text-[10px]">
+          <thead><tr style={{ background: "#F1F3F5" }}><th className="text-left px-2 py-1 font-semibold">Prospect</th><th className="text-left px-2 py-1 font-semibold">Téléphone</th><th className="text-left px-2 py-1 font-semibold">Motif</th><th className="text-left px-2 py-1 font-semibold">Date</th><th className="text-left px-2 py-1 font-semibold">Intérêt</th><th className="text-left px-2 py-1 font-semibold">Bien / besoin</th><th className="text-left px-2 py-1 font-semibold">État</th></tr></thead>
+          <tbody>{act.aRelancer.slice(0, 20).map((r, i) => { const rl = relanceState(r.date); return (<tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
+            <td className="px-2 py-1">{r.name}</td><td className="px-2 py-1">{r.phone}</td><td className="px-2 py-1">{r.motif}</td><td className="px-2 py-1">{fr(r.date + "T00:00:00", { day: "2-digit", month: "2-digit" })}</td>
+            <td className="px-2 py-1">{r.niveau}</td><td className="px-2 py-1">{r.bien}</td><td className="px-2 py-1" style={{ color: rl.color, fontWeight: 600 }}>{rl.days < 0 ? "🔴 En retard" : rl.days <= 3 ? "🟠 Prochainement" : "🟢 Planifiée"}</td></tr>); })}</tbody>
+        </table> : <p className="text-[11px] italic" style={{ color: "var(--muted)" }}>Aucune relance planifiée.</p>}
+
+        <T>TOP OPPORTUNITÉS DE LA SEMAINE</T>
+        {topShown.length ? <table className="w-full text-[10px]">
+          <thead><tr style={{ background: "#FDEAEA" }}><th className="text-left px-2 py-1 font-semibold">Prospect</th><th className="text-left px-2 py-1 font-semibold">Type de besoin</th><th className="text-left px-2 py-1 font-semibold">Bien concerné</th><th className="text-left px-2 py-1 font-semibold">Potentiel</th><th className="text-left px-2 py-1 font-semibold">Prochaine action</th><th className="text-left px-2 py-1 font-semibold">Date prévue</th></tr></thead>
+          <tbody>{topShown.map((t, i) => t.kind === "bien" ? (
+            <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-2 py-1">{t.b.ownerName}</td><td className="px-2 py-1">{PP_OPERATION[t.b.operation]}</td><td className="px-2 py-1">{t.b.ref} · {PP_KIND[t.b.kind]} · {t.b.commune}</td><td className="px-2 py-1">{PP_LEVEL[t.b.potential].label}</td><td className="px-2 py-1">{t.b.nextAction || "—"}</td><td className="px-2 py-1">{t.b.nextContact ? fr(t.b.nextContact + "T00:00:00", { day: "2-digit", month: "2-digit" }) : "—"}</td></tr>
+          ) : (
+            <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-2 py-1">{t.p.name}</td><td className="px-2 py-1">{PROSPECT_OPERATION[t.p.operation]}</td><td className="px-2 py-1">—</td><td className="px-2 py-1">{PROSPECT_INTEREST[t.p.interest].label}</td><td className="px-2 py-1">{PROSPECT_STATUS[t.p.status].label}</td><td className="px-2 py-1">{t.p.nextContact ? fr(t.p.nextContact + "T00:00:00", { day: "2-digit", month: "2-digit" }) : "—"}</td></tr>
+          ))}</tbody>
+        </table> : <p className="text-[11px] italic" style={{ color: "var(--muted)" }}>Aucune opportunité ouverte.</p>}
+
+        <T>BILAN QUALITATIF</T>
+        {WR_QUALI.map(([k, l], i) => (
+          <div key={k} className="mb-2"><p className="text-[10px] font-semibold">{i + 1}. {l}</p><p className="text-[11px] whitespace-pre-wrap" style={{ color: report.qualitative?.[k] ? "var(--ink)" : "var(--muted)" }}>{report.qualitative?.[k] || "—"}</p></div>
+        ))}
+
+        <div className="kb-sign mt-6 pt-4 border-t" style={{ borderColor: "var(--line)" }}>
+          <p className="text-[11px] font-semibold">Observation du Responsable :</p>
+          <p className="text-[11px] whitespace-pre-wrap" style={{ minHeight: 40, color: report.managerNote ? "var(--ink)" : "var(--muted)" }}>{report.managerNote || ""}</p>
+          <div className="flex justify-between items-end pt-6">
+            <div className="text-center" style={{ minWidth: 200 }}><p className="text-[11px] font-semibold pb-14">Le Commercial</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /><p className="text-[10px] mt-1" style={{ color: "var(--muted)" }}>{agent?.name}</p></div>
+            <div className="text-center" style={{ minWidth: 200 }}><p className="text-[11px] font-semibold pb-14">Nom / Signature du Responsable</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /><p className="text-[10px] mt-1" style={{ color: "var(--muted)" }}>{report.validatedBy ? memberById[report.validatedBy]?.name : ""}</p></div>
+          </div>
+        </div>
+      </PrintPage>
+    </div>
+  );
+}
+
+/* ---------------- Rapport consolidé de l'équipe ---------------- */
+function TeamReportSheet({ monday, store, onBack }) {
+  const { members, prospected, prospects, weeklyReports } = store;
+  const agents = members.filter((m) => m.active && prospected.some((b) => b.agentId === m.id) || prospects.some((p) => p.assignedTo === m.id));
+  const rows = agents.map((m) => ({ m, act: computeWeekActivity({ agentId: m.id, monday, prospected, prospects, manual: weeklyReports.find((r) => r.agentId === m.id && r.weekStart === monday)?.manual }) }));
+  const tot = (k) => rows.reduce((a, r) => a + (r.act.kpi[k] || 0), 0);
+  const totX = (k) => rows.reduce((a, r) => a + (r.act.extra[k] || 0), 0);
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
+        <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
+        <button onClick={() => printSheet("landscape")} className="kb-btn kb-btn-primary"><Printer size={16} /> Télécharger PDF (paysage)</button>
+      </div>
+      <PrintPage className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
+        <PrintHead title="RAPPORT HEBDOMADAIRE GLOBAL" subtitle="de l'équipe commerciale" extra={<p className="text-[11px]" style={{ color: "var(--muted)" }}>Semaine {wrWeekLabel(monday)}</p>} />
+        <div className="grid grid-cols-5 gap-2 py-3">
+          {[["Appels", tot("appels")], ["Prospects", tot("prospects")], ["Propriétaires", tot("proprietaires")], ["Visites", tot("visites")], ["Rendez-vous", tot("rdv")],
+            ["Biens identifiés", tot("biens")], ["Mandats", tot("mandats")], ["Relances", tot("relances")], ["Opportunités", totX("opportunites")], ["Conversions", totX("convertis")]].map(([k, v]) => (
+            <div key={k} className="rounded p-2 text-center" style={{ background: "#F6F8FA" }}><p className="text-lg font-bold">{v}</p><p className="text-[10px]" style={{ color: "var(--muted)" }}>{k}</p></div>
+          ))}
+        </div>
+        <table className="w-full text-[10px] mt-2">
+          <thead><tr style={{ background: "#F1F3F5" }}>
+            <th className="text-left px-2 py-1.5 font-semibold">Commercial</th>
+            {["Prospects", "Appels", "Visites", "RDV", "Biens", "Mandats", "Relances", "Rapport"].map((h) => <th key={h} className="text-right px-2 py-1.5 font-semibold">{h}</th>)}
+          </tr></thead>
+          <tbody>{rows.map(({ m, act }) => {
+            const rep = weeklyReports.find((r) => r.agentId === m.id && r.weekStart === monday);
+            return (<tr key={m.id} className="border-b" style={{ borderColor: "var(--line)" }}>
+              <td className="px-2 py-1.5 font-medium">{m.name}</td>
+              {["prospects", "appels", "visites", "rdv", "biens", "mandats", "relances"].map((k) => <td key={k} className="px-2 py-1.5 text-right tabular-nums">{act.kpi[k]}</td>)}
+              <td className="px-2 py-1.5 text-right" style={{ color: rep ? WR_STATUS[rep.status].color : "#D81F26", fontWeight: 600 }}>{rep ? WR_STATUS[rep.status].label : "Non soumis"}</td>
+            </tr>); })}</tbody>
+          <tfoot><tr style={{ background: "#F1F3F5" }}><td className="px-2 py-1.5 font-bold">TOTAL ÉQUIPE</td>
+            {["prospects", "appels", "visites", "rdv", "biens", "mandats", "relances"].map((k) => <td key={k} className="px-2 py-1.5 text-right font-bold tabular-nums">{tot(k)}</td>)}<td /></tr></tfoot>
+        </table>
+        <div className="kb-sign flex justify-end pt-10"><div className="text-center" style={{ minWidth: 210 }}><p className="text-[11px] font-semibold pb-14">La Direction</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div></div>
+      </PrintPage>
+    </div>
+  );
+}
+
+/* ---------------- Vue principale ---------------- */
+function RapportProspection({ store, me, userId }) {
+  const { weeklyReports, members, prospected, prospects, actions } = store;
+  const sup = canSupervise(me.role);
+  const [tab, setTab] = useState(sup ? "equipe" : "mes");
+  const [openId, setOpenId] = useState(null);
+  const [printId, setPrintId] = useState(null);
+  const [teamWeek, setTeamWeek] = useState(null);
+  const [fAgent, setFAgent] = useState("all"); const [fStatus, setFStatus] = useState("all");
+  const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
+  const monday = mondayIso(new Date());
+
+  /* Suivi hebdomadaire des 8 dernières semaines pour le tableau de bord */
+  const weeks = useMemo(() => Array.from({ length: 8 }, (_, i) => isoDate(addDays(monday + "T00:00:00", -7 * (7 - i)))), [monday]);
+  const serie = useMemo(() => weeks.map((w) => {
+    const a = computeWeekActivity({ agentId: null, monday: w, prospected, prospects });
+    return { name: fr(w + "T00:00:00", { day: "2-digit", month: "2-digit" }), biens: a.kpi.biens, mandats: a.kpi.mandats, rdv: a.kpi.rdv, visites: a.kpi.visites, prospects: a.kpi.prospects };
+  }), [weeks, prospected, prospects]);
+
+  const openReport = weeklyReports.find((r) => r.id === openId);
+  const printReport = weeklyReports.find((r) => r.id === printId);
+  if (printReport) return <WeeklyReportSheet report={printReport} agent={memberById[printReport.agentId]} store={store} onBack={() => setPrintId(null)} />;
+  if (teamWeek) return <TeamReportSheet monday={teamWeek} store={store} onBack={() => setTeamWeek(null)} />;
+  if (openReport) {
+    return <WeeklyReportEditor report={openReport} agent={memberById[openReport.agentId]} store={store} me={me}
+      onSave={actions.saveWeeklyReport}
+      onSubmit={(r) => actions.saveWeeklyReport({ ...r, status: "soumis", submittedAt: new Date().toISOString() })}
+      onValidate={(r, note) => actions.saveWeeklyReport({ ...r, status: "valide", managerNote: note, validatedBy: userId, validatedAt: new Date().toISOString() })}
+      onReturn={(r, note) => actions.saveWeeklyReport({ ...r, status: "a_corriger", managerNote: note })}
+      onPrint={(r) => { actions.saveWeeklyReport(r); setPrintId(r.id); }}
+      onBack={() => setOpenId(null)} />;
+  }
+
+  const mine = weeklyReports.filter((r) => r.agentId === userId).sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1));
+  const current = mine.find((r) => r.weekStart === monday);
+  const all = weeklyReports.filter((r) => (fAgent === "all" || r.agentId === fAgent) && (fStatus === "all" || r.status === fStatus)).sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1));
+  const late = members.filter((m) => m.active && m.role === "agent" && !weeklyReports.some((r) => r.agentId === m.id && r.weekStart === isoDate(addDays(monday + "T00:00:00", -7)) && r.status !== "brouillon"));
+  const actNow = computeWeekActivity({ agentId: null, monday, prospected, prospects });
+
+  const nouveau = async () => {
+    if (current) { setOpenId(current.id); return; }
+    const r = await actions.saveWeeklyReport({ agentId: userId, weekStart: monday, zone: "", objectives: { ...WR_DEFAULT_OBJ }, manual: {}, qualitative: {}, top: [], status: "brouillon" });
+    if (r?.id) setOpenId(r.id); else if (r?.error) alert(r.error);
+  };
+
+  const Row = ({ r }) => (
+    <div className="flex items-center justify-between px-4 py-2.5 gap-2 flex-wrap">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{memberById[r.agentId]?.name} · Semaine {wrWeekLabel(r.weekStart)}</p>
+        <p className="text-[11px]" style={{ color: "var(--muted)" }}>{r.zone || "zone non précisée"}{r.submittedAt ? ` · soumis le ${fr(r.submittedAt, { day: "numeric", month: "short" })}` : ""}{r.validatedAt ? ` · validé le ${fr(r.validatedAt, { day: "numeric", month: "short" })}` : ""}</p>
+      </div>
+      <div className="flex items-center gap-1.5 shrink-0">
+        <Chip color={WR_STATUS[r.status].color}>{WR_STATUS[r.status].label}</Chip>
+        <button onClick={() => setOpenId(r.id)} className="kb-btn kb-btn-ghost text-xs"><Eye size={13} /> Ouvrir</button>
+        <button onClick={() => setPrintId(r.id)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="PDF"><Printer size={14} /></button>
+        {(sup || (r.agentId === userId && r.status === "brouillon")) && <button onClick={async () => { if (confirm("Supprimer ce rapport ?")) await actions.deleteWeeklyReport(r.id); }} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>}
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
+        <h1 className="text-xl font-bold">Rapport de prospection</h1>
+        <div className="flex gap-2">
+          {sup && <button onClick={() => setTeamWeek(monday)} className="kb-btn kb-btn-ghost"><Printer size={15} /> Rapport global de l'équipe</button>}
+          <button onClick={nouveau} className="kb-btn kb-btn-primary"><Plus size={16} /> {current ? "Rapport de la semaine en cours" : "Nouveau rapport"}</button>
+        </div>
+      </div>
+      <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>Généré depuis l'activité saisie dans l'outil : vous ne complétez que le bilan qualitatif.</p>
+
+      {sup && (<>
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+          <StatCard icon={Building2} label="Biens identifiés (semaine)" value={actNow.kpi.biens} tint="#7C3AED" />
+          <StatCard icon={BadgeCheck} label="Mandats (semaine)" value={actNow.kpi.mandats} tint="#4F9E2A" />
+          <StatCard icon={CalendarClock} label="Rendez-vous (semaine)" value={actNow.kpi.rdv} tint="#0891B2" />
+          <StatCard icon={TrendingUp} label="Opportunités en cours" value={actNow.extra.opportunites} tint="#2E78A8" />
+          <StatCard icon={AlertTriangle} label="Rapports en retard" value={late.length} sub={late.map((m) => m.name.split(" ")[0]).join(", ") || "aucun"} tint="#D81F26" />
+        </div>
+        <SectionCard title="Activité commerciale — 8 dernières semaines" icon={BarChart3}>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={serie} margin={{ top: 4, right: 8, left: -18, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#EEF1F5" vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#64748B" }} axisLine={false} tickLine={false} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "#64748B" }} axisLine={false} tickLine={false} />
+              <Tooltip /><Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar dataKey="biens" name="Biens obtenus" fill="#7C3AED" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="mandats" name="Mandats" fill="#4F9E2A" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="rdv" name="Rendez-vous" fill="#0891B2" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="prospects" name="Prospects" fill="#2E78A8" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </SectionCard>
+      </>)}
+
+      <div className="flex gap-1 mb-4 border-b" style={{ borderColor: "var(--line)" }}>
+        {[["mes", `Mes rapports (${mine.length})`], ...(sup ? [["equipe", `Rapports de l'équipe (${weeklyReports.length})`], ["attente", `En attente (${weeklyReports.filter((r) => r.status === "soumis").length})`]] : [])].map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} className="px-3 py-2.5 text-sm font-medium relative" style={{ color: tab === k ? "var(--brass)" : "var(--muted)" }}>{l}{tab === k && <span className="absolute left-0 right-0 bottom-0" style={{ height: 2, background: "var(--brass)" }} />}</button>
+        ))}
+      </div>
+
+      {tab === "mes" && (mine.length ? <SectionCard title="Mes rapports" icon={FileText} pad={false}><div className="divide-y" style={{ borderColor: "var(--line)" }}>{mine.map((r) => <Row key={r.id} r={r} />)}</div></SectionCard>
+        : <EmptyState icon={FileText} title="Aucun rapport" sub="Créez le rapport de la semaine en cours : il se remplit tout seul depuis vos biens prospectés et vos prospects." action={<button onClick={nouveau} className="kb-btn kb-btn-primary"><Plus size={15} /> Nouveau rapport</button>} />)}
+
+      {sup && tab !== "mes" && (<>
+        <div className="flex flex-wrap gap-2 mb-3">
+          <select value={fAgent} onChange={(e) => setFAgent(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}><option value="all">Tous les commerciaux</option>{members.filter((m) => m.active).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select>
+          <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}><option value="all">Tous les statuts</option>{Object.entries(WR_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
+        </div>
+        {(tab === "attente" ? all.filter((r) => r.status === "soumis") : all).length
+          ? <SectionCard title={tab === "attente" ? "Rapports en attente de validation" : "Tous les rapports"} icon={FileText} pad={false}><div className="divide-y" style={{ borderColor: "var(--line)" }}>{(tab === "attente" ? all.filter((r) => r.status === "soumis") : all).map((r) => <Row key={r.id} r={r} />)}</div></SectionCard>
+          : <EmptyState icon={FileText} title="Aucun rapport" sub="Les rapports soumis par les commerciaux apparaîtront ici." />}
+      </>)}
     </div>
   );
 }
@@ -9245,11 +10700,24 @@ button{cursor:pointer}
   /* Pied de page fixé au bas de chaque feuille imprimée */
   .kb-foot{position:fixed;bottom:0;left:0;right:0;margin:0!important;padding-top:6px;background:#fff}
   .kb-letter:empty:before{content:attr(data-placeholder);color:#9AA6B5}
+  .kb-letter h1{font-size:1.35em;font-weight:700;margin:1em 0 .4em}
+  .kb-letter h2{font-size:1.18em;font-weight:700;margin:.95em 0 .4em}
   .kb-letter h3{font-size:1.05em;font-weight:700;margin:.9em 0 .35em}
+  .kb-letter blockquote{border-left:3px solid #D6DBE1;margin:.6em 0;padding:.2em .8em;color:#4B5563;font-style:italic}
+  .kb-letter table{border-collapse:collapse;width:100%;margin:.5em 0}
+  .kb-letter td,.kb-letter th{border:1px solid #9AA6B5;padding:4px 8px;vertical-align:top}
+  .kb-letter a{color:#2E78A8;text-decoration:underline}
   .kb-letter p{margin:0 0 .7em}
   .kb-letter ul,.kb-letter ol{margin:.4em 0 .8em 1.4em}
   .kb-letter li{margin-bottom:.25em}
+  .kb-body h1{font-size:1.35em;font-weight:700;margin:1em 0 .4em}
+  .kb-body h2{font-size:1.18em;font-weight:700;margin:.95em 0 .4em}
   .kb-body h3{font-size:1.05em;font-weight:700;margin:.9em 0 .35em}
+  .kb-body blockquote{border-left:3px solid #D6DBE1;margin:.6em 0;padding:.2em .8em;color:#4B5563;font-style:italic}
+  .kb-body table{border-collapse:collapse;width:100%;margin:.5em 0}
+  .kb-body td,.kb-body th{border:1px solid #9AA6B5;padding:4px 8px;vertical-align:top}
+  .kb-body hr{border:none;border-top:1px solid #9AA6B5;margin:.8em 0}
+  .kb-pagebreak{page-break-after:always;break-after:page;border:none!important;height:0;overflow:hidden;color:transparent!important}
   .kb-body p{margin:0 0 .7em}
   .kb-body ul,.kb-body ol{margin:.4em 0 .8em 1.4em}
   .kb-body li{margin-bottom:.25em}
@@ -9289,7 +10757,7 @@ function Workspace({ userId }) {
   const store = useStore(userId);
   const { loading, departments, members, tasks, timeEntries, activeTimers, channels, channelMembers, messages,
     owners, properties, products, releases, releaseLines, quotes, units, requests, complaints, documents,
-    cashEntries, handovers, formerTenants, prospects, folderFiles, rentPeriods, rentLines, actions } = store;
+    cashEntries, handovers, formerTenants, prospects, prospected, weeklyReports, folderFiles, rentPeriods, rentLines, actions } = store;
 
   const [view, setView] = useState("dashboard");
   const [viewWeek, setViewWeek] = useState(mondayIso(new Date()));
@@ -9372,6 +10840,22 @@ function Workspace({ userId }) {
       && p.nextContact && p.nextContact < isoDate(new Date())).length,
     [prospects]);
   const [prospectSeed, setProspectSeed] = useState(null);
+  const relancesBiens = useMemo(() => prospected.filter((b) => b.agentId === userId
+    && PP_OPEN.includes(b.status) && b.nextContact && b.nextContact <= isoDate(new Date())).length, [prospected, userId]);
+  const rapportsAttente = useMemo(() => canSupervise(me?.role)
+    ? weeklyReports.filter((r) => r.status === "soumis").length
+    : weeklyReports.filter((r) => r.agentId === userId && r.status === "a_corriger").length, [weeklyReports, me?.role, userId]);
+
+  /* Rappel du rapport hebdomadaire : le vendredi et le samedi, tant qu'il n'est pas soumis */
+  useEffect(() => {
+    const d = new Date(); const jour = d.getDay();
+    if (me?.role !== "agent" || ![5, 6].includes(jour)) return;
+    const r = weeklyReports.find((x) => x.agentId === userId && x.weekStart === mondayIso(d));
+    if (!r || r.status === "brouillon" || r.status === "a_corriger") {
+      const cle = "kb_wr_reminder_" + mondayIso(d);
+      if (!localStorage.getItem(cle)) { localStorage.setItem(cle, "1"); notify("Rapport hebdomadaire", "Votre rapport hebdomadaire de prospection doit être soumis."); }
+    }
+  }, [weeklyReports, me?.role, userId]);
 
   const pendingHandovers = useMemo(
     () => handovers.filter((h) => h.toUser === userId && h.status === "en_attente").length,
@@ -9429,6 +10913,8 @@ function Workspace({ userId }) {
     { id: "patrimoine", label: "Patrimoine", icon: Building2 },
     { id: "locataires", label: "Locataires", icon: Users },
     { id: "prospects", label: "Prospects", icon: PhoneIncoming, badge: overdueProspects },
+    { id: "nouveaux-biens", label: "Nouveaux biens", icon: Building2, badge: relancesBiens },
+    { id: "rapport", label: "Rapport de prospection", icon: TrendingUp, badge: rapportsAttente },
     { id: "portefeuille", label: "Mon portefeuille", icon: BadgeCheck },
     { id: "plaintes", label: "Plaintes", icon: MessageCircleWarning, badge: openComplaints },
     { id: "devis", label: "Devis artisans", icon: FileText },
@@ -9463,7 +10949,7 @@ function Workspace({ userId }) {
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
             <span className="bg-white rounded-md px-1.5 py-1 flex items-center shrink-0"><img src={LOGO} alt="Entreprise Kibegnon" className="h-6 w-auto" /></span>
-            <div className="min-w-0 hidden xs:block"><p className="font-semibold leading-tight tracking-tight truncate">Suivi d'équipe</p><p className="text-[11px] leading-tight" style={{ color: "#9AA4B2" }}>Entreprise Kibegnon</p></div>
+            <div className="min-w-0 hidden xs:block"><p className="font-semibold leading-tight tracking-tight truncate">Suivi d'équipe</p><p className="text-[11px] leading-tight" style={{ color: "#9AA4B2" }}>Entreprise Kibegnon · <span title={`Version ${APP_VERSION} du ${APP_BUILD}`}>v{APP_VERSION}</span></p></div>
           </div>
           <div className="flex items-center gap-2">
             {myTimer && <button onClick={actions.stopTimer} className="hidden sm:flex items-center gap-2 rounded-full pl-3 pr-2 py-1.5 text-sm font-medium" style={{ background: "var(--live)" }}><span className="w-2 h-2 rounded-full bg-white animate-pulse" />{fmtClock((now - myTimer.startedAt) / 1000)}<span className="bg-white/25 rounded-full p-0.5"><Square size={12} /></span></button>}
@@ -9505,6 +10991,8 @@ function Workspace({ userId }) {
         {view === "locataires" && <Locataires store={store} me={me} userId={userId} />}
         {view === "prospects" && <Prospects store={store} me={me} userId={userId}
           initialModal={prospectSeed} onModalConsumed={() => setProspectSeed(null)} />}
+        {view === "nouveaux-biens" && <NouveauxBiens store={store} me={me} userId={userId} />}
+        {view === "rapport" && <RapportProspection store={store} me={me} userId={userId} />}
         {view === "portefeuille" && <Portefeuille store={store} me={me} userId={userId} />}
         {view === "plaintes" && <Plaintes store={store} me={me} userId={userId} />}
         {view === "devis" && <Devis store={store} me={me} />}
