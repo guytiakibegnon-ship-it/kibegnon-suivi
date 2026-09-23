@@ -802,7 +802,7 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "22.2";
+const APP_VERSION = "22.3";
 const APP_BUILD = "2026-09-17";
 
 /* ---- Papier à en-tête de l'agence ---- */
@@ -942,6 +942,29 @@ function useTitleBadge(count) {
   }, [count]);
 }
 
+/* ---- Lecture complète d'une table ----
+   Supabase plafonne chaque requête à 1000 lignes. Au-delà, les lignes
+   surnuméraires sont silencieusement absentes : un tableau de 31 lots
+   pouvait n'en afficher que 19. On lit donc par tranches jusqu'au bout. */
+const PAGE_SIZE = 1000;
+async function fetchAll(table, order) {
+  const rows = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    let q = supabase.from(table).select("*").range(from, from + PAGE_SIZE - 1);
+    if (order) q = q.order(order.col, { ascending: order.asc !== false });
+    const { data, error } = await q;
+    if (error) return { data: rows, error };
+    rows.push(...(data || []));
+    if (!data || data.length < PAGE_SIZE) break;
+  }
+  return { data: rows, error: null };
+}
+/* Lignes d'une seule période : jamais tronquées, et bien plus rapide */
+async function fetchPeriodLines(periodId) {
+  const { data } = await supabase.from("rent_lines").select("*").eq("period_id", periodId).order("position");
+  return data || [];
+}
+
 /* ══════════════════════════════════════════════════════════════════════
    STORE (chargement, temps réel, actions Supabase)
    ══════════════════════════════════════════════════════════════════════ */
@@ -1027,12 +1050,12 @@ function useStore(userId) {
     const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc, un, rp, rlin, rch, rq, tax, cp, ff, ce, ho, ft, prs, ppr, wrp] = await Promise.all([
       supabase.from("departments").select("*").order("created_at"),
       supabase.from("profiles").select("*").order("created_at"),
-      supabase.from("tasks").select("*"),
-      supabase.from("time_entries").select("*"),
+      fetchAll("tasks"),
+      fetchAll("time_entries"),
       supabase.from("active_timers").select("*"),
       supabase.from("channels").select("*"),
       supabase.from("channel_members").select("*"),
-      supabase.from("messages").select("*"),
+      fetchAll("messages"),
       supabase.from("owners").select("*").order("full_name"),
       supabase.from("properties").select("*").order("name"),
       supabase.from("products").select("*").order("name"),
@@ -1042,11 +1065,11 @@ function useStore(userId) {
       supabase.from("quotes").select("*").order("quote_date", { ascending: false }),
       supabase.from("quote_lines").select("*").order("position"),
       supabase.from("task_templates").select("*").order("sort_order"),
-      supabase.from("documents").select("*").order("doc_date", { ascending: false }),
-      supabase.from("units").select("*").order("label"),
+      fetchAll("documents", { col: "doc_date", asc: false }),
+      fetchAll("units", { col: "label" }),
       supabase.from("rent_periods").select("*").order("period", { ascending: false }),
-      supabase.from("rent_lines").select("*").order("position"),
-      supabase.from("rent_charges").select("*").order("position"),
+      fetchAll("rent_lines", { col: "position" }),
+      fetchAll("rent_charges", { col: "position" }),
       supabase.from("requests").select("*").order("req_date", { ascending: false }),
       supabase.from("tax_records").select("*").order("tax_year", { ascending: false }),
       supabase.from("complaints").select("*").order("reported_at", { ascending: false }),
@@ -1539,7 +1562,7 @@ function useStore(userId) {
       }
     }
     if (touched) {
-      const { data } = await supabase.from("rent_lines").select("*").order("position");
+      const { data } = await fetchAll("rent_lines", { col: "position" });
       if (data) setRentLines(data.map(mRLine));
     }
     return { touched };
@@ -1653,13 +1676,19 @@ function useStore(userId) {
     let err = null;
     if (lPayload.length) { const { error } = await supabase.from("rent_lines").insert(lPayload); err = err || error; }
     if (cPayload.length) { const { error } = await supabase.from("rent_charges").insert(cPayload); err = err || error; }
+    /* Contrôle : la base doit contenir exactement les lignes envoyées.
+       Sans cela, une troncature ou un refus passerait inaperçu. */
+    const enBase = await fetchPeriodLines(periodId);
+    if (!err && enBase.length !== lPayload.length) {
+      err = { message: `Enregistrement incomplet : ${enBase.length} ligne(s) enregistrée(s) sur ${lPayload.length}. Réessayez ; si le problème persiste, signalez-le.` };
+    }
     const [l, c] = await Promise.all([
-      supabase.from("rent_lines").select("*").order("position"),
-      supabase.from("rent_charges").select("*").order("position"),
+      fetchAll("rent_lines", { col: "position" }),
+      fetchAll("rent_charges", { col: "position" }),
     ]);
     if (l.data) setRentLines(l.data.map(mRLine));
     if (c.data) setRentCharges(c.data.map(mRCharge));
-    return { error: err?.message };
+    return { error: err?.message, saved: enBase.length };
   };
   const setPeriodStatus = async (id, status) => {
     setRentPeriods((p) => p.map((x) => (x.id === id ? { ...x, status } : x)));
@@ -1917,12 +1946,12 @@ function useStore(userId) {
             period_id: period.id, label: c.label, amount: Number(c.amount) || 0,
             observation: c.observation || "", kind: c.kind || "charge", position: i })));
         }
-        const fresh = await supabase.from("rent_lines").select("*").order("position");
+        const fresh = await fetchAll("rent_lines", { col: "position" });
         if (fresh.data) setRentLines(fresh.data.map(mRLine));
         setRentPeriods((p) => [period, ...p]);
         crees.push(m);
       }
-      const lignesPeriode = (await supabase.from("rent_lines").select("*").eq("period_id", period.id)).data?.map(mRLine) || [];
+      const lignesPeriode = (await fetchPeriodLines(period.id)).map(mRLine);
       const line = lignesPeriode.find((l) => l.unitId === doc.unitId
           || (unit && (l.unitLabel || "").toLowerCase() === (unit.label || "").toLowerCase())
           || (l.tenantName || "").toLowerCase() === (doc.clientName || "").toLowerCase());
@@ -1946,7 +1975,7 @@ function useStore(userId) {
       }
     }
     if (done) {
-      const { data } = await supabase.from("rent_lines").select("*").order("position");
+      const { data } = await fetchAll("rent_lines", { col: "position" });
       if (data) setRentLines(data.map(mRLine));
     }
     if (!done) return { skipped: `report impossible pour ${mois.join(", ")}` };
