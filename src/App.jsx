@@ -380,6 +380,8 @@ const buildInstallments = (year, taxed, existing = []) => {
       chequeNo: prev.chequeNo || "",
       amountPaid: prev.amountPaid ?? "",
       paidAt: prev.paidAt || "",
+      receiptNo: prev.receiptNo || "",
+      receiptDate: prev.receiptDate || "",
     };
   });
 };
@@ -394,6 +396,27 @@ const taxTotals = (rec) => {
 const isLate = (t) => {
   if (!t?.dueDate) return false;
   return !Number(t.amountPaid) && new Date(t.dueDate + "T23:59:59") < new Date();
+};
+
+/* Échéances qui comptent encore. Dès que l'avis est entièrement soldé, les
+   tranches restées sans versement n'ont plus d'objet : elles disparaissent
+   des retards, des listes et de l'état imprimé. */
+const activeInstallments = (rec) => {
+  const all = (rec?.installments || []).map((t, i) => ({ ...t, _i: i }));
+  return taxTotals(rec || {}).settled ? all.filter((t) => Number(t.amountPaid) > 0) : all;
+};
+const lateInstallments = (rec) => activeInstallments(rec).filter(isLate);
+
+/* Quittances : une par versement effectué */
+const taxReceipts = (rec) => {
+  const verses = (rec?.installments || []).filter((t) => Number(t.amountPaid) > 0);
+  const recues = verses.filter((t) => (t.receiptNo || "").trim());
+  const code = !verses.length ? "non" : recues.length === verses.length ? "oui" : recues.length ? "en_attente" : "non";
+  const label = !verses.length ? "Aucun versement"
+    : recues.length === verses.length ? `${recues.length}/${verses.length} reçue${recues.length > 1 ? "s" : ""}`
+    : `${recues.length}/${verses.length} reçue${recues.length > 1 ? "s" : ""}`;
+  return { code, label, versees: verses.length, recues: recues.length,
+    color: code === "oui" ? "#4F9E2A" : code === "en_attente" ? "#C58A1B" : verses.length ? "#D81F26" : "#94A3B8" };
 };
 
 const SUPPLEMENT_PRESETS = [
@@ -802,7 +825,7 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "22.3";
+const APP_VERSION = "22.4";
 const APP_BUILD = "2026-09-17";
 
 /* ---- Papier à en-tête de l'agence ---- */
@@ -979,7 +1002,7 @@ const mCM      = (r) => ({ channelId: r.channel_id, userId: r.user_id, lastReadA
 const mMsg     = (r) => ({ id: r.id, channelId: r.channel_id, fromId: r.from_id, text: r.body, taskId: r.task_id, createdAt: Date.parse(r.created_at), fileUrl: r.file_url || "", fileName: r.file_name || "", fileType: r.file_type || "", fileSize: r.file_size || 0 });
 
 const mOwner   = (r) => ({ id: r.id, name: r.full_name, kind: r.kind, phone: r.phone, email: r.email, address: r.address, idNumber: r.id_number, notes: r.notes, active: r.active });
-const mProp    = (r) => ({ id: r.id, ref: r.ref, name: r.name, kind: r.kind, address: r.address, commune: r.commune, quartier: r.quartier, ownerId: r.owner_id, lotsCount: r.lots_count, surface: r.surface_m2, rent: r.rent_amount, mandate: r.mandate_type, status: r.status, notes: r.notes, agentId: r.agent_id, salePrice: r.sale_price, availableFor: r.available_for || 'aucun', feeRate: r.fee_rate === null || r.fee_rate === undefined ? 0.10 : Number(r.fee_rate) });
+const mProp    = (r) => ({ id: r.id, ref: r.ref, name: r.name, kind: r.kind, address: r.address, commune: r.commune, quartier: r.quartier, ownerId: r.owner_id, lotsCount: r.lots_count, surface: r.surface_m2, rent: r.rent_amount, mandate: r.mandate_type, status: r.status, notes: r.notes, agentId: r.agent_id, salePrice: r.sale_price, availableFor: r.available_for || 'aucun', taxCenter: r.tax_center || "", feeRate: r.fee_rate === null || r.fee_rate === undefined ? 0.10 : Number(r.fee_rate) });
 const mProduct = (r) => ({ id: r.id, name: r.name, category: r.category, unit: r.unit, stock: Number(r.stock_qty), minQty: Number(r.min_qty), price: Number(r.unit_price), supplier: r.supplier, active: r.active });
 const mStockIn = (r) => ({ id: r.id, productId: r.product_id, qty: Number(r.qty), price: Number(r.unit_price), supplier: r.supplier, date: r.entry_date, notes: r.notes, createdBy: r.created_by });
 const mRelease = (r) => ({ id: r.id, ref: r.ref, propertyId: r.property_id, releasedTo: r.released_to, releasedBy: r.released_by, purpose: r.purpose, date: r.release_date, zone: r.zone, notes: r.notes, createdAt: Date.parse(r.created_at) });
@@ -998,7 +1021,7 @@ const mCash     = (r) => ({ id: r.id, date: r.entry_date, direction: r.direction
 const mHandover = (r) => ({ id: r.id, date: r.handover_date, amount: Number(r.amount), fromUser: r.from_user, toUser: r.to_user, status: r.status, approvedAt: r.approved_at, note: r.note, responseNote: r.response_note, createdAt: Date.parse(r.created_at) });
 const mFolderFile = (r) => ({ id: r.id, scope: r.scope, unitId: r.unit_id, ownerId: r.owner_id, formerTenantId: r.former_tenant_id, propertyId: r.property_id, category: r.category, label: r.label, fileUrl: r.file_url, fileName: r.file_name, fileType: r.file_type, fileSize: Number(r.file_size) || 0, notes: r.notes, uploadedBy: r.uploaded_by, createdAt: Date.parse(r.created_at) });
 const mComplaint = (r) => ({ id: r.id, ref: r.ref, propertyId: r.property_id, unitId: r.unit_id, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, category: r.category, cause: r.cause, priority: r.priority, description: r.description, reportedAt: r.reported_at, channel: r.channel, status: r.status, assignedTo: r.assigned_to, quoteId: r.quote_id, cost: Number(r.cost) || 0, resolution: r.resolution, resolvedAt: r.resolved_at, createdBy: r.created_by });
-const mTax     = (r) => ({ id: r.id, propertyId: r.property_id, unitId: r.unit_id, customLabel: r.custom_label, ownerId: r.owner_id, ownerLabel: r.owner_label, taxYear: r.tax_year, noticeNumber: r.notice_number, taxedAmount: Number(r.taxed_amount), installments: r.installments || [], receipts: r.receipts, declarationNext: r.declaration_next, notes: r.notes, createdBy: r.created_by, ncc: r.ncc || "", declarationDate: r.declaration_date, nextBase: r.next_base, withholdings: r.withholdings || [] });
+const mTax     = (r) => ({ id: r.id, propertyId: r.property_id, unitId: r.unit_id, customLabel: r.custom_label, ownerId: r.owner_id, ownerLabel: r.owner_label, taxYear: r.tax_year, noticeNumber: r.notice_number, taxedAmount: Number(r.taxed_amount), installments: r.installments || [], receipts: r.receipts, declarationNext: r.declaration_next, notes: r.notes, createdBy: r.created_by, ncc: r.ncc || "", declarationDate: r.declaration_date, nextBase: r.next_base, withholdings: r.withholdings || [], taxCenter: r.tax_center || "" });
 const mReq     = (r) => ({ id: r.id, reqType: r.req_type, userId: r.user_id, date: r.req_date, amount: Number(r.amount), destination: r.destination, mode: r.transport_mode, propertyId: r.property_id, startDate: r.start_date, endDate: r.end_date, absenceType: r.absence_type, motif: r.motif, status: r.status, decidedBy: r.decided_by, decidedAt: r.decided_at, decisionNote: r.decision_note, createdAt: Date.parse(r.created_at) });
 const mDoc     = (r) => ({ id: r.id, ref: r.ref, docType: r.doc_type, date: r.doc_date, propertyId: r.property_id, ownerId: r.owner_id, clientName: r.client_name, clientPhone: r.client_phone, clientEmail: r.client_email, clientAddr: r.client_addr, object: r.object, body: r.body, lines: r.lines || [], fields: r.fields || {}, monthsCount: Number(r.fields?.monthsCount) || 1, total: Number(r.total_amount), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at), unitId: r.unit_id, paidStamp: !!r.paid_stamp, stampedBy: r.stamped_by, period: r.period || "", approval: r.approval || "non_requise", approvedBy: r.approved_by, approvedAt: r.approved_at, approvalNote: r.approval_note || "", periodIso: r.period_iso || "", direction: r.direction || "encaissement", formerTenantId: r.former_tenant_id });
 const mTpl     = (r) => ({ id: r.id, label: r.label, nature: r.nature, deptId: r.dept_id, urgency: r.urgency, estMin: r.est_min, sortOrder: r.sort_order, active: r.active });
@@ -1393,7 +1416,8 @@ function useStore(userId) {
       quartier: f.quartier || "", owner_id: f.ownerId || null, lots_count: Number(f.lotsCount) || 1,
       surface_m2: f.surface ? Number(f.surface) : null, rent_amount: f.rent ? Number(f.rent) : null,
       mandate_type: f.mandate, status: f.status, notes: f.notes || "", agent_id: f.agentId || null, sale_price: f.salePrice ? Number(f.salePrice) : null, available_for: f.availableFor || 'aucun',
-      fee_rate: (f.feeRate === "" || f.feeRate === null || f.feeRate === undefined) ? 0.10 : Number(f.feeRate) };
+      fee_rate: (f.feeRate === "" || f.feeRate === null || f.feeRate === undefined) ? 0.10 : Number(f.feeRate),
+      tax_center: f.taxCenter || "" };
     if (f.id) { const { error } = await supabase.from("properties").update(row).eq("id", f.id); return { error: error?.message }; }
     const { data, error } = await supabase.from("properties").insert({ ...row, created_by: userId }).select().single();
     if (data) setProperties((p) => p.some((x) => x.id === data.id) ? p : [...p, mProp(data)]);
@@ -2030,7 +2054,9 @@ function useStore(userId) {
       custom_label: f.customLabel || "", owner_id: f.ownerId || null, owner_label: f.ownerLabel || "",
       tax_year: Number(f.taxYear), notice_number: f.noticeNumber || "",
       taxed_amount: Number(f.taxedAmount) || 0, installments: f.installments || [],
-      receipts: f.receipts || "non", declaration_next: f.declarationNext || "non", notes: f.notes || "",
+      /* Statut global déduit des quittances saisies versement par versement */
+      receipts: taxReceipts({ installments: f.installments }).code,
+      declaration_next: f.declarationNext || "non", notes: f.notes || "", tax_center: f.taxCenter || "",
       ncc: f.ncc || "", declaration_date: f.declarationDate || null,
       next_base: f.nextBase ? Number(f.nextBase) : null,
       withholdings: (f.withholdings || []).filter((w) => Number(w.amount) > 0) };
@@ -6162,7 +6188,19 @@ function TaxModal({ initial, properties, units, owners, onSave, onClose }) {
             <th className="text-left px-2 py-2 font-semibold w-32">Reçue le</th>
           </tr></thead>
           <tbody>{inst.map((t, i) => {
-            const late = isLate(t);
+            /* Avis soldé : une tranche sans versement n'a plus d'objet */
+            const sansObjet = totals.settled && !(Number(t.amountPaid) > 0);
+            const late = !sansObjet && isLate(t);
+            if (sansObjet) {
+              return (
+                <tr key={i} className="border-b" style={{ borderColor: "var(--line)", background: "#F6F8FA" }}>
+                  <td className="px-2 py-1.5 font-medium" style={{ color: "var(--muted)" }}>{TRANCHE_LABELS[i]}</td>
+                  <td colSpan={8} className="px-2 py-1.5 text-xs italic" style={{ color: "var(--muted)" }}>
+                    Sans objet — l'avis est entièrement soldé.
+                  </td>
+                </tr>
+              );
+            }
             return (
               <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
                 <td className="px-2 py-1.5 font-medium">{TRANCHE_LABELS[i]}</td>
@@ -6185,11 +6223,11 @@ function TaxModal({ initial, properties, units, owners, onSave, onClose }) {
       </div>
 
       <div className="grid sm:grid-cols-3 gap-3">
-        <Field label="Quittances reçues">
-          <select className={inputCls} style={inputStyle} value={f.receipts} onChange={(e) => set("receipts", e.target.value)}>
-            {Object.entries(RECEIPTS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-          </select>
-        </Field>
+        <div className="rounded-lg p-2.5" style={{ background: "#F6F8FA" }}>
+          <p className="text-[11px]" style={{ color: "var(--muted)" }}>Quittances reçues</p>
+          <p className="text-sm font-bold" style={{ color: taxReceipts({ installments: inst }).color }}>{taxReceipts({ installments: inst }).label}</p>
+          <p className="text-[10px]" style={{ color: "var(--muted)" }}>Saisies versement par versement</p>
+        </div>
         <Field label={`Déclaration ${Number(f.taxYear) + 1} déposée`}>
           <select className={inputCls} style={inputStyle} value={f.declarationNext} onChange={(e) => set("declarationNext", e.target.value)}>
             <option value="non">Non</option><option value="oui">Oui</option>
@@ -6339,6 +6377,13 @@ function TaxSheet({ records, year, title, propById, unitById, ownerById, onBack 
                 <td className="px-1.5 py-1.5 text-right tabular-nums">{fcfa(r.taxedAmount)}</td>
                 {Array.from({ length: 4 }, (_, i) => (r.installments || [])[i] || {}).map((tr, i) => {
                   const paid = Number(tr.amountPaid) || 0;
+                  /* Avis soldé : une tranche sans versement ne s'affiche plus */
+                  if (t.settled && !paid) {
+                    return [
+                      <td key={i + "d"} className="px-1.5 py-1.5 border-l" style={{ borderColor: "var(--line)" }} />,
+                      <td key={i + "p"} className="px-1.5 py-1.5" />,
+                    ];
+                  }
                   return [
                     <td key={i + "d"} className="px-1.5 py-1.5 border-l" style={{ borderColor: "var(--line)" }}>
                       {tr.paidAt ? fr(tr.paidAt + "T00:00:00", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "—"}
@@ -6352,7 +6397,10 @@ function TaxSheet({ records, year, title, propById, unitById, ownerById, onBack 
                 <td className="px-1.5 py-1.5 text-right tabular-nums border-l" style={{ borderColor: "var(--line)", color: "#2E78A8" }}>{fcfa(taxWithheld(r))}</td>
                 <td className="px-1.5 py-1.5 text-right tabular-nums font-medium">{fcfa(t.paid)}</td>
                 <td className="px-1.5 py-1.5 text-right tabular-nums font-bold" style={{ color: t.settled ? "#4F9E2A" : "#D81F26" }}>{fcfa(t.remaining)}</td>
-                <td className="px-1.5 py-1.5 text-center" style={{ color: RECEIPTS[r.receipts].color, fontWeight: 600 }}>{RECEIPTS[r.receipts].label}</td>
+                <td className="px-1.5 py-1.5 text-center" style={{ color: taxReceipts(r).color, fontWeight: 600 }}>
+                  {taxReceipts(r).versees ? taxReceipts(r).label : "—"}
+                  {t.settled && <div style={{ fontSize: 8, color: "#3d7d20", fontWeight: 700 }}>AVIS SOLDÉ</div>}
+                </td>
               </tr>
             );
           })}</tbody>
@@ -6494,7 +6542,7 @@ function ImpotFoncier({ store, me }) {
     const t = taxTotals(r);
     return { taxed: a.taxed + t.taxed, paid: a.paid + t.paid, remaining: a.remaining + t.remaining };
   }, { taxed: 0, paid: 0, remaining: 0 });
-  const lateCount = list.filter((r) => (r.installments || []).some(isLate)).length;
+  const lateCount = list.filter((r) => lateInstallments(r).length > 0).length;
   const years = [...new Set([new Date().getFullYear(), ...taxRecords.map((r) => r.taxYear)])].sort((a, b) => b - a);
 
   return (
@@ -6573,7 +6621,8 @@ function ImpotFoncier({ store, me }) {
       {list.length ? <div className="space-y-2">
         {list.map((r) => {
           const t = taxTotals(r);
-          const late = (r.installments || []).filter(isLate).length;
+          const late = lateInstallments(r).length;       // un avis soldé n'a plus de retard
+          const qr = taxReceipts(r);
           const pct = t.taxed ? Math.min(100, (t.paid / t.taxed) * 100) : 0;
           return (
             <div key={r.id} className="bg-white rounded-xl border p-3" style={{ borderColor: late ? "#F5C6C7" : "var(--line)" }}>
@@ -6585,7 +6634,8 @@ function ImpotFoncier({ store, me }) {
                     {r.noticeNumber && <Chip color="#64748B">{r.noticeNumber}</Chip>}
                     {r.ncc && <Chip color="#7C3AED">NCC {r.ncc}</Chip>}
                     {taxWithheld(r) > 0 && <Chip color="#2E78A8">prélevé {fcfa(taxWithheld(r))}</Chip>}
-                    <Chip color={RECEIPTS[r.receipts].color} dot>Quittances : {RECEIPTS[r.receipts].label}</Chip>
+                    {qr.versees > 0 && <Chip color={qr.color} dot>Quittances : {qr.label}</Chip>}
+                    {t.settled && <Chip color="#4F9E2A" bg="#EAF6E3">Avis soldé</Chip>}
                     {late > 0 && <Chip color="#D81F26" bg="#FDEAEA">{late} échéance(s) dépassée(s)</Chip>}
                   </div>
                   <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>
@@ -6594,13 +6644,15 @@ function ImpotFoncier({ store, me }) {
                   </p>
 
                   <div className="flex flex-wrap gap-1.5 mt-2">
-                    {(r.installments || []).slice(0, 4).map((tr, i) => {
+                    {activeInstallments(r).slice(0, 4).map((tr) => {
                       const paid = Number(tr.amountPaid) || 0;
                       const lateT = isLate(tr);
                       const color = paid > 0 ? "#4F9E2A" : lateT ? "#D81F26" : "#94A3B8";
                       return (
-                        <span key={i} className="rounded-lg px-2 py-1 text-[10px] font-medium" style={{ background: color + "14", color, border: `1px solid ${color}33` }}>
-                          T{i + 1} · {paid > 0 ? fcfa(paid) : (tr.dueDate ? fr(tr.dueDate + "T00:00:00", { day: "2-digit", month: "2-digit" }) : "—")}
+                        <span key={tr._i} className="rounded-lg px-2 py-1 text-[10px] font-medium" style={{ background: color + "14", color, border: `1px solid ${color}33` }}
+                          title={paid > 0 ? (tr.receiptNo ? `Quittance n° ${tr.receiptNo}` : "Quittance non encore reçue") : ""}>
+                          T{tr._i + 1} · {paid > 0 ? fcfa(paid) : (tr.dueDate ? fr(tr.dueDate + "T00:00:00", { day: "2-digit", month: "2-digit" }) : "—")}
+                          {paid > 0 && <span style={{ marginLeft: 4, color: tr.receiptNo ? "#4F9E2A" : "#C58A1B" }}>{tr.receiptNo ? "✓ quittance" : "· quittance attendue"}</span>}
                         </span>
                       );
                     })}
