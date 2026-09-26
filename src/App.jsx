@@ -347,6 +347,28 @@ const isVacantLine = (line) => {
 const isPrepaidLine = (line) => !!line?.prepaid && !isVacantLine(line);
 const lineMonths = (line) => Math.max(1, Number(line?.months) || 1);
 
+/* ══════════════════════════════════════════════════════════════════════
+   LIGNE MENSUELLE = INSTANTANÉ
+   Tout ce qu'affiche une ligne se calcule à partir de SES propres champs.
+   Rien ne dépend de la situation actuelle du locataire : un mois passé
+   s'affiche toujours à l'identique, quoi qu'il arrive ensuite.
+   ══════════════════════════════════════════════════════════════════════ */
+const lineCarried = (l) => Math.max(0, Number(l?.carriedArrears) || 0);
+/* Loyer du mois : nul pour un lot vacant ou un mois déjà réglé d'avance */
+const lineRent = (l) => (isVacantLine(l) || isPrepaidLine(l)) ? 0 : (Number(l?.expected) || 0);
+/* Total à recouvrer = loyer du mois + arriérés reportés */
+const lineToCollect = (l) => (isVacantLine(l) ? 0 : lineRent(l) + lineCarried(l));
+/* Reste à payer = total à recouvrer − payé */
+const lineDue = (l) => Math.max(0, lineToCollect(l) - (Number(l?.collected) || 0));
+const lineStatus = (l) => {
+  if (isVacantLine(l)) return "vacant";
+  const c = Number(l?.collected) || 0;
+  const tot = lineToCollect(l);
+  if (isPrepaidLine(l) && c >= lineCarried(l)) return "avance";
+  if (tot <= 0 || c >= tot) return "paye";
+  return c <= 0 ? "impaye" : "partiel";
+};
+
 const payStatusOf = (expected, collected, vacant = false, prepaid = false) => {
   if (vacant) return "vacant";
   if (prepaid) return "avance";
@@ -430,6 +452,10 @@ const SUPPLEMENT_PRESETS = [
   "Autre versement",
 ];
 const MONTHS_FR = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+const periodLabel = (p) => {
+  const [y, m] = (p || "").split("-");
+  return `${MONTHS_FR[Number(m) - 1] || ""} ${y || ""}`;
+};
 
 /* ---- Transport & permissions ---- */
 const REQ_TYPE = {
@@ -742,10 +768,12 @@ function paymentHistory(unit, { rentPeriods, rentLines, documents }) {
       const line = rentLines.find((l) => l.periodId === p.id && sameUnit(l));
       if (!line) return;
       if (isVacantLine(line)) { delete months[p.period]; return; }   // lot vacant ce mois-là
+      /* Champs propres à la ligne du mois (instantané) */
+      const snap = { rent: lineRent(line), carried: line.carriedArrears, toCollect: lineToCollect(line) };
       if (isPrepaidLine(line)) {                                      // mois couvert par l'avance
         months[p.period] = { period: p.period, expected: Number(line.expected) || 0,
-          collected: Number(line.expected) || 0, paidAt: line.paidAt || "",
-          source: "Avance versée à l'entrée", comment: line.comment || "" };
+          collected: line.carriedArrears === null || line.carriedArrears === undefined ? (Number(line.expected) || 0) : (Number(line.collected) || 0),
+          paidAt: line.paidAt || "", source: "Avance versée à l'entrée", comment: line.comment || "", ...snap };
         return;
       }
       months[p.period] = {
@@ -755,6 +783,7 @@ function paymentHistory(unit, { rentPeriods, rentLines, documents }) {
         paidAt: line.paidAt || "",
         source: scope === "comptable" ? "État comptable" : "Suivi commercial",
         comment: line.comment || "",
+        ...snap,
       };
     });
   });
@@ -765,6 +794,9 @@ function paymentHistory(unit, { rentPeriods, rentLines, documents }) {
       || (unit.tenantName && (d.clientName || "").toLowerCase() === unit.tenantName.toLowerCase())))
     .forEach((d) => {
       const prev = months[d.periodIso];
+      /* Historique immuable : un mois porté par un tableau « instantané » reste
+         tel qu'il a été enregistré, même si l'arriéré est réglé plus tard. */
+      if (prev && prev.carried !== null && prev.carried !== undefined) return;
       const collected = Math.max(Number(d.total) || 0, prev?.collected || 0);
       months[d.periodIso] = {
         period: d.periodIso,
@@ -783,6 +815,41 @@ function paymentHistory(unit, { rentPeriods, rentLines, documents }) {
    en incluant l'arriéré éventuellement repris à la main. */
 function arrearsOf(unit, data) {
   const hist = paymentHistory(unit, data);
+
+  /* Modèle « instantané » : la dernière ligne mensuelle porte déjà, dans ses
+     arriérés reportés, toute la dette antérieure. Le solde actuel est donc
+     SON reste à payer — on n'additionne jamais les mois entre eux. */
+  const snaps = hist.filter((m) => m.carried !== null && m.carried !== undefined);
+  if (snaps.length) {
+    const last = snaps[snaps.length - 1];
+    const lastDue = Math.max(0, (Number(last.toCollect) || 0) - (Number(last.collected) || 0));
+    const later = hist.filter((m) => m.period > last.period)
+      .reduce((a, m) => a + Math.max(0, (Number(m.expected) || 0) - (Number(m.collected) || 0)), 0);
+    const total = lastDue + later;
+    /* Pour l'affichage, le solde est rattaché aux mois les plus récents
+       restés impayés (les paiements soldent d'abord les arriérés reportés). */
+    let reste = total; const unpaid = [], partial = [];
+    for (const m of [...hist].reverse()) {
+      if (reste <= 0) break;
+      const loyer = m.rent ?? (Number(m.expected) || 0);
+      const payeSurLoyer = Math.max(0, (Number(m.collected) || 0) - (Number(m.carried) || 0));
+      const manque = Math.max(0, loyer - payeSurLoyer);
+      if (manque <= 0) continue;
+      const due = Math.min(manque, reste); reste -= due;
+      (payeSurLoyer > 0 ? partial : unpaid).unshift({ ...m, due });
+    }
+    const loyerRef = Number(unit?.rent) || 0;
+    const anterieurs = reste > 0 && loyerRef > 0 ? Math.ceil(reste / loyerRef) : 0;
+    return {
+      history: hist, unpaidMonths: unpaid, partialMonths: partial,
+      months: unpaid.length + partial.length + anterieurs,
+      total, computed: total, manualAmount: 0, manualMonths: 0,
+      manualNote: unit?.arrearsNote || "", anterieur: Math.max(0, reste),
+      last: hist.length ? hist[hist.length - 1] : null, hasArrears: total > 0, snapshot: true,
+    };
+  }
+
+  /* Ancien modèle (tableaux antérieurs à la v23) : inchangé */
   const unpaid = [], partial = [];
   hist.forEach((m) => {
     const due = (Number(m.expected) || 0) - (Number(m.collected) || 0);
@@ -825,8 +892,8 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "22.4";
-const APP_BUILD = "2026-09-17";
+const APP_VERSION = "23.0";
+const APP_BUILD = "2026-09-26";
 
 /* ---- Papier à en-tête de l'agence ---- */
 const AGENCY = {
@@ -1011,7 +1078,7 @@ const mQuote   = (r) => ({ id: r.id, ref: r.ref, artisanName: r.artisan_name, tr
 const mQLine   = (r) => ({ id: r.id, quoteId: r.quote_id, label: r.label, qty: Number(r.qty), unit: r.unit, price: Number(r.unit_price), position: r.position });
 const mUnit    = (r) => ({ id: r.id, propertyId: r.property_id, label: r.label, kind: r.kind, floor: r.floor, rooms: r.rooms, surface: r.surface_m2, rent: Number(r.rent_amount), charges: Number(r.charges_amount), status: r.status, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, leaseStart: r.lease_start, notes: r.notes, tenantEmail: r.tenant_email || "", leaseEnd: r.lease_end, dueDay: r.due_day || 5, deposit: Number(r.deposit) || 0, advanceMonths: Number(r.advance_months) || 0, advanceStart: r.advance_start, arrearsAmount: Number(r.arrears_amount) || 0, arrearsMonths: Number(r.arrears_months) || 0, arrearsNote: r.arrears_note || "" });
 const mPeriod  = (r) => ({ id: r.id, propertyId: r.property_id, period: r.period, scope: r.scope, rate: Number(r.agency_rate), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
-const mRLine   = (r) => ({ id: r.id, periodId: r.period_id, unitId: r.unit_id, unitLabel: r.unit_label, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, expected: Number(r.expected), collected: Number(r.collected), paidAt: r.paid_at, charges: Number(r.charges), comment: r.comment, position: r.position, vacant: !!r.vacant, months: Math.max(1, Number(r.months) || 1), prepaid: !!r.prepaid });
+const mRLine   = (r) => ({ id: r.id, periodId: r.period_id, unitId: r.unit_id, unitLabel: r.unit_label, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, expected: Number(r.expected), collected: Number(r.collected), paidAt: r.paid_at, charges: Number(r.charges), comment: r.comment, position: r.position, vacant: !!r.vacant, months: Math.max(1, Number(r.months) || 1), prepaid: !!r.prepaid, carriedArrears: r.carried_arrears === null || r.carried_arrears === undefined ? null : Number(r.carried_arrears) });
 const mRCharge = (r) => ({ id: r.id, periodId: r.period_id, label: r.label, amount: Number(r.amount), observation: r.observation, position: r.position, kind: r.kind || "charge" });
 const mFormer   = (r) => ({ id: r.id, unitId: r.unit_id, propertyId: r.property_id, unitLabel: r.unit_label, name: r.name, phone: r.phone, email: r.email, leaseStart: r.lease_start, leaseEnd: r.lease_end, departureDate: r.departure_date, reason: r.reason, rent: Number(r.rent_amount) || 0, deposit: Number(r.deposit) || 0, depositRefund: Number(r.deposit_refund) || 0, balanceDue: Number(r.balance_due) || 0, notes: r.notes, archivedBy: r.archived_by });
 const mProspected = (r) => ({ id: r.id, ref: r.ref, ownerName: r.owner_name, ownerPhone: r.owner_phone, ownerPhone2: r.owner_phone2, ownerWhatsapp: r.owner_whatsapp, ownerType: r.owner_type, ownerNotes: r.owner_notes, kind: r.kind, commune: r.commune, quartier: r.quartier, address: r.address, landmark: r.landmark, rooms: r.rooms, bedrooms: r.bedrooms, bathrooms: r.bathrooms, floor: r.floor, surface: r.surface, furnished: !!r.furnished, condition: r.condition, availability: r.availability, operation: r.operation, rent: r.rent, salePrice: r.sale_price, negotiable: !!r.negotiable, ownerInterest: r.owner_interest, potential: r.potential, prospectedAt: r.prospected_at, agentId: r.agent_id, method: r.method, identifiedHow: r.identified_how, nextAction: r.next_action, nextContact: r.next_contact, notes: r.notes, status: r.status, photos: r.photos || [], history: r.history || [], propertyId: r.property_id, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
@@ -1579,7 +1646,7 @@ function useStore(userId) {
           tenant_name: unit.tenantName || "", tenant_phone: unit.tenantPhone || "",
           expected: entree ? loyer * nb : loyer,
           collected: entree ? loyer * nb : 0,
-          months: entree ? nb : 1, prepaid: !entree,
+          months: entree ? nb : 1, prepaid: !entree, carried_arrears: 0,
           paid_at: paidAt, charges: 0, comment, position: 999, vacant: false,
         });
         if (!error) touched += 1;
@@ -1692,7 +1759,9 @@ function useStore(userId) {
         expected: vac ? 0 : (Number(l.expected) || 0), collected: vac ? 0 : (Number(l.collected) || 0),
         paid_at: vac ? null : (l.paidAt || null), charges: vac ? 0 : (Number(l.charges) || 0),
         comment: l.comment || "", position: i, vacant: vac,
-        months: Math.max(1, Number(l.months) || 1), prepaid: !!l.prepaid && !vac };
+        months: Math.max(1, Number(l.months) || 1), prepaid: !!l.prepaid && !vac,
+        /* Instantané : les arriérés reportés sont figés dans la ligne du mois */
+        carried_arrears: vac ? 0 : Math.max(0, Number(l.carriedArrears) || 0) };
     });
     const cPayload = charges.filter((c) => (c.label || "").trim()).map((c, i) => ({
       period_id: periodId, label: c.label, amount: Number(c.amount) || 0,
@@ -1942,8 +2011,14 @@ function useStore(userId) {
     /* Une quittance de plusieurs mois se répartit sur chaque mois concerné */
     const parMois = Math.round(Number(doc.total) / mois.length);
     let done = 0; const manquants = []; const crees = [];
+    /* HISTORIQUE IMMUABLE : un mois déjà écoulé au moment du paiement est figé.
+       Le règlement d'un ancien loyer est porté sur le tableau du mois où
+       l'argent est encaissé, où il réduit les arriérés reportés. */
+    const moisPaiement = String(paidOn || isoDate(new Date())).slice(0, 7);
 
-    for (const m of mois) {
+    for (const mDu of mois) {
+      const surArriere = mDu < moisPaiement;
+      const m = surArriere ? moisPaiement : mDu;
       let period = rentPeriods.find((p) => p.propertyId === doc.propertyId
         && p.period === m && p.scope === "comptable");
       if (!period) {
@@ -1963,7 +2038,8 @@ function useStore(userId) {
             tenant_name: l.tenantName || "", tenant_phone: l.tenantPhone || "",
             expected: Number(l.expected) || 0, collected: Number(l.collected) || 0,
             paid_at: l.paidAt || null, charges: Number(l.charges) || 0, comment: l.comment || "",
-            position: i, vacant: !!l.vacant, months: l.months || 1, prepaid: !!l.prepaid })));
+            position: i, vacant: !!l.vacant, months: l.months || 1, prepaid: !!l.prepaid,
+            carried_arrears: l.vacant ? 0 : Math.max(0, Number(l.carriedArrears) || 0) })));
         }
         if (seed.charges.length) {
           await supabase.from("rent_charges").insert(seed.charges.map((c, i) => ({
@@ -1981,6 +2057,28 @@ function useStore(userId) {
           || (l.tenantName || "").toLowerCase() === (doc.clientName || "").toLowerCase());
       const montant = line ? Math.max(Number(line.expected) || 0, parMois) : parMois;
 
+      if (surArriere) {
+        /* Règlement d'arriéré : il S'AJOUTE au payé du mois en cours.
+           Garde-fou : une même quittance n'est jamais comptée deux fois. */
+        const marque = `${doc.ref} (${mDu})`;
+        if (line && (line.comment || "").includes(marque)) { done += 1; continue; }
+        const note = `Règlement arriéré ${periodLabel(mDu)} — quittance ${marque}`;
+        if (line) {
+          const { error } = await supabase.from("rent_lines").update({
+            collected: (Number(line.collected) || 0) + parMois, paid_at: paidOn,
+            comment: [line.comment, note].filter(Boolean).join(" · "), vacant: false }).eq("id", line.id);
+          if (!error) done += 1;
+        } else {
+          const { error } = await supabase.from("rent_lines").insert({
+            period_id: period.id, unit_id: doc.unitId || null, unit_label: unit?.label || "",
+            tenant_name: doc.clientName || "", tenant_phone: doc.clientPhone || "",
+            expected: unit?.rent || 0, carried_arrears: parMois, collected: parMois, paid_at: paidOn,
+            charges: 0, comment: note, position: 999, vacant: false });
+          if (!error) done += 1;
+        }
+        continue;
+      }
+
       if (line) {
         if ((Number(line.collected) || 0) >= montant) { done += 1; continue; }
         const { error } = await supabase.from("rent_lines")
@@ -1992,7 +2090,7 @@ function useStore(userId) {
           period_id: period.id, unit_id: doc.unitId || null,
           unit_label: unit?.label || "", tenant_name: doc.clientName || "",
           tenant_phone: doc.clientPhone || "", expected: unit?.rent || parMois,
-          collected: parMois, paid_at: paidOn, charges: 0,
+          carried_arrears: 0, collected: parMois, paid_at: paidOn, charges: 0,
           comment: `Quittance ${doc.ref}`, position: 999, vacant: false,
         });
         if (!error) done += 1;
@@ -4422,45 +4520,43 @@ function Produits({ store, me }) {
 /* ══════════════════════════════════════════════════════════════════════
    MODULE RECOUVREMENT
    ══════════════════════════════════════════════════════════════════════ */
-const periodLabel = (p) => {
-  const [y, m] = (p || "").split("-");
-  return `${MONTHS_FR[Number(m) - 1] || ""} ${y || ""}`;
-};
 const currentPeriod = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
 
 /* Totaux d'une période, à l'identique du fichier Excel */
 function periodTotals(lines, charges, rate) {
   const vacantLines = lines.filter(isVacantLine);
   const prepaidLines = lines.filter(isPrepaidLine);
-  /* Lignes qui pèsent réellement sur le règlement du mois : ni vacantes,
-     ni déjà réglées d'avance le mois précédent. */
-  const active = lines.filter((l) => !isVacantLine(l) && !isPrepaidLine(l));
+  const occupied = lines.filter((l) => !isVacantLine(l));
+  /* Loyers du mois : hors lots vacants et hors mois déjà réglés d'avance */
+  const active = occupied.filter((l) => !isPrepaidLine(l));
   const expected = active.reduce((a, l) => a + (Number(l.expected) || 0), 0);
-  const collected = active.reduce((a, l) => a + (Number(l.collected) || 0), 0);
-  const arrears = active.reduce((a, l) => a + Math.max(0, (Number(l.expected) || 0) - (Number(l.collected) || 0)), 0);
+  const carried = occupied.reduce((a, l) => a + lineCarried(l), 0);
+  const toCollect = occupied.reduce((a, l) => a + lineToCollect(l), 0);
+  /* Payé : tout ce qui a été encaissé ce mois-ci, y compris le règlement
+     d'arriérés reportés — cet argent revient au propriétaire. */
+  const collected = occupied.reduce((a, l) => a + (Number(l.collected) || 0), 0);
+  const arrears = occupied.reduce((a, l) => a + lineDue(l), 0);
   const deducted = lines.reduce((a, l) => a + (Number(l.charges) || 0), 0);
   const netAfter = collected - deducted;
   const chargeRows = charges.filter((c) => (c.kind || "charge") === "charge");
   const supplementRows = charges.filter((c) => c.kind === "supplement");
   const chargesTotal = chargeRows.reduce((a, c) => a + (Number(c.amount) || 0), 0);
-  /* Sommes à verser en plus du loyer : caution reversée, reliquat du mois
-     précédent, remboursement… Elles s'ajoutent au net dû au propriétaire. */
   const supplementsTotal = supplementRows.reduce((a, c) => a + (Number(c.amount) || 0), 0);
   const fee = Math.round(collected * (Number(rate) || 0));
-  /* NET PROPRIÉTAIRE = encaissé
-       − charges retenues sur les locataires (colonne "Charges" du tableau)
-       − charges du mois supportées par l'immeuble (électricité, eau, entretien…)
-       − prestation de l'agence
-       + sommes à verser en plus (caution, reliquat, remboursement…) */
+  /* NET PROPRIÉTAIRE = encaissé − charges locataires − charges immeuble
+                      − prestation agence + sommes à verser en plus */
   const netOwner = collected - deducted - chargesTotal - fee + supplementsTotal;
-  const nPaid = active.filter((l) => payStatusOf(l.expected, l.collected) === "paye").length + prepaidLines.length;
-  const nPartial = active.filter((l) => payStatusOf(l.expected, l.collected) === "partiel").length;
-  const nUnpaid = active.filter((l) => payStatusOf(l.expected, l.collected) === "impaye").length;
+  const st = occupied.map(lineStatus);
+  const nPaid = st.filter((x) => x === "paye" || x === "avance").length;
+  const nPartial = st.filter((x) => x === "partiel").length;
+  const nUnpaid = st.filter((x) => x === "impaye").length;
   const nVacant = vacantLines.length;
   const nPrepaid = prepaidLines.length;
-  const nActive = active.length;
-  const rateCollected = expected > 0 ? collected / expected : 0;
-  return { expected, collected, arrears, deducted, netAfter, chargesTotal, supplementsTotal, chargeRows, supplementRows, fee, netOwner, nPaid, nPartial, nUnpaid, nVacant, nPrepaid, nActive, rateCollected, vacantLines, prepaidLines, activeLines: active };
+  const nActive = occupied.length;
+  const rateCollected = toCollect > 0 ? collected / toCollect : 0;
+  return { expected, carried, toCollect, collected, arrears, deducted, netAfter, chargesTotal, supplementsTotal,
+    chargeRows, supplementRows, fee, netOwner, nPaid, nPartial, nUnpaid, nVacant, nPrepaid, nActive,
+    rateCollected, vacantLines, prepaidLines, activeLines: active };
 }
 
 
@@ -4513,12 +4609,35 @@ function seedPeriod({ period, rentPeriods, rentLines, rentCharges, units }) {
     .filter((p) => p.propertyId === period.propertyId && p.scope === period.scope && p.period < period.period)
     .sort((a, b) => b.period.localeCompare(a.period))[0];
 
+  const norm = (x) => (x || "").trim().toLowerCase();
+  const sameLot = (a, b) => (a.unitId && b.unitId && a.unitId === b.unitId) || norm(a.unitLabel) === norm(b.unitLabel);
+
+  /* ARRIÉRÉS REPORTÉS — lus une seule fois dans la ligne du mois précédent,
+     puis figés dans la nouvelle ligne. Le mois précédent n'est jamais modifié. */
+  const reportFrom = (prevLine, u) => {
+    /* Ligne « instantané » : son reste à payer est l'arriéré à reporter */
+    if (prevLine.carriedArrears !== null && prevLine.carriedArrears !== undefined) return lineDue(prevLine);
+    /* Ligne de l'ancien modèle (avant la v23) : chaque mois ne portait que son
+       propre manque. On totalise, une seule fois, ces manques passés et
+       l'arriéré repris manuellement ; la chaîne prend ensuite le relais. */
+    const ids = new Set(rentPeriods.filter((p) => p.propertyId === period.propertyId
+      && p.scope === period.scope && p.period <= prev.period).map((p) => p.id));
+    const legacy = rentLines.filter((x) => ids.has(x.periodId) && sameLot(x, prevLine)
+      && !isVacantLine(x) && !isPrepaidLine(x)
+      && norm(x.tenantName) === norm(prevLine.tenantName))
+      .reduce((a, x) => a + Math.max(0, (Number(x.expected) || 0) - (Number(x.collected) || 0)), 0);
+    return legacy + (Number(u?.arrearsAmount) || 0);
+  };
+
   if (prev) {
-    const lines = rentLines.filter((l) => l.periodId === prev.id)
-      .sort((a, b) => a.position - b.position)
+    const prevLines = rentLines.filter((l) => l.periodId === prev.id).sort((a, b) => a.position - b.position);
+    const lines = prevLines
       .map((l) => {
         const u = findUnit(l);
-        const arrear = Math.max(0, (Number(l.expected) || 0) - (Number(l.collected) || 0));
+        /* L'arriéré suit le locataire : si le lot a changé d'occupant, la
+           dette de l'ancien ne passe pas au nouveau (elle reste sur sa fiche). */
+        const memeLocataire = !u || !(u.tenantName || "").trim() || norm(u.tenantName) === norm(l.tenantName);
+        const arrear = isVacantLine(l) || !memeLocataire ? 0 : reportFrom(l, u);
         /* Un lot devenu vacant repart sans loyer attendu ; un lot reloué reprend le sien */
         const vacantNow = u ? (u.status === "vacant" || !(u.tenantName || "").trim()) : isVacantLine(l);
         /* Mois couvert par une avance DÉJÀ reversée au propriétaire le mois
@@ -4528,7 +4647,7 @@ function seedPeriod({ period, rentPeriods, rentLines, rentCharges, units }) {
           return { unitId: l.unitId || u?.id || null, unitLabel: l.unitLabel,
             tenantName: u?.tenantName || l.tenantName, tenantPhone: u?.tenantPhone || l.tenantPhone,
             expected: u?.rent || l.expected, collected: 0, paidAt: "", charges: 0,
-            months: 1, prepaid: true, vacant: false,
+            months: 1, prepaid: true, vacant: false, carriedArrears: arrear,
             comment: `Réglé d'avance (mois ${rangAv}/${u.advanceMonths}) — somme déjà reversée au propriétaire` };
         }
         const base = { unitId: l.unitId || u?.id || null, unitLabel: l.unitLabel,
@@ -4536,8 +4655,17 @@ function seedPeriod({ period, rentPeriods, rentLines, rentCharges, units }) {
           tenantPhone: vacantNow ? "" : (u?.tenantPhone || l.tenantPhone),
           expected: vacantNow ? 0 : (u?.rent || l.expected), collected: 0, paidAt: "",
           charges: vacantNow ? 0 : l.charges, vacant: vacantNow, months: 1, prepaid: false,
-          comment: vacantNow ? "Lot vacant" : (arrear > 0 ? `Arriéré ${prev.period} : ${fcfa(arrear)}` : "") };
+          carriedArrears: vacantNow ? 0 : arrear,
+          comment: vacantNow ? "Lot vacant" : "" };
         return (u && !vacantNow) ? applyAdvance(base, u) : base;
+      });
+    /* Lots ajoutés au bien depuis le mois précédent : ils rejoignent le tableau */
+    units.filter((u) => u.propertyId === period.propertyId && !prevLines.some((l) => sameLot(l, { unitId: u.id, unitLabel: u.label })))
+      .forEach((u) => {
+        const vac = u.status === "vacant" || !(u.tenantName || "").trim();
+        lines.push({ unitId: u.id, unitLabel: u.label, tenantName: vac ? "" : u.tenantName, tenantPhone: vac ? "" : (u.tenantPhone || ""),
+          expected: vac ? 0 : (u.rent || 0), collected: 0, paidAt: "", charges: 0, months: 1, prepaid: false, vacant: vac,
+          carriedArrears: vac ? 0 : (Number(u.arrearsAmount) || 0), comment: vac ? "Lot vacant" : "Nouveau lot" });
       });
     const charges = rentCharges.filter((c) => c.periodId === prev.id && (c.kind || "charge") === "charge")
       .sort((a, b) => a.position - b.position)
@@ -4550,7 +4678,9 @@ function seedPeriod({ period, rentPeriods, rentLines, rentCharges, units }) {
     const vacant = u.status === "vacant" || !(u.tenantName || "").trim();
     const base = { unitId: u.id, unitLabel: u.label, tenantName: u.tenantName || "", tenantPhone: u.tenantPhone || "",
       expected: vacant ? 0 : (u.rent || 0), collected: 0, paidAt: "", charges: 0,
-      months: 1, prepaid: false, vacant, comment: vacant ? "Lot vacant" : "" };
+      months: 1, prepaid: false, vacant, comment: vacant ? "Lot vacant" : "",
+      /* Premier tableau : l'arriéré antérieur à l'outil devient l'arriéré reporté */
+      carriedArrears: vacant ? 0 : (Number(u.arrearsAmount) || 0) };
     if (vacant) return base;
     const rang = advanceRank(u, period.period);
     if (rang > 1) {
@@ -4657,41 +4787,53 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
         {!readOnly && <button onClick={loadFromUnits} className="kb-btn kb-btn-ghost text-sm"><Users size={14} /> Charger les lots du bâtiment</button>}
       </div>
 
-      {/* Tableau des locataires */}
+      {/* Tableau des locataires — chaque ligne est un instantané du mois */}
       <div className="overflow-x-auto -mx-1 mb-2">
-        <table className="w-full text-xs" style={{ minWidth: 860 }}>
+        <table className="w-full text-xs" style={{ minWidth: 1080 }}>
           <thead><tr style={{ background: "#F1F3F5" }}>
             <th className="text-left px-2 py-2 font-semibold">Locataire</th>
-            <th className="text-left px-2 py-2 font-semibold w-24">Lot</th>
-            <th className="text-right px-2 py-2 font-semibold w-28">Loyer prévu</th>
-            <th className="text-right px-2 py-2 font-semibold w-28">Encaissé</th>
-            <th className="text-left px-2 py-2 font-semibold w-32">Date paiement</th>
+            <th className="text-left px-2 py-2 font-semibold w-20">Lot</th>
+            <th className="text-right px-2 py-2 font-semibold w-24">Loyer du mois</th>
+            <th className="text-right px-2 py-2 font-semibold w-24" title="Reste à payer du mois précédent, figé à la création de ce tableau">Arriérés reportés</th>
+            <th className="text-right px-2 py-2 font-semibold w-24">Total à recouvrer</th>
+            <th className="text-right px-2 py-2 font-semibold w-24">Payé</th>
+            <th className="text-left px-2 py-2 font-semibold w-28">Date paiement</th>
+            <th className="text-right px-2 py-2 font-semibold w-24">Reste à payer</th>
             <th className="text-center px-2 py-2 font-semibold w-20">Statut</th>
-            <th className="text-right px-2 py-2 font-semibold w-24">Arriéré</th>
-            <th className="text-right px-2 py-2 font-semibold w-24">Charges</th>
+            <th className="text-right px-2 py-2 font-semibold w-20">Charges</th>
             <th className="text-left px-2 py-2 font-semibold w-32">Commentaire</th>
             {!readOnly && <th className="w-8" />}
           </tr></thead>
           <tbody>{lines.map((l, i) => {
             const vacant = isVacantLine(l);
-            const st = PAY_STATUS[payStatusOf(l.expected, l.collected, vacant)];
-            const arr = vacant ? 0 : Math.max(0, (Number(l.expected) || 0) - (Number(l.collected) || 0));
+            const prepaid = isPrepaidLine(l);
+            const st = PAY_STATUS[lineStatus(l)];
+            const total = lineToCollect(l);
+            const reste = lineDue(l);
             return (
-              <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
+              <tr key={i} className="border-b" style={{ borderColor: "var(--line)", background: vacant ? "#FAFBFC" : "transparent" }}>
                 <td className="px-1 py-1"><input disabled={readOnly} className="w-full px-2 py-1.5 rounded border text-xs" style={inputStyle} value={l.tenantName} onChange={(e) => setLine(i, "tenantName", e.target.value)} placeholder="Nom du locataire" /></td>
                 <td className="px-1 py-1"><input disabled={readOnly} className="w-full px-2 py-1.5 rounded border text-xs" style={inputStyle} value={l.unitLabel} onChange={(e) => setLine(i, "unitLabel", e.target.value)} placeholder="Appt A1" /></td>
-                <td className="px-1 py-1"><input disabled={readOnly || vacant} type="number" min={0} step={5000} className="w-full px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={vacant ? 0 : l.expected} onChange={(e) => setLine(i, "expected", e.target.value)} /></td>
+                <td className="px-1 py-1">
+                  <input disabled={readOnly || vacant || prepaid} type="number" min={0} step={5000} className="w-full px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={vacant ? 0 : l.expected} onChange={(e) => setLine(i, "expected", e.target.value)} />
+                  {lineMonths(l) > 1 && <div className="text-[9px] text-right" style={{ color: "var(--muted)" }}>{lineMonths(l)} mois</div>}
+                </td>
+                <td className="px-1 py-1"><input disabled={readOnly || vacant} type="number" min={0} step={5000} className="w-full px-2 py-1.5 rounded border text-xs text-right" style={{ ...inputStyle, color: lineCarried(l) > 0 ? "#B5171D" : "var(--ink)" }} value={vacant ? 0 : (l.carriedArrears ?? 0)} onChange={(e) => setLine(i, "carriedArrears", e.target.value)} /></td>
+                <td className="px-2 py-1 text-right font-semibold tabular-nums">{vacant ? "—" : fcfa(total)}</td>
                 <td className="px-1 py-1"><input disabled={readOnly || vacant} type="number" min={0} step={5000} className="w-full px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={vacant ? 0 : l.collected} onChange={(e) => setLine(i, "collected", e.target.value)} /></td>
                 <td className="px-1 py-1"><input disabled={readOnly} type="date" className="w-full px-2 py-1.5 rounded border text-xs" style={inputStyle} value={l.paidAt || ""} onChange={(e) => setLine(i, "paidAt", e.target.value)} /></td>
+                <td className="px-2 py-1 text-right font-bold tabular-nums" style={{ color: reste > 0 ? "#D81F26" : "var(--muted)" }}>{vacant ? "—" : fcfa(reste)}</td>
                 <td className="px-1 py-1 text-center">
-                  <button disabled={readOnly} title={readOnly ? "" : "Cliquer pour basculer entre lot vacant et lot loué"}
-                    onClick={() => setLines((p) => p.map((x, j) => (j === i
-                      ? { ...x, vacant: !isVacantLine(x), ...(isVacantLine(x) ? {} : { expected: 0, collected: 0, paidAt: "", charges: 0, comment: "Lot vacant" }) }
-                      : x)))}
+                  <button disabled={readOnly} title={readOnly ? "" : "Cliquer pour changer : loué → réglé d'avance → vacant"}
+                    onClick={() => setLines((p) => p.map((x, j) => {
+                      if (j !== i) return x;
+                      if (isVacantLine(x)) return { ...x, vacant: false, prepaid: false, comment: "" };
+                      if (isPrepaidLine(x)) return { ...x, prepaid: false, vacant: true, expected: 0, collected: 0, carriedArrears: 0, paidAt: "", charges: 0, comment: "Lot vacant" };
+                      return { ...x, prepaid: true, months: 1, comment: x.comment || "Réglé d'avance — somme déjà reversée au propriétaire" };
+                    }))}
                     className="rounded-full px-2 py-0.5 text-[10px] font-bold"
                     style={{ background: st.bg, color: st.color, border: "none" }}>{st.label}</button>
                 </td>
-                <td className="px-2 py-1 text-right font-medium tabular-nums" style={{ color: arr > 0 ? "#D81F26" : "var(--muted)" }}>{fcfa(arr)}</td>
                 <td className="px-1 py-1"><input disabled={readOnly} type="number" min={0} step={1000} className="w-full px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={l.charges} onChange={(e) => setLine(i, "charges", e.target.value)} /></td>
                 <td className="px-1 py-1"><input disabled={readOnly} className="w-full px-2 py-1.5 rounded border text-xs" style={inputStyle} value={l.comment} onChange={(e) => setLine(i, "comment", e.target.value)} /></td>
                 {!readOnly && <td className="px-1"><button onClick={() => setLines((p) => p.filter((_, j) => j !== i))} className="text-slate-300 hover:text-red-500"><X size={13} /></button></td>}
@@ -4700,7 +4842,10 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
           })}</tbody>
         </table>
       </div>
-      {!readOnly && <button onClick={() => setLines((p) => [...p, { unitLabel: "", tenantName: "", expected: 0, collected: 0, charges: 0, comment: "" }])} className="kb-btn kb-btn-ghost text-sm mb-4"><Plus size={14} /> Ajouter un locataire</button>}
+      <p className="text-[11px] mb-2" style={{ color: "var(--muted)" }}>
+        Les arriérés reportés sont recopiés du mois précédent à la création du tableau, puis figés : payer un arriéré ce mois-ci ne modifie jamais le tableau du mois passé.
+      </p>
+      {!readOnly && <button onClick={() => setLines((p) => [...p, { unitLabel: "", tenantName: "", expected: 0, carriedArrears: 0, collected: 0, charges: 0, comment: "" }])} className="kb-btn kb-btn-ghost text-sm mb-4"><Plus size={14} /> Ajouter un locataire</button>}
 
       {/* Bilan + charges + règlement */}
       <div className="grid lg:grid-cols-2 gap-4 mb-3">
@@ -4713,7 +4858,8 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
             <div key={k} className="flex justify-between text-xs py-1"><span style={{ color: "var(--muted)" }}>{k}</span><span className="font-semibold">{v}</span></div>
           ))}
           <div className="border-t my-1.5" style={{ borderColor: "var(--line)" }} />
-          {[["Total loyers prévus", t.expected], ["Total encaissé", t.collected], ["Total arriérés", t.arrears],
+          {[["Loyers du mois", t.expected], ["Arriérés reportés", t.carried], ["Total à recouvrer", t.toCollect],
+            ["Total payé", t.collected], ["Reste à payer", t.arrears],
             ["Charges prélevées", t.deducted], ["Net après charges", t.netAfter]].map(([k, v]) => (
             <div key={k} className="flex justify-between text-xs py-1"><span style={{ color: "var(--muted)" }}>{k}</span><span className="font-semibold tabular-nums">{fcfa(v)}</span></div>
           ))}
@@ -4797,12 +4943,14 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
 }
 
 /* ================= État imprimable ================= */
-function PeriodSheet({ period, property, owner, lines, charges, author, cumul = {}, onBack }) {
+function PeriodSheet({ period, property, owner, lines, charges, author, onBack }) {
+  /* Instantané du mois : chaque montant provient de la ligne elle-même.
+     Imprimer ce tableau aujourd'hui ou dans un an donne le même document. */
   const t = periodTotals(lines, charges, period.rate);
   const sc = RENT_SCOPE[period.scope] || RENT_SCOPE.commercial;
   const arrearsRows = lines
-    .filter((l) => !isVacantLine(l))          // un lot vacant n'est pas un impayé
-    .map((l) => ({ ...l, due: Math.max(0, (Number(l.expected) || 0) - (Number(l.collected) || 0)) }))
+    .filter((l) => !isVacantLine(l))
+    .map((l) => ({ ...l, due: lineDue(l) }))
     .filter((l) => l.due > 0)
     .sort((a, b) => b.due - a.due);
   return (
@@ -4824,58 +4972,55 @@ function PeriodSheet({ period, property, owner, lines, charges, author, cumul = 
           <div><p style={{ color: "var(--muted)" }}>Locataires</p><p className="font-semibold">{t.nActive}{t.nVacant > 0 ? ` (+${t.nVacant} vacant${t.nVacant > 1 ? "s" : ""})` : ""}</p></div>
         </div>
 
-        <table className="w-full text-[11px] mb-4">
+        <table className="w-full text-[10px] mb-4">
           <thead><tr style={{ background: "#F1F3F5" }}>
-            <th className="text-left px-2 py-1.5 font-semibold">N°</th>
-            <th className="text-left px-2 py-1.5 font-semibold">Locataire</th>
-            <th className="text-left px-2 py-1.5 font-semibold">Lot</th>
-            <th className="text-center px-2 py-1.5 font-semibold">Mois</th>
-            <th className="text-right px-2 py-1.5 font-semibold">Loyer prévu</th>
-            <th className="text-right px-2 py-1.5 font-semibold">Encaissé</th>
-            <th className="text-left px-2 py-1.5 font-semibold">Date</th>
-            <th className="text-center px-2 py-1.5 font-semibold">Statut</th>
-            <th className="text-right px-2 py-1.5 font-semibold" title="Total des sommes restant dues, tous mois confondus">Arriéré cumulé</th>
-            <th className="text-right px-2 py-1.5 font-semibold">Charges</th>
-            <th className="text-right px-2 py-1.5 font-semibold">Net</th>
-            <th className="text-left px-2 py-1.5 font-semibold">Observations</th>
+            <th className="text-left px-1.5 py-1.5 font-semibold">N°</th>
+            <th className="text-left px-1.5 py-1.5 font-semibold">Locataire</th>
+            <th className="text-left px-1.5 py-1.5 font-semibold">Lot</th>
+            <th className="text-right px-1.5 py-1.5 font-semibold">Loyer du mois</th>
+            <th className="text-right px-1.5 py-1.5 font-semibold">Arriérés reportés</th>
+            <th className="text-right px-1.5 py-1.5 font-semibold">Total à recouvrer</th>
+            <th className="text-right px-1.5 py-1.5 font-semibold">Payé</th>
+            <th className="text-left px-1.5 py-1.5 font-semibold">Date</th>
+            <th className="text-right px-1.5 py-1.5 font-semibold">Reste à payer</th>
+            <th className="text-center px-1.5 py-1.5 font-semibold">Statut</th>
+            <th className="text-right px-1.5 py-1.5 font-semibold">Charges</th>
+            <th className="text-right px-1.5 py-1.5 font-semibold">Net</th>
+            <th className="text-left px-1.5 py-1.5 font-semibold">Observations</th>
           </tr></thead>
           <tbody>{lines.map((l, i) => {
             const vacant = isVacantLine(l);
-            const prepaid = isPrepaidLine(l);
-            const st = PAY_STATUS[payStatusOf(l.expected, l.collected, vacant, prepaid)];
-            const arr = (vacant || prepaid) ? 0 : Math.max(0, (Number(l.expected) || 0) - (Number(l.collected) || 0));
-            const nb = lineMonths(l);
+            const st = PAY_STATUS[lineStatus(l)];
+            const reste = lineDue(l);
             return (
               <tr key={i} className="border-b" style={{ borderColor: "var(--line)", color: vacant ? "var(--muted)" : "inherit" }}>
-                <td className="px-2 py-1.5">{i + 1}</td>
-                <td className="px-2 py-1.5 font-medium">{l.tenantName || (vacant ? "— lot vacant —" : "—")}</td>
-                <td className="px-2 py-1.5">{l.unitLabel}</td>
-                <td className="px-2 py-1.5 text-center">{vacant ? "—" : (nb > 1 ? `${nb} mois` : "1")}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(l.expected)}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{prepaid ? "—" : fcfa(l.collected)}</td>
-                <td className="px-2 py-1.5">{l.paidAt ? fr(l.paidAt + "T00:00:00", { day: "2-digit", month: "2-digit" }) : "—"}</td>
-                <td className="px-2 py-1.5 text-center"><span className="font-bold" style={{ color: st.color }}>{st.label}</span></td>
-                <td className="px-2 py-1.5 text-right tabular-nums" style={{ color: (cumul[l.unitId || l.unitLabel]?.total || arr) > 0 ? "#D81F26" : "inherit" }}>
-                  {(vacant || prepaid) ? "—" : (() => {
-                    const c = cumul[l.unitId] || cumul[l.unitLabel];
-                    if (c && c.total > 0) return <><strong>{fcfa(c.total)}</strong><div style={{ fontSize: 8, fontWeight: 700 }}>{c.months} mois</div></>;
-                    return fcfa(arr);
-                  })()}
-                </td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(l.charges)}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums font-medium">{prepaid ? "—" : fcfa((Number(l.collected) || 0) - (Number(l.charges) || 0))}</td>
-                <td className="px-2 py-1.5" style={{ fontSize: "9px", lineHeight: 1.3, maxWidth: 160 }}>{l.comment || ""}</td>
+                <td className="px-1.5 py-1.5">{i + 1}</td>
+                <td className="px-1.5 py-1.5 font-medium">{l.tenantName || (vacant ? "— lot vacant —" : "—")}</td>
+                <td className="px-1.5 py-1.5">{l.unitLabel}</td>
+                <td className="px-1.5 py-1.5 text-right tabular-nums">{vacant ? "—" : fcfa(lineRent(l))}{lineMonths(l) > 1 && <div style={{ fontSize: 8 }}>{lineMonths(l)} mois</div>}</td>
+                <td className="px-1.5 py-1.5 text-right tabular-nums" style={{ color: lineCarried(l) > 0 ? "#B5171D" : "inherit" }}>{vacant ? "—" : fcfa(lineCarried(l))}</td>
+                <td className="px-1.5 py-1.5 text-right tabular-nums font-semibold">{vacant ? "—" : fcfa(lineToCollect(l))}</td>
+                <td className="px-1.5 py-1.5 text-right tabular-nums">{vacant ? "—" : fcfa(l.collected)}</td>
+                <td className="px-1.5 py-1.5">{l.paidAt ? fr(l.paidAt + "T00:00:00", { day: "2-digit", month: "2-digit" }) : "—"}</td>
+                <td className="px-1.5 py-1.5 text-right tabular-nums font-bold" style={{ color: reste > 0 ? "#D81F26" : "inherit" }}>{vacant ? "—" : fcfa(reste)}</td>
+                <td className="px-1.5 py-1.5 text-center"><span className="font-bold" style={{ color: st.color }}>{st.label}</span></td>
+                <td className="px-1.5 py-1.5 text-right tabular-nums">{fcfa(l.charges)}</td>
+                <td className="px-1.5 py-1.5 text-right tabular-nums font-medium">{fcfa((Number(l.collected) || 0) - (Number(l.charges) || 0))}</td>
+                <td className="px-1.5 py-1.5" style={{ fontSize: "8.5px", lineHeight: 1.3, maxWidth: 150 }}>{l.comment || ""}</td>
               </tr>
             );
           })}</tbody>
           <tfoot><tr style={{ background: "#F1F3F5" }}>
-            <td colSpan={4} className="px-2 py-2 font-bold">TOTAUX</td>
-            <td className="px-2 py-2 text-right font-bold tabular-nums">{fcfa(t.expected)}</td>
-            <td className="px-2 py-2 text-right font-bold tabular-nums">{fcfa(t.collected)}</td>
-            <td colSpan={2} />
-            <td className="px-2 py-2 text-right font-bold tabular-nums">{fcfa(t.arrears)}</td>
-            <td className="px-2 py-2 text-right font-bold tabular-nums">{fcfa(t.deducted)}</td>
-            <td className="px-2 py-2 text-right font-bold tabular-nums">{fcfa(t.netAfter)}</td>
+            <td colSpan={3} className="px-1.5 py-2 font-bold">TOTAUX</td>
+            <td className="px-1.5 py-2 text-right font-bold tabular-nums">{fcfa(t.expected)}</td>
+            <td className="px-1.5 py-2 text-right font-bold tabular-nums">{fcfa(t.carried)}</td>
+            <td className="px-1.5 py-2 text-right font-bold tabular-nums">{fcfa(t.toCollect)}</td>
+            <td className="px-1.5 py-2 text-right font-bold tabular-nums">{fcfa(t.collected)}</td>
+            <td />
+            <td className="px-1.5 py-2 text-right font-bold tabular-nums" style={{ color: "#D81F26" }}>{fcfa(t.arrears)}</td>
+            <td />
+            <td className="px-1.5 py-2 text-right font-bold tabular-nums">{fcfa(t.deducted)}</td>
+            <td className="px-1.5 py-2 text-right font-bold tabular-nums">{fcfa(t.netAfter)}</td>
             <td />
           </tr></tfoot>
         </table>
@@ -4935,21 +5080,21 @@ function PeriodSheet({ period, property, owner, lines, charges, author, cumul = 
 
         {t.netOwner > 0 && <p className="text-[11px] italic mt-3">Arrêté le présent état à la somme de <strong>{amountInWords(t.netOwner)}</strong> à verser au propriétaire.</p>}
 
-        {(() => {
-          const enArriere = lines.filter((l) => !isVacantLine(l) && !isPrepaidLine(l) && (cumul[l.unitId] || cumul[l.unitLabel])?.total > 0);
-          if (!enArriere.length) return null;
-          return (
-            <div className="rounded p-2 mt-3" style={{ background: "#FDEAEA", border: "1px solid #F5C6C7" }}>
-              <p className="text-[11px] font-bold" style={{ color: "#B5171D" }}>
-                LOCATAIRES EN ARRIÉRÉ ({enArriere.length}) — même après paiement partiel ce mois-ci :
-              </p>
-              <p className="text-[10px] mt-0.5" style={{ color: "#B5171D" }}>
-                {enArriere.map((l) => { const c = cumul[l.unitId] || cumul[l.unitLabel]; return `${l.tenantName || l.unitLabel} : ${c.months} mois (${fcfa(c.total)})`; }).join(" · ")}
-              </p>
-              <p className="text-[9px] mt-0.5 italic" style={{ color: "var(--muted)" }}>Détail mois par mois dans l'état des arriérés, éditable séparément. Ces sommes n'entrent pas dans le règlement du propriétaire.</p>
-            </div>
-          );
-        })()}
+        {arrearsRows.length > 0 && (
+          <div className="rounded p-2 mt-3" style={{ background: "#FDEAEA", border: "1px solid #F5C6C7" }}>
+            <p className="text-[11px] font-bold" style={{ color: "#B5171D" }}>
+              LOCATAIRES EN ARRIÉRÉ À LA FIN DE CE MOIS ({arrearsRows.length}) — même après paiement partiel :
+            </p>
+            <p className="text-[10px] mt-0.5" style={{ color: "#B5171D" }}>
+              {arrearsRows.map((l) => {
+                const loyer = Number(l.expected) || 0;
+                const nbMois = loyer > 0 ? Math.ceil(l.due / loyer) : 0;
+                return `${l.tenantName || l.unitLabel} : ${fcfa(l.due)}${nbMois ? ` (≈ ${nbMois} mois)` : ""}`;
+              }).join(" · ")}
+            </p>
+            <p className="text-[9px] mt-0.5 italic" style={{ color: "var(--muted)" }}>Ces montants seront reportés sur le tableau du mois suivant. Ils n'entrent pas dans le règlement du propriétaire tant qu'ils ne sont pas encaissés.</p>
+          </div>
+        )}
 
         <div className="kb-sign flex justify-end pt-10 mt-6">
           <div className="text-center" style={{ minWidth: 210 }}>
@@ -5036,7 +5181,7 @@ function OwnerConsolidatedSheet({ owner, period, scope, blocs, author, onBack })
 function ArrearsSheet({ period, property, owner, lines, author, onBack }) {
   const rows = lines
     .filter((l) => !isVacantLine(l))
-    .map((l) => ({ ...l, due: Math.max(0, (Number(l.expected) || 0) - (Number(l.collected) || 0)) }))
+    .map((l) => ({ ...l, due: lineDue(l) }))          // instantané du mois
     .filter((l) => l.due > 0)
     .sort((a, b) => b.due - a.due);
   const total = rows.reduce((a, r) => a + r.due, 0);
@@ -5068,9 +5213,10 @@ function ArrearsSheet({ period, property, owner, lines, author, onBack }) {
               <th className="text-left px-2 py-1.5 font-semibold">Locataire</th>
               <th className="text-left px-2 py-1.5 font-semibold">Lot</th>
               <th className="text-left px-2 py-1.5 font-semibold">Contact</th>
-              <th className="text-right px-2 py-1.5 font-semibold">Loyer prévu</th>
-              <th className="text-right px-2 py-1.5 font-semibold">Encaissé</th>
-              <th className="text-right px-2 py-1.5 font-semibold">Reste dû</th>
+              <th className="text-right px-2 py-1.5 font-semibold">Loyer du mois</th>
+              <th className="text-right px-2 py-1.5 font-semibold">Arriérés reportés</th>
+              <th className="text-right px-2 py-1.5 font-semibold">Payé</th>
+              <th className="text-right px-2 py-1.5 font-semibold">Reste à payer</th>
               <th className="text-left px-2 py-1.5 font-semibold">Situation</th>
               <th className="text-left px-2 py-1.5 font-semibold">Observation</th>
             </tr></thead>
@@ -5080,7 +5226,8 @@ function ArrearsSheet({ period, property, owner, lines, author, onBack }) {
                 <td className="px-2 py-1.5 font-medium">{r.tenantName || "—"}</td>
                 <td className="px-2 py-1.5">{r.unitLabel}</td>
                 <td className="px-2 py-1.5">{r.tenantPhone || "—"}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(r.expected)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(lineRent(r))}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(lineCarried(r))}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{fcfa(r.collected)}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums font-bold" style={{ color: "#D81F26" }}>{fcfa(r.due)}</td>
                 <td className="px-2 py-1.5">{Number(r.collected) > 0 ? "Reliquat à verser" : "Impayé"}</td>
@@ -5088,7 +5235,7 @@ function ArrearsSheet({ period, property, owner, lines, author, onBack }) {
               </tr>
             ))}</tbody>
             <tfoot><tr style={{ background: "#FDEAEA" }}>
-              <td colSpan={6} className="px-2 py-2 font-bold">TOTAL DES ARRIÉRÉS</td>
+              <td colSpan={7} className="px-2 py-2 font-bold">TOTAL DES ARRIÉRÉS</td>
               <td className="px-2 py-2 text-right font-bold tabular-nums" style={{ color: "#D81F26" }}>{fcfa(total)}</td>
               <td colSpan={2} />
             </tr></tfoot>
@@ -5173,15 +5320,9 @@ function Recouvrement({ store, me, userId }) {
 
   const sheet = rentPeriods.find((p) => p.id === sheetId);
   if (sheet) {
-    /* Arriérés cumulés par lot, calculés sur tout l'historique (tableaux + quittances) */
-    const cumul = {};
-    units.filter((u) => u.propertyId === sheet.propertyId).forEach((u) => {
-      const a = arrearsOf(u, store);
-      if (a.hasArrears) { cumul[u.id] = { total: a.total, months: a.months }; cumul[u.label] = cumul[u.id]; }
-    });
     return <PeriodSheet period={sheet} property={propById[sheet.propertyId]} owner={ownerById[propById[sheet.propertyId]?.ownerId]}
       lines={rentLines.filter((l) => l.periodId === sheet.id)} charges={rentCharges.filter((c) => c.periodId === sheet.id)}
-      author={memberById[sheet.createdBy]} cumul={cumul} onBack={() => setSheetId(null)} />;
+      author={memberById[sheet.createdBy]} onBack={() => setSheetId(null)} />;
   }
 
   const q = search.trim().toLowerCase();
