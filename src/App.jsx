@@ -6,7 +6,7 @@
  * ==========================================================================*/
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
-  AlertTriangle, AlignCenter, AlignJustify, AlignLeft, AlignRight, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, Banknote, BarChart3, Bell, BellOff, BellRing, Bold, Briefcase, Building2, CalendarClock, CalendarDays, CalendarOff, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, DoorClosed, DoorOpen, Download, Eraser, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Highlighter, Home, Image, Inbox, IndentDecrease, IndentIncrease, Italic, KeyRound, Landmark, Layers, LayoutDashboard, Link2, List, ListChecks, ListOrdered, Lock, LogOut, Mail, MapPin, Maximize2, MessageCircle, MessageCircleWarning, MessageSquare, Minimize2, Minus, Package, Palette, Paperclip, Pause, Pencil, Percent, Phone, PhoneIncoming, Play, Plus, Printer, Receipt, Redo2, RotateCcw, Scale, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, Strikethrough, Subscript, Superscript, Table2, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, Underline, Undo2, UserPlus, UserRound, Users, Wallet, X, Zap,
+  AlertTriangle, AlignCenter, AlignJustify, AlignLeft, AlignRight, Archive, ArchiveRestore, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, Banknote, BarChart3, Bell, BellOff, BellRing, Bold, Briefcase, Building2, CalendarClock, CalendarDays, CalendarOff, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, DoorClosed, DoorOpen, Download, Eraser, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Highlighter, Home, Image, Inbox, IndentDecrease, IndentIncrease, Italic, KeyRound, Landmark, Layers, LayoutDashboard, Link2, List, ListChecks, ListOrdered, Lock, LogOut, Mail, MapPin, Maximize2, MessageCircle, MessageCircleWarning, MessageSquare, Minimize2, Minus, Package, Palette, Paperclip, Pause, Pencil, Percent, Phone, PhoneIncoming, Play, Plus, Printer, Receipt, Redo2, RotateCcw, Scale, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, Strikethrough, Subscript, Superscript, Table2, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, Underline, Undo2, Upload, UserPlus, UserRound, Users, Wallet, X, Zap,
 } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { supabase, AUTH_DOMAIN } from "./supabaseClient";
@@ -892,7 +892,7 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "23.0";
+const APP_VERSION = "24.0";
 const APP_BUILD = "2026-09-26";
 
 /* ---- Papier à en-tête de l'agence ---- */
@@ -1049,6 +1049,52 @@ async function fetchAll(table, order) {
   }
   return { data: rows, error: null };
 }
+/* ---- DEVIS : pièce jointe, montants, validations ---- */
+const QUOTE_FILE_TYPES = { "application/pdf": "PDF", "image/jpeg": "JPG", "image/png": "PNG", "image/webp": "WEBP" };
+const QUOTE_FILE_MAX = 10 * 1024 * 1024;   // 10 Mo
+/* HT = somme des lignes ; TVA optionnelle ; TTC = HT + TVA */
+function quoteAmounts(lines, vatApplicable, vatRate) {
+  const ht = Math.round((lines || []).filter((l) => (l.label || "").trim())
+    .reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.price) || 0), 0));
+  const vat = vatApplicable ? Math.round(ht * (Number(vatRate) || 0) / 100) : 0;
+  return { ht, vat, ttc: ht + vat };
+}
+/* Renvoie la liste des erreurs, vide si le devis est valable */
+function validateQuote(f, lines, file) {
+  const errs = [];
+  if (!(f.artisanName || "").trim()) errs.push("Le nom de l'artisan est obligatoire.");
+  const d = f.date ? new Date(f.date + "T00:00:00") : null;
+  if (!d || isNaN(d.getTime())) errs.push("La date du devis est invalide.");
+  else if (d.getTime() > Date.now() + 86400000) errs.push("La date du devis ne peut pas être dans le futur.");
+  const nombre = (v) => v !== "" && v !== null && v !== undefined && isFinite(Number(v));
+  const vraies = (lines || []).filter((l) => (l.label || "").trim());
+  if (!vraies.length) errs.push("Ajoutez au moins une ligne de travaux avec sa désignation.");
+  (lines || []).forEach((l, i) => {
+    const libre = !(l.label || "").trim();
+    if (libre && Number(l.price) > 0) errs.push(`Ligne ${i + 1} : désignation manquante.`);
+    if (libre) return;
+    if (!nombre(l.qty) || Number(l.qty) <= 0) errs.push(`Ligne ${i + 1} : la quantité doit être un nombre supérieur à 0.`);
+    if (!nombre(l.price) || Number(l.price) < 0) errs.push(`Ligne ${i + 1} : le prix unitaire doit être un nombre positif ou nul.`);
+  });
+  if (f.vatApplicable && (!nombre(f.vatRate) || Number(f.vatRate) < 0 || Number(f.vatRate) > 100))
+    errs.push("Le taux de TVA doit être compris entre 0 et 100.");
+  if (file) {
+    if (!QUOTE_FILE_TYPES[file.type]) errs.push("Pièce jointe refusée : seuls les formats PDF, JPG, PNG et WEBP sont acceptés.");
+    if (file.size > QUOTE_FILE_MAX) errs.push(`Pièce jointe trop lourde (${(file.size / 1048576).toFixed(1)} Mo) : 10 Mo maximum.`);
+  }
+  return errs;
+}
+/* Un devis exécuté, payé ou lié à une plainte justifie une dépense :
+   on l'archive au lieu de le supprimer. */
+function quoteDeletionBlock(q, complaints) {
+  if (!q) return "Devis introuvable.";
+  if (q.status === "execute") return "Ce devis est exécuté : il justifie une dépense.";
+  if (q.status === "paye") return "Ce devis est payé : il justifie une dépense.";
+  const n = (complaints || []).filter((c) => c.quoteId === q.id).length;
+  if (n) return `Ce devis est lié à ${n} plainte${n > 1 ? "s" : ""}.`;
+  return "";
+}
+
 /* Lignes d'une seule période : jamais tronquées, et bien plus rapide */
 async function fetchPeriodLines(periodId) {
   const { data } = await supabase.from("rent_lines").select("*").eq("period_id", periodId).order("position");
@@ -1074,7 +1120,17 @@ const mProduct = (r) => ({ id: r.id, name: r.name, category: r.category, unit: r
 const mStockIn = (r) => ({ id: r.id, productId: r.product_id, qty: Number(r.qty), price: Number(r.unit_price), supplier: r.supplier, date: r.entry_date, notes: r.notes, createdBy: r.created_by });
 const mRelease = (r) => ({ id: r.id, ref: r.ref, propertyId: r.property_id, releasedTo: r.released_to, releasedBy: r.released_by, purpose: r.purpose, date: r.release_date, zone: r.zone, notes: r.notes, createdAt: Date.parse(r.created_at) });
 const mRelLine = (r) => ({ id: r.id, releaseId: r.release_id, productId: r.product_id, qty: Number(r.qty), price: Number(r.unit_price) });
-const mQuote   = (r) => ({ id: r.id, ref: r.ref, artisanName: r.artisan_name, trade: r.artisan_trade, phone: r.artisan_phone, propertyId: r.property_id, ownerId: r.owner_id, date: r.quote_date, source: r.source, object: r.object, total: Number(r.total_amount), status: r.status, notes: r.notes, recordedBy: r.recorded_by, createdAt: Date.parse(r.created_at) });
+const mQuote   = (r) => ({ id: r.id, ref: r.ref, artisanName: r.artisan_name, trade: r.artisan_trade, phone: r.artisan_phone,
+  companyName: r.company_name || "", propertyId: r.property_id, unitId: r.unit_id, ownerId: r.owner_id, date: r.quote_date,
+  source: r.source, object: r.object, description: r.description || "", status: r.status, notes: r.notes,
+  vatApplicable: !!r.vat_applicable, vatRate: r.vat_rate === null || r.vat_rate === undefined ? 18 : Number(r.vat_rate),
+  amountHt: r.amount_ht === null || r.amount_ht === undefined ? Number(r.total_amount) || 0 : Number(r.amount_ht),
+  amountVat: Number(r.amount_vat) || 0,
+  /* Le total affiché partout (listes, statistiques) est le TTC */
+  total: r.amount_ttc === null || r.amount_ttc === undefined ? Number(r.total_amount) || 0 : Number(r.amount_ttc),
+  fileUrl: r.file_url || "", filePath: r.file_path || "", fileName: r.file_name || "", fileType: r.file_type || "",
+  archived: !!r.archived, archivedAt: r.archived_at, archivedBy: r.archived_by, archiveReason: r.archive_reason || "",
+  recordedBy: r.recorded_by, createdAt: Date.parse(r.created_at) });
 const mQLine   = (r) => ({ id: r.id, quoteId: r.quote_id, label: r.label, qty: Number(r.qty), unit: r.unit, price: Number(r.unit_price), position: r.position });
 const mUnit    = (r) => ({ id: r.id, propertyId: r.property_id, label: r.label, kind: r.kind, floor: r.floor, rooms: r.rooms, surface: r.surface_m2, rent: Number(r.rent_amount), charges: Number(r.charges_amount), status: r.status, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, leaseStart: r.lease_start, notes: r.notes, tenantEmail: r.tenant_email || "", leaseEnd: r.lease_end, dueDay: r.due_day || 5, deposit: Number(r.deposit) || 0, advanceMonths: Number(r.advance_months) || 0, advanceStart: r.advance_start, arrearsAmount: Number(r.arrears_amount) || 0, arrearsMonths: Number(r.arrears_months) || 0, arrearsNote: r.arrears_note || "" });
 const mPeriod  = (r) => ({ id: r.id, propertyId: r.property_id, period: r.period, scope: r.scope, rate: Number(r.agency_rate), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
@@ -1114,6 +1170,7 @@ function useStore(userId) {
   const [releases, setReleases] = useState([]);
   const [releaseLines, setReleaseLines] = useState([]);
   const [quotes, setQuotes] = useState([]);
+  const activeQuotes = useMemo(() => quotes.filter((q) => !q.archived), [quotes]);
   const [quoteLines, setQuoteLines] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [documents, setDocuments] = useState([]);
@@ -1152,8 +1209,8 @@ function useStore(userId) {
       supabase.from("stock_entries").select("*"),
       supabase.from("material_releases").select("*").order("release_date", { ascending: false }),
       supabase.from("material_release_lines").select("*"),
-      supabase.from("quotes").select("*").order("quote_date", { ascending: false }),
-      supabase.from("quote_lines").select("*").order("position"),
+      fetchAll("quotes", { col: "quote_date", asc: false }),
+      fetchAll("quote_lines", { col: "position" }),
       supabase.from("task_templates").select("*").order("sort_order"),
       fetchAll("documents", { col: "doc_date", asc: false }),
       fetchAll("units", { col: "label" }),
@@ -1560,45 +1617,102 @@ function useStore(userId) {
   };
 
   /* ================= ACTIONS : DEVIS ARTISANS ================= */
-  const saveQuote = async (f, lines) => {
+  /* Enregistrement d'un devis — création OU modification du même devis.
+     Ordre sûr : les nouvelles lignes sont écrites AVANT que les anciennes
+     soient retirées ; un échec en cours de route ne vide jamais le devis. */
+  const saveQuote = async (f, lines, file) => {
+    const errs = validateQuote(f, lines, file);
+    if (errs.length) return { error: errs.join(" ") };
+    const vraies = lines.filter((l) => (l.label || "").trim());
+    const m = quoteAmounts(vraies, f.vatApplicable, f.vatRate);
+    const row = { artisan_name: f.artisanName.trim(), artisan_trade: f.trade || "", artisan_phone: f.phone || "",
+      company_name: f.companyName || "", property_id: f.propertyId || null, unit_id: f.unitId || null,
+      owner_id: f.ownerId || null, quote_date: f.date, source: f.source, object: f.object || "",
+      description: f.description || "", status: f.status, notes: f.notes || "",
+      vat_applicable: !!f.vatApplicable, vat_rate: Number(f.vatRate) || 0,
+      amount_ht: m.ht, amount_vat: m.vat, amount_ttc: m.ttc };
+
     let quoteId = f.id;
-    const row = { artisan_name: f.artisanName, artisan_trade: f.trade || "", artisan_phone: f.phone || "",
-      property_id: f.propertyId || null, owner_id: f.ownerId || null, quote_date: f.date,
-      source: f.source, object: f.object || "", status: f.status, notes: f.notes || "" };
     if (quoteId) {
-      const { error } = await supabase.from("quotes").update(row).eq("id", quoteId);
+      const { data, error } = await supabase.from("quotes").update(row).eq("id", quoteId).select().single();
       if (error) return { error: error.message };
-      await supabase.from("quote_lines").delete().eq("quote_id", quoteId);
+      if (!data) return { error: "Devis introuvable : il a peut-être été supprimé entre-temps. Actualisez la page." };
     } else {
-      const { data, error } = await supabase.from("quotes")
-        .insert({ ...row, recorded_by: userId }).select().single();
+      const { data, error } = await supabase.from("quotes").insert({ ...row, recorded_by: userId }).select().single();
       if (error) return { error: error.message };
       quoteId = data.id;
-      setQuotes((p) => p.some((x) => x.id === data.id) ? p : [mQuote(data), ...p]);
     }
-    const payload = lines.filter((l) => (l.label || "").trim())
-      .map((l, i) => ({ quote_id: quoteId, label: l.label, qty: Number(l.qty) || 1, unit: l.unit || "u",
-        unit_price: Number(l.price) || 0, position: i }));
-    if (payload.length) {
-      const { error } = await supabase.from("quote_lines").insert(payload);
-      if (error) return { error: error.message };
+
+    /* Lignes de travaux */
+    const { data: anciennes } = await supabase.from("quote_lines").select("id").eq("quote_id", quoteId);
+    const payload = vraies.map((l, i) => ({ quote_id: quoteId, label: l.label.trim(),
+      qty: Number(l.qty), unit: l.unit || "u", unit_price: Number(l.price), position: i }));
+    const ins = await supabase.from("quote_lines").insert(payload);
+    if (ins.error) { await refreshQuotes(); return { error: "Les lignes n'ont pas pu être enregistrées ; l'ancien détail est conservé. " + ins.error.message }; }
+    const ids = (anciennes || []).map((x) => x.id);
+    if (ids.length) await supabase.from("quote_lines").delete().in("id", ids);
+
+    /* Pièce jointe : le nouveau fichier est envoyé d'abord ; l'ancien n'est
+       effacé qu'une fois le nouveau bien rattaché au devis. */
+    let avertissement = "";
+    if (file) {
+      const path = `${quoteId}/${Date.now()}-${file.name.replace(/[^\w.\-]/g, "_")}`;
+      const up = await supabase.storage.from("devis").upload(path, file, { upsert: false, contentType: file.type });
+      if (up.error) avertissement = "Devis enregistré, mais la pièce jointe n'a pas pu être envoyée : " + up.error.message;
+      else {
+        const { data: pub } = supabase.storage.from("devis").getPublicUrl(path);
+        const e2 = (await supabase.from("quotes").update({ file_url: pub.publicUrl, file_path: path,
+          file_name: file.name, file_type: file.type }).eq("id", quoteId)).error;
+        if (e2) { await supabase.storage.from("devis").remove([path]); avertissement = "Devis enregistré, mais la pièce jointe n'a pas pu être rattachée : " + e2.message; }
+        else if (f.filePath && f.filePath !== path) await supabase.storage.from("devis").remove([f.filePath]);
+      }
+    } else if (f._removeFile && f.filePath) {
+      const e3 = (await supabase.from("quotes").update({ file_url: "", file_path: "", file_name: "", file_type: "" }).eq("id", quoteId)).error;
+      if (!e3) await supabase.storage.from("devis").remove([f.filePath]);
     }
+
     await refreshQuotes();
-    return { error: null, id: quoteId };
+    return { id: quoteId, warning: avertissement || undefined,
+      message: f.id ? "Devis modifié avec succès" : "Devis enregistré avec succès" };
   };
   const refreshQuotes = async () => {
     const [q, l] = await Promise.all([
-      supabase.from("quotes").select("*").order("quote_date", { ascending: false }),
-      supabase.from("quote_lines").select("*").order("position"),
+      fetchAll("quotes", { col: "quote_date", asc: false }),
+      fetchAll("quote_lines", { col: "position" }),
     ]);
     if (q.data) setQuotes(q.data.map(mQuote));
     if (l.data) setQuoteLines(l.data.map(mQLine));
   };
-  const setQuoteStatus = async (id, status) => { await supabase.from("quotes").update({ status }).eq("id", id); };
+  const setQuoteStatus = async (id, status) => {
+    const { data, error } = await supabase.from("quotes").update({ status }).eq("id", id).select().single();
+    if (error) return { error: error.message };
+    if (data) setQuotes((p) => p.map((x) => (x.id === id ? mQuote(data) : x)));
+    return { message: `Statut mis à jour : ${QUOTE_STATUS[status]?.label || status}` };
+  };
+  /* Suppression définitive : contrôlée par la base (delete_quote_safe) */
   const deleteQuote = async (id) => {
-    const { error } = await supabase.from("quotes").delete().eq("id", id);
-    if (!error) await refreshQuotes();
-    return { error: error?.message };
+    const { data, error } = await supabase.rpc("delete_quote_safe", { q_id: id });
+    if (error) return { error: error.message };
+    if (data) await supabase.storage.from("devis").remove([data]);
+    setQuotes((p) => p.filter((x) => x.id !== id));
+    setQuoteLines((p) => p.filter((l) => l.quoteId !== id));
+    return { message: "Devis supprimé avec succès" };
+  };
+  /* Suppression logique : le devis sort des listes et des statistiques,
+     mais reste consultable et restaurable (il justifie une dépense). */
+  const archiveQuote = async (id, reason = "") => {
+    const { data, error } = await supabase.from("quotes").update({ archived: true,
+      archived_at: new Date().toISOString(), archived_by: userId, archive_reason: reason || "" }).eq("id", id).select().single();
+    if (error) return { error: error.message };
+    if (data) setQuotes((p) => p.map((x) => (x.id === id ? mQuote(data) : x)));
+    return { message: "Devis archivé avec succès" };
+  };
+  const restoreQuote = async (id) => {
+    const { data, error } = await supabase.from("quotes").update({ archived: false, archived_at: null,
+      archived_by: null, archive_reason: "" }).eq("id", id).select().single();
+    if (error) return { error: error.message };
+    if (data) setQuotes((p) => p.map((x) => (x.id === id ? mQuote(data) : x)));
+    return { message: "Devis restauré" };
   };
 
   /* ================= ACTIONS : LOTS ================= */
@@ -2212,7 +2326,10 @@ function useStore(userId) {
 
   return {
     loading, departments, members, tasks, timeEntries, activeTimers, channels, channelMembers, messages,
-    owners, properties, products, stockEntries, releases, releaseLines, quotes, quoteLines, templates, documents,
+    owners, properties, products, stockEntries, releases, releaseLines,
+    /* « quotes » exclut les archivés : statistiques, tableau de bord, sélecteurs
+       et fiches existants les ignorent sans autre modification. */
+    quotes: activeQuotes, quotesAll: quotes, quoteLines, templates, documents,
     units, rentPeriods, rentLines, rentCharges, requests, taxRecords, complaints, folderFiles,
     cashEntries, handovers, formerTenants, prospects, prospected, weeklyReports,
     actions: {
@@ -2220,7 +2337,7 @@ function useStore(userId) {
       ensureDm, sendMessage, markRead, saveDept, deleteDept, updateProfile, adminUsers,
       saveOwner, deleteOwner, saveProperty, deleteProperty,
       saveProduct, deleteProduct, addStockEntry, saveRelease, deleteRelease,
-      saveQuote, setQuoteStatus, deleteQuote,
+      saveQuote, setQuoteStatus, deleteQuote, archiveQuote, restoreQuote,
       saveDocument, setDocumentStatus, deleteDocument,
       saveUnit, deleteUnit, bulkCreateUnits,
       savePeriod, deletePeriod, savePeriodContent, setPeriodStatus,
@@ -3277,35 +3394,58 @@ function Documents({ store, me }) {
    MODULE DEVIS ARTISANS
    ══════════════════════════════════════════════════════════════════════ */
 /* ---------------- Modale de saisie ---------------- */
-function QuoteModal({ initial, initialLines, properties, owners, onSave, onClose }) {
+function QuoteModal({ initial, initialLines, properties, owners, units = [], locked = false, onSave, onClose }) {
   const [f, setF] = useState(() => ({
-    artisanName: "", trade: "", phone: "", propertyId: "", ownerId: "", date: isoDate(new Date()),
-    source: "whatsapp", object: "", status: "recu", notes: "", ...initial,
+    artisanName: "", trade: "", phone: "", companyName: "", propertyId: "", unitId: "", ownerId: "",
+    date: isoDate(new Date()), source: "whatsapp", object: "", description: "", status: "recu", notes: "",
+    vatApplicable: false, vatRate: 18, ...initial,
   }));
-  const [lines, setLines] = useState(() => initialLines?.length ? initialLines : [{ label: "", qty: 1, unit: "u", price: 0 }]);
-  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const [lines, setLines] = useState(() => initialLines?.length
+    ? initialLines.map((l) => ({ ...l })) : [{ label: "", qty: 1, unit: "u", price: 0 }]);
+  const [file, setFile] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [errs, setErrs] = useState([]);
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
-  const setLine = (i, k, v) => setLines((p) => p.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
+  const unitsOfProp = units.filter((u) => u.propertyId === f.propertyId);
 
-  /* auto-remplissage du propriétaire depuis le bien */
   const pickProperty = (id) => {
     const prop = properties.find((p) => p.id === id);
-    setF((s) => ({ ...s, propertyId: id, ownerId: prop?.ownerId || s.ownerId }));
+    setF((s) => ({ ...s, propertyId: id, unitId: "", ownerId: prop?.ownerId || s.ownerId }));
+  };
+  const pickFile = (fl) => {
+    if (!fl) return;
+    const e = validateQuote({ ...f, artisanName: f.artisanName || "x", date: f.date }, [{ label: "x", qty: 1, price: 0 }], fl)
+      .filter((x) => /Pièce jointe/.test(x));
+    if (e.length) { setErrs(e); return; }
+    setErrs([]); setFile(fl);
   };
 
-  const total = lines.reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.price) || 0), 0);
-  const valid = f.artisanName.trim() && lines.some((l) => (l.label || "").trim());
-  const submit = async () => { setBusy(true); const r = await onSave(f, lines); setBusy(false); if (r?.error) setErr(r.error); else onClose(); };
+  const m = quoteAmounts(lines, f.vatApplicable, f.vatRate);
+  const submit = async () => {
+    const e = validateQuote(f, lines, file);
+    if (e.length) { setErrs(e); return; }
+    setErrs([]); setBusy(true);
+    const r = await onSave(f, lines, file);
+    setBusy(false);
+    if (r?.error) { setErrs([r.error]); return; }
+    onClose(r);
+  };
 
   return (
-    <Modal title={f.id ? `Devis ${f.ref || ""}` : "Reproduire un devis artisan"} onClose={onClose} wide>
-      <div className="rounded-lg p-3 mb-4 text-xs" style={{ background: "#F6F8FA", color: "var(--muted)" }}>
-        Recopiez ici le devis reçu sur papier ou par WhatsApp. L'artisan reste l'auteur du devis : son nom est conservé comme <strong>paternité</strong>, et la fiche sert de justificatif au propriétaire.
+    <Modal title={f.id ? `Modifier le devis ${f.ref || ""}` : "Nouveau devis artisan"} onClose={() => onClose()} wide>
+      {locked && (
+        <div className="rounded-lg p-3 mb-3 text-xs flex items-start gap-2" style={{ background: "#FFF8EC", color: "#8A6212", border: "1px solid #F3E2C6" }}>
+          <Lock size={14} className="mt-0.5 shrink-0" />
+          <span>Ce devis est <strong>payé</strong> : seul un administrateur peut le modifier. Les informations sont affichées en lecture seule.</span>
+        </div>
+      )}
+      <fieldset disabled={locked} style={{ border: "none", padding: 0, margin: 0 }}>
+      <p className="text-xs font-semibold mb-2" style={{ color: "var(--brass)" }}>ARTISAN</p>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Nom de l'artisan *"><input className={inputCls} style={inputStyle} value={f.artisanName} autoFocus onChange={(e) => set("artisanName", e.target.value)} placeholder="Ex. M. TRAORÉ Ibrahim" /></Field>
+        <Field label="Nom de l'entreprise"><input className={inputCls} style={inputStyle} value={f.companyName} onChange={(e) => set("companyName", e.target.value)} placeholder="Ex. TRAORÉ Plomberie Services" /></Field>
       </div>
-
-      <p className="text-xs font-semibold mb-2" style={{ color: "var(--ink)" }}>Auteur du devis</p>
-      <div className="grid sm:grid-cols-3 gap-3">
-        <Field label="Nom de l'artisan"><input className={inputCls} style={inputStyle} value={f.artisanName} autoFocus onChange={(e) => set("artisanName", e.target.value)} placeholder="Ex. M. TRAORÉ Ibrahim" /></Field>
+      <div className="grid sm:grid-cols-2 gap-3">
         <Field label="Corps de métier">
           <input list="trades-list" className={inputCls} style={inputStyle} value={f.trade} onChange={(e) => set("trade", e.target.value)} placeholder="Plomberie…" />
           <datalist id="trades-list">{TRADES.map((t) => <option key={t} value={t} />)}</datalist>
@@ -3313,43 +3453,95 @@ function QuoteModal({ initial, initialLines, properties, owners, onSave, onClose
         <Field label="Téléphone"><input className={inputCls} style={inputStyle} value={f.phone} onChange={(e) => set("phone", e.target.value)} placeholder="+225 07 ..." /></Field>
       </div>
 
-      <p className="text-xs font-semibold mb-2 mt-1" style={{ color: "var(--ink)" }}>Rattachement</p>
-      <div className="grid sm:grid-cols-2 gap-3">
+      <p className="text-xs font-semibold mb-2 mt-1" style={{ color: "var(--brass)" }}>RATTACHEMENT</p>
+      <div className="grid sm:grid-cols-3 gap-3">
         <Field label="Bien concerné">
           <select className={inputCls} style={inputStyle} value={f.propertyId || ""} onChange={(e) => pickProperty(e.target.value)}>
             <option value="">— Non rattaché —</option>
             {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </Field>
-        <Field label="Propriétaire (dossier)" hint="Rempli automatiquement depuis le bien">
+        <Field label="Appartement / local" hint={!f.propertyId ? "Choisir un bien d'abord" : "Facultatif — parties communes si vide"}>
+          <select className={inputCls} style={inputStyle} value={f.unitId || ""} disabled={!f.propertyId} onChange={(e) => set("unitId", e.target.value)}>
+            <option value="">— Bien entier / parties communes —</option>
+            {unitsOfProp.map((u) => <option key={u.id} value={u.id}>{u.label}{u.tenantName ? ` — ${u.tenantName}` : ""}</option>)}
+          </select>
+        </Field>
+        <Field label="Propriétaire" hint="Rempli depuis le bien">
           <select className={inputCls} style={inputStyle} value={f.ownerId || ""} onChange={(e) => set("ownerId", e.target.value)}>
             <option value="">— Non rattaché —</option>
             {owners.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
           </select>
         </Field>
       </div>
+
+      <p className="text-xs font-semibold mb-2 mt-1" style={{ color: "var(--brass)" }}>DEVIS</p>
       <div className="grid sm:grid-cols-3 gap-3">
-        <Field label="Date du devis"><input type="date" className={inputCls} style={inputStyle} value={f.date} onChange={(e) => set("date", e.target.value)} /></Field>
+        <Field label="Date du devis *"><input type="date" className={inputCls} style={inputStyle} value={f.date} onChange={(e) => set("date", e.target.value)} /></Field>
         <Field label="Reçu par"><select className={inputCls} style={inputStyle} value={f.source} onChange={(e) => set("source", e.target.value)}>{Object.entries(QUOTE_SOURCE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
         <Field label="Statut"><select className={inputCls} style={inputStyle} value={f.status} onChange={(e) => set("status", e.target.value)}>{QUOTE_STATUS_ORDER.map((k) => <option key={k} value={k}>{QUOTE_STATUS[k].label}</option>)}</select></Field>
       </div>
       <Field label="Objet des travaux"><input className={inputCls} style={inputStyle} value={f.object} onChange={(e) => set("object", e.target.value)} placeholder="Ex. Réfection plomberie salle de bain 2e étage" /></Field>
+      <Field label="Description des travaux"><textarea className={inputCls} style={inputStyle} rows={2} value={f.description} onChange={(e) => set("description", e.target.value)} placeholder="Nature de l'intervention, constat, méthode…" /></Field>
 
-      <p className="text-xs font-semibold mb-2 mt-1" style={{ color: "var(--ink)" }}>Détail du devis</p>
+      <p className="text-xs font-semibold mb-2 mt-1" style={{ color: "var(--brass)" }}>LIGNES DE TRAVAUX *</p>
       <LineEditor lines={lines} setLines={setLines} labelPlaceholder="Ex. Fourniture et pose de robinetterie" />
-      <div className="mb-3" />
+
+      {/* Montants recalculés à chaque frappe */}
+      <div className="rounded-xl p-3 mt-3 mb-3" style={{ background: "#F6F8FA" }}>
+        <div className="flex items-center gap-3 flex-wrap mb-2">
+          <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+            <input type="checkbox" checked={!!f.vatApplicable} onChange={(e) => set("vatApplicable", e.target.checked)} /> Soumis à TVA
+          </label>
+          {f.vatApplicable && (
+            <span className="flex items-center gap-1 text-xs">
+              Taux <input type="number" min={0} max={100} step={0.5} className="w-16 px-2 py-1 rounded border text-xs text-right" style={inputStyle}
+                value={f.vatRate} onChange={(e) => set("vatRate", e.target.value)} /> %
+            </span>
+          )}
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div><p className="text-[11px]" style={{ color: "var(--muted)" }}>Montant HT</p><p className="font-semibold tabular-nums">{fcfa(m.ht)}</p></div>
+          <div><p className="text-[11px]" style={{ color: "var(--muted)" }}>TVA{f.vatApplicable ? ` (${f.vatRate} %)` : ""}</p><p className="font-semibold tabular-nums">{fcfa(m.vat)}</p></div>
+          <div><p className="text-[11px]" style={{ color: "var(--muted)" }}>Montant TTC</p><p className="text-lg font-bold tabular-nums" style={{ color: "var(--brass)" }}>{fcfa(m.ttc)}</p></div>
+        </div>
+      </div>
+
       <Field label="Observations"><textarea className={inputCls} style={inputStyle} rows={2} value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Conditions, délai annoncé, garantie…" /></Field>
-      {err && <p className="text-xs text-red-600 mb-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
+
+      <Field label="Devis original (PDF ou photo, 10 Mo maximum)">
+        <div className="flex items-center gap-2 flex-wrap">
+          {f.fileUrl && !f._removeFile && !file && (
+            <span className="flex items-center gap-1.5 text-xs rounded-lg px-2 py-1.5" style={{ background: "#EFF6FF", color: "#1F5C82" }}>
+              <Paperclip size={12} /> <a href={f.fileUrl} target="_blank" rel="noreferrer" className="underline">{f.fileName || "fichier joint"}</a>
+              <button type="button" onClick={() => set("_removeFile", true)} className="ml-1 text-slate-400 hover:text-red-500" title="Retirer le fichier"><X size={12} /></button>
+            </span>
+          )}
+          {file && <span className="text-xs rounded-lg px-2 py-1.5" style={{ background: "#EAF6E3", color: "#3d7d20" }}><Paperclip size={12} className="inline" /> {file.name} — {(file.size / 1048576).toFixed(1)} Mo {f.fileUrl ? "(remplacera l'actuel)" : ""}</span>}
+          <label className="kb-btn kb-btn-ghost text-xs cursor-pointer">
+            <Upload size={13} /> {f.fileUrl || file ? "Remplacer" : "Joindre un fichier"}
+            <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ""; }} />
+          </label>
+        </div>
+      </Field>
+      </fieldset>
+
+      {errs.length > 0 && (
+        <div className="rounded-lg border p-3 mb-3" style={{ borderColor: "#F5C6C7", background: "#FDF2F2" }}>
+          <p className="text-xs font-semibold mb-1" style={{ color: "#B5171D" }}><AlertTriangle size={13} className="inline mb-0.5" /> À corriger avant d'enregistrer :</p>
+          {errs.map((e, i) => <p key={i} className="text-xs" style={{ color: "#B5171D" }}>• {e}</p>)}
+        </div>
+      )}
       <div className="flex justify-end gap-2">
-        <button onClick={onClose} className="kb-btn kb-btn-ghost">Annuler</button>
-        <button disabled={!valid || busy} onClick={submit} className="kb-btn kb-btn-primary disabled:opacity-40"><Check size={16} /> {busy ? "…" : "Enregistrer le devis"}</button>
+        <button onClick={() => onClose()} className="kb-btn kb-btn-ghost">{locked ? "Fermer" : "Annuler"}</button>
+        {!locked && <button disabled={busy} onClick={submit} className="kb-btn kb-btn-primary disabled:opacity-40"><Check size={16} /> {busy ? "Enregistrement…" : f.id ? "Enregistrer les modifications" : "Enregistrer le devis"}</button>}
       </div>
     </Modal>
   );
 }
 
 /* ---------------- Fiche imprimable ---------------- */
-function QuoteSheet({ quote, lines, property, owner, recorder, onBack }) {
+function QuoteSheet({ quote, lines, property, owner, unit, recorder, onBack }) {
   const st = QUOTE_STATUS[quote.status];
   return (
     <div>
@@ -3367,13 +3559,14 @@ function QuoteSheet({ quote, lines, property, owner, recorder, onBack }) {
           <div>
             <p className="text-[11px] font-semibold uppercase mb-1" style={{ color: "var(--muted)" }}>Auteur du devis</p>
             <p className="text-sm font-semibold">{quote.artisanName}</p>
+            {quote.companyName && <p className="text-xs font-medium">{quote.companyName}</p>}
             {quote.trade && <p className="text-xs" style={{ color: "var(--muted)" }}>{quote.trade}</p>}
             {quote.phone && <p className="text-xs" style={{ color: "var(--muted)" }}>{quote.phone}</p>}
             <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>Devis transmis par : {QUOTE_SOURCE[quote.source]}</p>
           </div>
           <div>
             <p className="text-[11px] font-semibold uppercase mb-1" style={{ color: "var(--muted)" }}>Dossier</p>
-            {property && <p className="text-sm font-semibold">{property.name}</p>}
+            {property && <p className="text-sm font-semibold">{property.name}{unit ? ` — ${unit.label}` : ""}</p>}
             {property && <p className="text-xs" style={{ color: "var(--muted)" }}>{[property.quartier, property.commune].filter(Boolean).join(", ")}</p>}
             {owner && <p className="text-xs mt-1">Propriétaire : <strong>{owner.name}</strong></p>}
             {!property && !owner && <p className="text-xs" style={{ color: "var(--muted)" }}>Non rattaché</p>}
@@ -3383,6 +3576,10 @@ function QuoteSheet({ quote, lines, property, owner, recorder, onBack }) {
         {quote.object && <div className="pb-3">
           <p className="text-[11px] font-semibold uppercase mb-1" style={{ color: "var(--muted)" }}>Objet des travaux</p>
           <p className="text-sm">{quote.object}</p>
+        </div>}
+        {quote.description && <div className="pb-3">
+          <p className="text-[11px] font-semibold uppercase mb-1" style={{ color: "var(--muted)" }}>Description des travaux</p>
+          <p className="text-sm whitespace-pre-wrap">{quote.description}</p>
         </div>}
 
         <table className="w-full text-sm mb-4">
@@ -3402,14 +3599,29 @@ function QuoteSheet({ quote, lines, property, owner, recorder, onBack }) {
               <td className="px-3 py-2 text-right font-medium">{fcfa(l.qty * l.price)}</td>
             </tr>
           ))}</tbody>
-          <tfoot><tr>
-            <td colSpan={4} className="px-3 py-3 text-right font-semibold">TOTAL</td>
-            <td className="px-3 py-3 text-right text-lg font-bold" style={{ color: "var(--brass)" }}>{fcfa(quote.total)}</td>
-          </tr></tfoot>
+          <tfoot>
+            <tr>
+              <td colSpan={4} className="px-3 py-1.5 text-right" style={{ color: "var(--muted)" }}>Montant HT</td>
+              <td className="px-3 py-1.5 text-right font-medium tabular-nums">{fcfa(quote.amountHt)}</td>
+            </tr>
+            {quote.vatApplicable && <tr>
+              <td colSpan={4} className="px-3 py-1.5 text-right" style={{ color: "var(--muted)" }}>TVA ({quote.vatRate} %)</td>
+              <td className="px-3 py-1.5 text-right font-medium tabular-nums">{fcfa(quote.amountVat)}</td>
+            </tr>}
+            <tr>
+              <td colSpan={4} className="px-3 py-3 text-right font-semibold">{quote.vatApplicable ? "TOTAL TTC" : "TOTAL (non soumis à TVA)"}</td>
+              <td className="px-3 py-3 text-right text-lg font-bold" style={{ color: "var(--brass)" }}>{fcfa(quote.total)}</td>
+            </tr>
+          </tfoot>
         </table>
 
         {quote.total > 0 && <p className="text-sm italic mb-4">Arrêté le présent devis à la somme de <strong>{amountInWords(quote.total)}</strong>.</p>}
 
+        {quote.fileUrl && <p className="text-[11px] mb-3 print:hidden">
+          <Paperclip size={11} className="inline" /> Devis original : <a href={quote.fileUrl} target="_blank" rel="noreferrer" className="underline" style={{ color: "#2E78A8" }}>{quote.fileName || "ouvrir"}</a>
+        </p>}
+        {quote.fileUrl && <p className="text-[10px] mb-3 hidden print:block" style={{ color: "var(--muted)" }}>Devis original de l'artisan joint au dossier : {quote.fileName}</p>}
+        {quote.archived && <p className="text-xs mb-3 font-semibold" style={{ color: "#8A6212" }}>DEVIS ARCHIVÉ{quote.archiveReason ? ` — ${quote.archiveReason}` : ""}</p>}
         {quote.notes && <div className="mb-4">
           <p className="text-[11px] font-semibold uppercase mb-1" style={{ color: "var(--muted)" }}>Observations</p>
           <p className="text-sm whitespace-pre-wrap">{quote.notes}</p>
@@ -3427,9 +3639,80 @@ function QuoteSheet({ quote, lines, property, owner, recorder, onBack }) {
   );
 }
 
+/* ---------------- Suppression d'un devis : confirmation claire ---------------- */
+function QuoteDeleteModal({ quote, block, canDelete, onDelete, onArchive, onClose }) {
+  const [reason, setReason] = useState("");
+  const [armed, setArmed] = useState(false);          // double validation contre le clic accidentel
+  const [busy, setBusy] = useState(false);
+  const go = async (fn) => { setBusy(true); await fn(); setBusy(false); };
+  return (
+    <Modal title={`Supprimer le devis ${quote.ref}`} onClose={onClose}>
+      <div className="rounded-lg p-3 mb-3 text-sm" style={{ background: "#F6F8FA" }}>
+        <p className="font-medium">{quote.object || "Travaux non précisés"}</p>
+        <p className="text-xs" style={{ color: "var(--muted)" }}>{quote.artisanName}{quote.companyName ? ` — ${quote.companyName}` : ""} · {fcfa(quote.total)} · {QUOTE_STATUS[quote.status]?.label}</p>
+      </div>
+
+      {block ? (<>
+        <div className="rounded-lg p-3 mb-3 text-xs flex items-start gap-2" style={{ background: "#FFF8EC", color: "#8A6212", border: "1px solid #F3E2C6" }}>
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span><strong>Suppression impossible.</strong> {block} Il doit rester consultable : vous pouvez l'<strong>archiver</strong>. Il disparaîtra des listes et des statistiques, sans être détruit, et pourra être restauré.</span>
+        </div>
+        <Field label="Motif de l'archivage (facultatif)"><input className={inputCls} style={inputStyle} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ex. saisi en double, remplacé par DV-2026-014…" /></Field>
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="kb-btn kb-btn-ghost">Annuler</button>
+          <button disabled={busy} onClick={() => go(() => onArchive(reason))} className="kb-btn text-sm" style={{ background: "#C58A1B", color: "#fff" }}><Archive size={15} /> Archiver le devis</button>
+        </div>
+      </>) : !canDelete ? (<>
+        <p className="text-sm mb-3">Seuls la direction et les administrateurs peuvent supprimer un devis. Vous pouvez en revanche l'archiver.</p>
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="kb-btn kb-btn-ghost">Annuler</button>
+          <button disabled={busy} onClick={() => go(() => onArchive(reason))} className="kb-btn text-sm" style={{ background: "#C58A1B", color: "#fff" }}><Archive size={15} /> Archiver</button>
+        </div>
+      </>) : (<>
+        <p className="text-sm font-semibold mb-1" style={{ color: "#B5171D" }}>Voulez-vous vraiment supprimer ce devis ? Cette action peut être irréversible.</p>
+        <p className="text-xs mb-3" style={{ color: "var(--muted)" }}>Seront supprimés : ce devis, ses lignes de travaux{quote.fileName ? " et son fichier joint" : ""}. Aucun autre devis n'est concerné. Si vous voulez seulement le retirer des listes, préférez l'archivage.</p>
+        <label className="flex items-center gap-2 text-xs mb-3 cursor-pointer">
+          <input type="checkbox" checked={armed} onChange={(e) => setArmed(e.target.checked)} />
+          Je confirme la suppression définitive de {quote.ref}
+        </label>
+        <div className="flex justify-between gap-2 flex-wrap">
+          <button disabled={busy} onClick={() => go(() => onArchive(reason))} className="kb-btn kb-btn-ghost text-sm"><Archive size={14} /> Archiver plutôt</button>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="kb-btn kb-btn-ghost">Annuler</button>
+            <button disabled={!armed || busy} onClick={() => go(onDelete)} className="kb-btn text-sm disabled:opacity-40" style={{ background: "#D81F26", color: "#fff" }}><Trash2 size={15} /> Supprimer définitivement</button>
+          </div>
+        </div>
+      </>)}
+    </Modal>
+  );
+}
+
+/* Petite notification temporaire en bas de l'écran */
+function Toast({ toast, onDone }) {
+  useEffect(() => { if (!toast) return undefined; const t = setTimeout(onDone, 4500); return () => clearTimeout(t); }, [toast]);
+  if (!toast) return null;
+  const err = toast.kind === "error", warn = toast.kind === "warning";
+  return (
+    <div className="fixed bottom-4 left-1/2 z-50 rounded-xl px-4 py-2.5 text-sm shadow-lg flex items-center gap-2 print:hidden"
+      style={{ transform: "translateX(-50%)", maxWidth: "92vw", background: err ? "#FDF2F2" : warn ? "#FFF8EC" : "#EAF6E3",
+        color: err ? "#B5171D" : warn ? "#8A6212" : "#2F6B17", border: `1px solid ${err ? "#F5C6C7" : warn ? "#F3E2C6" : "#BBE3A6"}` }}>
+      {err || warn ? <AlertTriangle size={15} /> : <CheckCircle2 size={15} />} <span>{toast.text}</span>
+      <button onClick={onDone} className="ml-1 opacity-60 hover:opacity-100"><X size={13} /></button>
+    </div>
+  );
+}
+
 /* ---------------- Vue principale ---------------- */
 function Devis({ store, me }) {
   const { quotes, quoteLines, properties, owners, members, actions } = store;
+  const quotesAll = store.quotesAll || quotes;
+  const units = store.units || [];
+  const complaints = store.complaints || [];
+  const [showArchived, setShowArchived] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [delTarget, setDelTarget] = useState(null);
+  const notify2 = (r, okText) => setToast(r?.error ? { kind: "error", text: r.error }
+    : r?.warning ? { kind: "warning", text: r.warning } : { kind: "ok", text: r?.message || okText });
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterProp, setFilterProp] = useState("all");
@@ -3441,20 +3724,20 @@ function Devis({ store, me }) {
   const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
   const sup = canSupervise(me.role);
 
-  const sheet = quotes.find((q) => q.id === sheetId);
+  const sheet = quotesAll.find((q) => q.id === sheetId);
   if (sheet) {
     return <QuoteSheet quote={sheet} lines={quoteLines.filter((l) => l.quoteId === sheet.id)}
-      property={propById[sheet.propertyId]} owner={ownerById[sheet.ownerId]}
+      property={propById[sheet.propertyId]} owner={ownerById[sheet.ownerId]} unit={units.find((u) => u.id === sheet.unitId)}
       recorder={memberById[sheet.recordedBy]} onBack={() => setSheetId(null)} />;
   }
 
-  const list = quotes.filter((q) =>
+  const archivedCount = quotesAll.filter((q) => q.archived).length;
+  const q0 = search.trim().toLowerCase();
+  const list = (showArchived ? quotesAll.filter((q) => q.archived) : quotes).filter((q) =>
     (filterStatus === "all" || q.status === filterStatus) &&
     (filterProp === "all" || q.propertyId === filterProp) &&
-    (!search || q.artisanName.toLowerCase().includes(search.toLowerCase()) ||
-      (q.object || "").toLowerCase().includes(search.toLowerCase()) ||
-      (q.ref || "").toLowerCase().includes(search.toLowerCase()) ||
-      (q.trade || "").toLowerCase().includes(search.toLowerCase())));
+    (!q0 || [q.artisanName, q.companyName, q.object, q.description, q.ref, q.trade, q.phone,
+      propById[q.propertyId]?.name, ownerById[q.ownerId]?.name].some((x) => (x || "").toLowerCase().includes(q0))));
 
   const engaged = quotes.filter((q) => ["valide", "execute", "paye"].includes(q.status)).reduce((a, q) => a + q.total, 0);
   const pending = quotes.filter((q) => ["recu", "en_validation"].includes(q.status));
@@ -3487,7 +3770,12 @@ function Devis({ store, me }) {
           <option value="all">Tous les biens</option>
           {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
+        <button onClick={() => setShowArchived((v) => !v)} className="kb-btn kb-btn-ghost text-sm"
+          style={showArchived ? { background: "#FFF8EC", color: "#8A6212" } : {}}>
+          <Archive size={14} /> {showArchived ? "Retour aux devis actifs" : `Archives (${archivedCount})`}
+        </button>
       </div>
+      {showArchived && <p className="text-xs mb-3" style={{ color: "#8A6212" }}>Devis archivés : exclus des listes et des statistiques, conservés pour justification. Ils peuvent être restaurés.</p>}
 
       {list.length ? <div className="space-y-2">
         {list.map((q) => {
@@ -3508,20 +3796,35 @@ function Devis({ store, me }) {
                     <span>· {fr(q.date + "T00:00:00", { day: "numeric", month: "short", year: "numeric" })}</span>
                   </p>
                   <div className="flex flex-wrap gap-1.5 mt-2">
-                    {prop && <Chip color="#2E78A8"><Building2 size={10} /> {prop.name}</Chip>}
+                    {q.companyName && <Chip color="#64748B">{q.companyName}</Chip>}
+                    {prop && <Chip color="#2E78A8"><Building2 size={10} /> {prop.name}{units.find((u) => u.id === q.unitId) ? ` · ${units.find((u) => u.id === q.unitId).label}` : ""}</Chip>}
                     {own && <Chip color="#DB2777"><UserRound size={10} /> {own.name}</Chip>}
+                    {q.fileUrl && <a href={q.fileUrl} target="_blank" rel="noreferrer" className="inline-flex"><Chip color="#0891B2"><Paperclip size={10} /> devis original</Chip></a>}
+                    {q.vatApplicable && <Chip color="#7C3AED">TVA {q.vatRate} %</Chip>}
+                    {q.archived && <Chip color="#C58A1B">Archivé{q.archiveReason ? ` — ${q.archiveReason}` : ""}</Chip>}
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-2 shrink-0">
                   <span className="text-base font-bold" style={{ color: "var(--brass)" }}>{fcfa(q.total)}</span>
-                  <select value={q.status} onChange={(e) => actions.setQuoteStatus(q.id, e.target.value)}
-                    className="text-xs px-2 py-1 rounded-lg border bg-white" style={{ borderColor: st.color + "55", color: st.color }}>
+                  <select value={q.status} disabled={q.archived || (q.status === "paye" && !isAdmin(me.role))}
+                    onChange={async (e) => notify2(await actions.setQuoteStatus(q.id, e.target.value))}
+                    className="text-xs px-2 py-1 rounded-lg border bg-white disabled:opacity-60" style={{ borderColor: st.color + "55", color: st.color }}>
                     {QUOTE_STATUS_ORDER.map((k) => <option key={k} value={k}>{QUOTE_STATUS[k].label}</option>)}
                   </select>
-                  <div className="flex gap-1">
-                    <button onClick={() => setSheetId(q.id)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Voir la fiche imprimable"><Printer size={14} /></button>
-                    <button onClick={() => setModal({ ...q, _lines: quoteLines.filter((l) => l.quoteId === q.id) })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Modifier"><Pencil size={14} /></button>
-                    {sup && <button onClick={async () => { if (confirm(`Supprimer le devis ${q.ref} ?`)) await actions.deleteQuote(q.id); }} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>}
+                  <div className="flex gap-1 items-center">
+                    <button onClick={() => setSheetId(q.id)} className="kb-btn kb-btn-ghost text-xs px-2 py-1" title="Voir la fiche imprimable"><Eye size={13} /> Voir</button>
+                    {q.archived ? (
+                      <button onClick={async () => notify2(await actions.restoreQuote(q.id))} className="kb-btn kb-btn-ghost text-xs px-2 py-1"><ArchiveRestore size={13} /> Restaurer</button>
+                    ) : (<>
+                      <button onClick={() => setModal({ ...q, _lines: quoteLines.filter((l) => l.quoteId === q.id) })} className="kb-btn kb-btn-ghost text-xs px-2 py-1"
+                        title={q.status === "paye" && !isAdmin(me.role) ? "Devis payé : consultation seule" : "Modifier ce devis"}>
+                        {q.status === "paye" && !isAdmin(me.role) ? <Lock size={13} /> : <Pencil size={13} />} Modifier
+                      </button>
+                      <span style={{ width: 1, height: 18, background: "var(--line)", margin: "0 2px" }} />
+                      <button onClick={() => setDelTarget(q)} className="kb-btn text-xs px-2 py-1" style={{ color: "#D81F26", background: "#fff", border: "1px solid #F5C6C7" }} title="Supprimer ou archiver">
+                        <Trash2 size={13} /> Supprimer
+                      </button>
+                    </>)}
                   </div>
                 </div>
               </div>
@@ -3532,8 +3835,14 @@ function Devis({ store, me }) {
         sub="Recopiez ici les devis papier ou WhatsApp de vos artisans."
         action={<button onClick={() => setModal({})} className="kb-btn kb-btn-primary"><Plus size={15} /> Nouveau devis</button>} />}
 
-      {modal && <QuoteModal initial={modal} initialLines={modal._lines} properties={properties} owners={owners}
-        onSave={actions.saveQuote} onClose={() => setModal(null)} />}
+      {modal && <QuoteModal initial={modal} initialLines={modal._lines} properties={properties} owners={owners} units={units}
+        locked={modal.status === "paye" && !!modal.id && !isAdmin(me.role)}
+        onSave={actions.saveQuote} onClose={(r) => { setModal(null); if (r?.id) notify2(r); }} />}
+      {delTarget && <QuoteDeleteModal quote={delTarget} block={quoteDeletionBlock(delTarget, complaints)} canDelete={sup}
+        onDelete={async () => { const r = await actions.deleteQuote(delTarget.id); notify2(r); if (!r?.error) setDelTarget(null); }}
+        onArchive={async (reason) => { const r = await actions.archiveQuote(delTarget.id, reason); notify2(r); if (!r?.error) setDelTarget(null); }}
+        onClose={() => setDelTarget(null)} />}
+      <Toast toast={toast} onDone={() => setToast(null)} />
     </div>
   );
 }
@@ -9692,7 +10001,7 @@ function Plaintes({ store, me, userId }) {
   const sheetC = complaints.find((c) => c.id === sheetId);
   if (sheetC) {
     return <ComplaintSheet complaint={sheetC} property={propById[sheetC.propertyId]} unit={unitById[sheetC.unitId]}
-      members={members} quote={quotes.find((q) => q.id === sheetC.quoteId)} onBack={() => setSheetId(null)} />;
+      members={members} quote={(store.quotesAll || quotes).find((q) => q.id === sheetC.quoteId)} onBack={() => setSheetId(null)} />;
   }
 
 
