@@ -335,6 +335,9 @@ const PAY_STATUS = {
   impaye:  { label: "IMPAYÉ",  color: "#D81F26", bg: "#FDEAEA" },
   vacant:  { label: "VACANT",  color: "#64748B", bg: "#F1F5F9" },
   avance:  { label: "AVANCE",  color: "#2E78A8", bg: "#E8F2F8" },
+  /* Locataire qui avait un arriéré reporté */
+  apure:     { label: "ARRIÉRÉ SOLDÉ", color: "#3d7d20", bg: "#EAF6E3" },
+  apurement: { label: "APUREMENT",     color: "#B7791F", bg: "#FFF8EC" },
 };
 /* Un lot vacant n'est pas un impayé : il n'a ni locataire ni loyer attendu.
    Il est donc écarté des compteurs, des arriérés et du taux de recouvrement. */
@@ -364,10 +367,89 @@ const lineStatus = (l) => {
   if (isVacantLine(l)) return "vacant";
   const c = Number(l?.collected) || 0;
   const tot = lineToCollect(l);
-  if (isPrepaidLine(l) && c >= lineCarried(l)) return "avance";
+  const reporte = lineCarried(l);
+  if (isPrepaidLine(l) && c >= reporte) return reporte > 0 ? "apure" : "avance";
+  /* Les paiements soldent d'abord l'arriéré reporté (la dette la plus ancienne) */
+  if (reporte > 0) {
+    if (c >= tot) return "apure";          // arriéré et loyer du mois entièrement réglés
+    return c > 0 ? "apurement" : "impaye"; // dette épongée petit à petit, ou rien versé
+  }
   if (tot <= 0 || c >= tot) return "paye";
   return c <= 0 ? "impaye" : "partiel";
 };
+/* Part du paiement du mois affectée à l'arriéré reporté */
+const linePaidOnArrears = (l) => Math.min(Number(l?.collected) || 0, lineCarried(l));
+
+/* ══════════════════════════════════════════════════════════════════════
+   AVANCES SUR LOYERS
+   Une avance couvre N mois à partir d'un mois de départ. Deux modes :
+     immediat : tout est reversé au propriétaire le mois du paiement ;
+                les mois couverts s'affichent « AVANCE » (rien à reverser).
+     mensuel  : l'agence reverse chaque mois le loyer couvert ;
+                les mois couverts s'affichent « PAYÉ ».
+   ══════════════════════════════════════════════════════════════════════ */
+const ADVANCE_MODE = {
+  immediat: { label: "Reversée en une fois au propriétaire", short: "reversée en une fois" },
+  mensuel:  { label: "Reversée mois par mois au propriétaire", short: "reversée chaque mois" },
+};
+const periodAdd = (p, n) => {
+  const [y, m] = p.split("-").map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+const advancePeriods = (a) => Array.from({ length: Math.max(1, Number(a.monthsCount) || 1) }, (_, i) => periodAdd(a.startPeriod, i));
+const advancePerMonth = (a) => Math.round((Number(a.amount) || 0) / Math.max(1, Number(a.monthsCount) || 1));
+const normName = (x) => (x || "").trim().toLowerCase();
+const sameLotLine = (a, b) => (a.unitId && b.unitId && a.unitId === b.unitId) || (normName(a.unitLabel) && normName(a.unitLabel) === normName(b.unitLabel));
+/* État attendu d'une ligne pour un mois donné, d'après les avances du lot */
+function advanceStateFor(unitId, period, advances) {
+  const du = (advances || []).filter((a) => a.unitId === unitId);
+  let cover = null;
+  for (const a of du) {
+    const rang = advancePeriods(a).indexOf(period);
+    if (rang >= 0) { cover = { adv: a, rank: rang + 1, n: advancePeriods(a).length, per: advancePerMonth(a) }; break; }
+  }
+  const advanceIn = du.filter((a) => a.mode === "immediat" && String(a.paidAt || "").slice(0, 7) === period)
+    .reduce((s, a) => s + (Number(a.amount) || 0), 0);
+  return { cover, advanceIn };
+}
+/* Applique (ou retire) l'effet d'une avance sur une ligne. Idempotent :
+   la référence advanceRef mémorise ce qui a été appliqué, pour pouvoir
+   l'annuler proprement si l'avance est modifiée ou supprimée. */
+function applyAdvanceState(line, st) {
+  const l = { ...line };
+  const ref = st.cover ? `${st.cover.adv.id}:${st.cover.per}:${st.cover.adv.mode}` : "";
+  const auto = (c) => /^(Payé|Réglé) d'avance le /.test(c || "");
+  if ((l.advanceRef || "") !== ref) {
+    if (l.advanceRef) {                                   // retirer l'effet précédent
+      const [, amt, md] = l.advanceRef.split(":");
+      if (md === "mensuel") l.collected = Math.max(0, (Number(l.collected) || 0) - (Number(amt) || 0));
+      else l.prepaid = false;
+      if (auto(l.comment)) l.comment = "";
+      l.advanceRef = "";
+    }
+    if (st.cover) {                                      // appliquer le nouvel effet
+      const { adv, rank, n, per } = st.cover;
+      const le = adv.paidAt ? String(adv.paidAt).slice(0, 10).split("-").reverse().join("/") : "";
+      if (adv.mode === "mensuel") {
+        l.collected = (Number(l.collected) || 0) + per;
+        l.paidAt = l.paidAt || adv.paidAt || "";
+        if (!l.comment || auto(l.comment)) l.comment = `Payé d'avance le ${le} (mois ${rank}/${n}) — reversé ce mois-ci`;
+      } else {
+        l.prepaid = true;
+        if (!l.comment || auto(l.comment)) l.comment = `Réglé d'avance le ${le} (mois ${rank}/${n}) — déjà reversé au propriétaire`;
+      }
+      l.advanceRef = ref;
+    }
+  }
+  l.advanceIn = st.advanceIn || 0;
+  return l;
+}
+/* Dernier mois couvert par une avance, s'il est à venir */
+function advanceCoverageEnd(unitId, advances, fromPeriod) {
+  const fins = (advances || []).filter((a) => a.unitId === unitId).map((a) => advancePeriods(a).slice(-1)[0]).filter((p) => p >= fromPeriod);
+  return fins.length ? fins.sort().slice(-1)[0] : null;
+}
 
 const payStatusOf = (expected, collected, vacant = false, prepaid = false) => {
   if (vacant) return "vacant";
@@ -892,7 +974,7 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "24.0";
+const APP_VERSION = "25.0";
 const APP_BUILD = "2026-09-26";
 
 /* ---- Papier à en-tête de l'agence ---- */
@@ -1114,7 +1196,8 @@ const mChannel = (r) => ({ id: r.id, type: r.type, name: r.name });
 const mCM      = (r) => ({ channelId: r.channel_id, userId: r.user_id, lastReadAt: Date.parse(r.last_read_at) });
 const mMsg     = (r) => ({ id: r.id, channelId: r.channel_id, fromId: r.from_id, text: r.body, taskId: r.task_id, createdAt: Date.parse(r.created_at), fileUrl: r.file_url || "", fileName: r.file_name || "", fileType: r.file_type || "", fileSize: r.file_size || 0 });
 
-const mOwner   = (r) => ({ id: r.id, name: r.full_name, kind: r.kind, phone: r.phone, email: r.email, address: r.address, idNumber: r.id_number, notes: r.notes, active: r.active });
+const mOwner   = (r) => ({ id: r.id, name: r.full_name, kind: r.kind, phone: r.phone, email: r.email, address: r.address, idNumber: r.id_number, notes: r.notes, active: r.active, advanceMode: r.advance_mode || "immediat" });
+const mAdvance = (r) => ({ id: r.id, unitId: r.unit_id, propertyId: r.property_id, tenantName: r.tenant_name || "", amount: Number(r.amount) || 0, monthsCount: Number(r.months_count) || 1, startPeriod: r.start_period, paidAt: r.paid_at, mode: r.mode || "immediat", receiptDocId: r.receipt_doc_id, notes: r.notes || "", createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
 const mProp    = (r) => ({ id: r.id, ref: r.ref, name: r.name, kind: r.kind, address: r.address, commune: r.commune, quartier: r.quartier, ownerId: r.owner_id, lotsCount: r.lots_count, surface: r.surface_m2, rent: r.rent_amount, mandate: r.mandate_type, status: r.status, notes: r.notes, agentId: r.agent_id, salePrice: r.sale_price, availableFor: r.available_for || 'aucun', taxCenter: r.tax_center || "", feeRate: r.fee_rate === null || r.fee_rate === undefined ? 0.10 : Number(r.fee_rate) });
 const mProduct = (r) => ({ id: r.id, name: r.name, category: r.category, unit: r.unit, stock: Number(r.stock_qty), minQty: Number(r.min_qty), price: Number(r.unit_price), supplier: r.supplier, active: r.active });
 const mStockIn = (r) => ({ id: r.id, productId: r.product_id, qty: Number(r.qty), price: Number(r.unit_price), supplier: r.supplier, date: r.entry_date, notes: r.notes, createdBy: r.created_by });
@@ -1134,7 +1217,8 @@ const mQuote   = (r) => ({ id: r.id, ref: r.ref, artisanName: r.artisan_name, tr
 const mQLine   = (r) => ({ id: r.id, quoteId: r.quote_id, label: r.label, qty: Number(r.qty), unit: r.unit, price: Number(r.unit_price), position: r.position });
 const mUnit    = (r) => ({ id: r.id, propertyId: r.property_id, label: r.label, kind: r.kind, floor: r.floor, rooms: r.rooms, surface: r.surface_m2, rent: Number(r.rent_amount), charges: Number(r.charges_amount), status: r.status, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, leaseStart: r.lease_start, notes: r.notes, tenantEmail: r.tenant_email || "", leaseEnd: r.lease_end, dueDay: r.due_day || 5, deposit: Number(r.deposit) || 0, advanceMonths: Number(r.advance_months) || 0, advanceStart: r.advance_start, arrearsAmount: Number(r.arrears_amount) || 0, arrearsMonths: Number(r.arrears_months) || 0, arrearsNote: r.arrears_note || "" });
 const mPeriod  = (r) => ({ id: r.id, propertyId: r.property_id, period: r.period, scope: r.scope, rate: Number(r.agency_rate), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
-const mRLine   = (r) => ({ id: r.id, periodId: r.period_id, unitId: r.unit_id, unitLabel: r.unit_label, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, expected: Number(r.expected), collected: Number(r.collected), paidAt: r.paid_at, charges: Number(r.charges), comment: r.comment, position: r.position, vacant: !!r.vacant, months: Math.max(1, Number(r.months) || 1), prepaid: !!r.prepaid, carriedArrears: r.carried_arrears === null || r.carried_arrears === undefined ? null : Number(r.carried_arrears) });
+const mRLine   = (r) => ({ id: r.id, periodId: r.period_id, unitId: r.unit_id, unitLabel: r.unit_label, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, expected: Number(r.expected), collected: Number(r.collected), paidAt: r.paid_at, charges: Number(r.charges), comment: r.comment, position: r.position, vacant: !!r.vacant, months: Math.max(1, Number(r.months) || 1), prepaid: !!r.prepaid, carriedArrears: r.carried_arrears === null || r.carried_arrears === undefined ? null : Number(r.carried_arrears),
+  advanceIn: Number(r.advance_in) || 0, advanceRef: r.advance_ref || "" });
 const mRCharge = (r) => ({ id: r.id, periodId: r.period_id, label: r.label, amount: Number(r.amount), observation: r.observation, position: r.position, kind: r.kind || "charge" });
 const mFormer   = (r) => ({ id: r.id, unitId: r.unit_id, propertyId: r.property_id, unitLabel: r.unit_label, name: r.name, phone: r.phone, email: r.email, leaseStart: r.lease_start, leaseEnd: r.lease_end, departureDate: r.departure_date, reason: r.reason, rent: Number(r.rent_amount) || 0, deposit: Number(r.deposit) || 0, depositRefund: Number(r.deposit_refund) || 0, balanceDue: Number(r.balance_due) || 0, notes: r.notes, archivedBy: r.archived_by });
 const mProspected = (r) => ({ id: r.id, ref: r.ref, ownerName: r.owner_name, ownerPhone: r.owner_phone, ownerPhone2: r.owner_phone2, ownerWhatsapp: r.owner_whatsapp, ownerType: r.owner_type, ownerNotes: r.owner_notes, kind: r.kind, commune: r.commune, quartier: r.quartier, address: r.address, landmark: r.landmark, rooms: r.rooms, bedrooms: r.bedrooms, bathrooms: r.bathrooms, floor: r.floor, surface: r.surface, furnished: !!r.furnished, condition: r.condition, availability: r.availability, operation: r.operation, rent: r.rent, salePrice: r.sale_price, negotiable: !!r.negotiable, ownerInterest: r.owner_interest, potential: r.potential, prospectedAt: r.prospected_at, agentId: r.agent_id, method: r.method, identifiedHow: r.identified_how, nextAction: r.next_action, nextContact: r.next_contact, notes: r.notes, status: r.status, photos: r.photos || [], history: r.history || [], propertyId: r.property_id, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
@@ -1187,6 +1271,7 @@ function useStore(userId) {
   const [prospects, setProspects] = useState([]);
   const [prospected, setProspected] = useState([]);
   const [weeklyReports, setWeeklyReports] = useState([]);
+  const [rentAdvances, setRentAdvances] = useState([]);
   const [handovers, setHandovers] = useState([]);
 
   /* Référence vivante des membres, utilisée par les notifications */
@@ -1194,7 +1279,7 @@ function useStore(userId) {
   useEffect(() => { membersRef.current = members; }, [members]);
 
   const load = useCallback(async () => {
-    const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc, un, rp, rlin, rch, rq, tax, cp, ff, ce, ho, ft, prs, ppr, wrp] = await Promise.all([
+    const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc, un, rp, rlin, rch, rq, tax, cp, ff, ce, ho, ft, prs, ppr, wrp, adv] = await Promise.all([
       supabase.from("departments").select("*").order("created_at"),
       supabase.from("profiles").select("*").order("created_at"),
       fetchAll("tasks"),
@@ -1227,6 +1312,7 @@ function useStore(userId) {
       supabase.from("prospects").select("*").order("created_at", { ascending: false }),
       supabase.from("prospected_properties").select("*").order("prospected_at", { ascending: false }),
       supabase.from("weekly_reports").select("*").order("week_start", { ascending: false }),
+      fetchAll("rent_advances", { col: "paid_at", asc: false }),
     ]);
     setDepartments((dep.data || []).map(mDept));
     setMembers((prof.data || []).map(mProfile));
@@ -1260,6 +1346,7 @@ function useStore(userId) {
     setProspects((prs.data || []).map(mProspect));
     setProspected((ppr.data || []).map(mProspected));
     setWeeklyReports((wrp.data || []).map(mReport));
+    setRentAdvances((adv?.data || []).map(mAdvance));
     setLoading(false);
   }, []);
 
@@ -1297,6 +1384,7 @@ function useStore(userId) {
     const upPr = upsertBy("id", mProspect)(setProspects), rmPr = removeBy("id")(setProspects);
     const upPp = upsertBy("id", mProspected)(setProspected), rmPp = removeBy("id")(setProspected);
     const upWr = upsertBy("id", mReport)(setWeeklyReports), rmWr = removeBy("id")(setWeeklyReports);
+    const upAv = upsertBy("id", mAdvance)(setRentAdvances), rmAv = removeBy("id")(setRentAdvances);
     const h = (up, rm, key = "id") => (p) => p.eventType === "DELETE" ? rm(p.old[key]) : up(p.new);
 
     const ch = supabase.channel("kibegnon-rt")
@@ -1341,6 +1429,7 @@ function useStore(userId) {
       .on("postgres_changes", { event: "*", schema: "public", table: "former_tenants" }, h(upFt, rmFt))
       .on("postgres_changes", { event: "*", schema: "public", table: "prospects" }, h(upPr, rmPr))
       .on("postgres_changes", { event: "*", schema: "public", table: "prospected_properties" }, h(upPp, rmPp))
+      .on("postgres_changes", { event: "*", schema: "public", table: "rent_advances" }, h(upAv, rmAv))
       .on("postgres_changes", { event: "*", schema: "public", table: "weekly_reports" }, (p) => {
         if (p.eventType === "DELETE") return rmWr(p.old.id);
         /* La direction est prévenue à la soumission, le commercial à la validation ou au renvoi */
@@ -1521,7 +1610,8 @@ function useStore(userId) {
   /* ================= ACTIONS : PROPRIÉTAIRES & BIENS ================= */
   const saveOwner = async (f) => {
     const row = { full_name: f.name, kind: f.kind, phone: f.phone || "", email: f.email || "",
-      address: f.address || "", id_number: f.idNumber || "", notes: f.notes || "", active: f.active !== false };
+      address: f.address || "", id_number: f.idNumber || "", notes: f.notes || "", active: f.active !== false,
+      advance_mode: f.advanceMode === "mensuel" ? "mensuel" : "immediat" };
     if (f.id) { const { error } = await supabase.from("owners").update(row).eq("id", f.id); return { error: error?.message }; }
     const { data, error } = await supabase.from("owners").insert({ ...row, created_by: userId }).select().single();
     if (data) setOwners((p) => p.some((x) => x.id === data.id) ? p : [...p, mOwner(data)]);
@@ -1863,6 +1953,92 @@ function useStore(userId) {
     return { error: error?.message };
   };
   /* Remplace en bloc les lignes et charges d'une période */
+  /* ══ PROPAGATION DES ARRIÉRÉS — VERS L'AVANT UNIQUEMENT ══
+     Après toute modification d'un mois, les arriérés reportés des mois
+     SUIVANTS sont recalculés à partir du reste à payer de leur mois
+     précédent. Les mois antérieurs au mois modifié ne sont jamais lus
+     pour être réécrits : l'information ne remonte jamais le temps. */
+  const cascadeFrom = async (propertyId, scope, fromPeriod) => {
+    const { data: ps } = await supabase.from("rent_periods").select("*").eq("property_id", propertyId).eq("scope", scope);
+    const periods = (ps || []).map(mPeriod).sort((a, b) => a.period.localeCompare(b.period));
+    let prev = null; let changes = 0;
+    for (const p of periods) {
+      const lines = (await fetchPeriodLines(p.id)).map(mRLine);
+      if (prev && p.period > fromPeriod) {
+        for (const l of lines) {
+          if (isVacantLine(l) || l.carriedArrears === null || l.carriedArrears === undefined) continue;
+          const m = prev.find((x) => sameLotLine(x, l) && normName(x.tenantName) === normName(l.tenantName));
+          if (!m || m.carriedArrears === null || m.carriedArrears === undefined || isVacantLine(m)) continue;
+          const voulu = lineDue(m);
+          if (Math.abs(voulu - lineCarried(l)) > 0.5) {
+            const { error } = await supabase.from("rent_lines").update({ carried_arrears: voulu }).eq("id", l.id);
+            if (!error) { l.carriedArrears = voulu; changes += 1; }
+          }
+        }
+      }
+      prev = lines;
+    }
+    return changes;
+  };
+
+  /* ══ AVANCES : application automatique à tous les tableaux concernés ══ */
+  const syncAdvancesForUnit = async (unitId) => {
+    const { data: u } = await supabase.from("units").select("*").eq("id", unitId).single();
+    if (!u) return { touched: 0 };
+    const unit = mUnit(u);
+    const { data: advs } = await supabase.from("rent_advances").select("*").eq("unit_id", unitId);
+    const advances = (advs || []).map(mAdvance);
+    const { data: ps } = await supabase.from("rent_periods").select("*").eq("property_id", unit.propertyId);
+    let touched = 0;
+    for (const scope of ["commercial", "comptable"]) {
+      const periods = (ps || []).map(mPeriod).filter((p) => p.scope === scope).sort((a, b) => a.period.localeCompare(b.period));
+      let premier = null;
+      for (const p of periods) {
+        const lines = (await fetchPeriodLines(p.id)).map(mRLine);
+        const line = lines.find((l) => sameLotLine(l, { unitId: unit.id, unitLabel: unit.label }));
+        if (!line || isVacantLine(line)) continue;
+        const next = applyAdvanceState(line, advanceStateFor(unit.id, p.period, advances));
+        const diff = ["collected", "prepaid", "paidAt", "comment", "advanceRef", "advanceIn"].some((k) => String(next[k] ?? "") !== String(line[k] ?? ""));
+        if (!diff) continue;
+        const { error } = await supabase.from("rent_lines").update({
+          collected: Number(next.collected) || 0, prepaid: !!next.prepaid, paid_at: next.paidAt || null,
+          comment: next.comment || "", advance_ref: next.advanceRef || "", advance_in: Number(next.advanceIn) || 0,
+        }).eq("id", line.id);
+        if (!error) { touched += 1; if (!premier) premier = p.period; }
+      }
+      if (premier) await cascadeFrom(unit.propertyId, scope, premier);
+    }
+    const { data } = await fetchAll("rent_lines", { col: "position" });
+    if (data) setRentLines(data.map(mRLine));
+    return { touched };
+  };
+  const saveAdvance = async (f) => {
+    const n = Math.round(Number(f.monthsCount));
+    if (!f.unitId) return { error: "Choisissez le locataire (lot) concerné." };
+    if (!(Number(f.amount) > 0)) return { error: "Le montant de l'avance doit être supérieur à 0." };
+    if (!(n >= 1 && n <= 36)) return { error: "Le nombre de mois doit être compris entre 1 et 36." };
+    if (!/^\d{4}-\d{2}$/.test(f.startPeriod || "")) return { error: "Indiquez le premier mois couvert." };
+    if (!f.paidAt) return { error: "Indiquez la date de paiement." };
+    const row = { unit_id: f.unitId, property_id: f.propertyId || null, tenant_name: f.tenantName || "",
+      amount: Number(f.amount), months_count: n, start_period: f.startPeriod, paid_at: f.paidAt,
+      mode: f.mode === "mensuel" ? "mensuel" : "immediat", notes: f.notes || "",
+      receipt_doc_id: f.receiptDocId || null };
+    const q = f.id ? supabase.from("rent_advances").update(row).eq("id", f.id).select().single()
+                   : supabase.from("rent_advances").insert({ ...row, created_by: userId }).select().single();
+    const { data, error } = await q;
+    if (error) return { error: /uq_adv_receipt|duplicate/i.test(error.message) ? "Cette quittance a déjà donné lieu à une avance." : error.message };
+    if (data) setRentAdvances((p) => [mAdvance(data), ...p.filter((x) => x.id !== data.id)]);
+    const r = await syncAdvancesForUnit(f.unitId);
+    return { id: data?.id, touched: r.touched, message: `Avance enregistrée : ${n} mois pris en compte automatiquement` };
+  };
+  const deleteAdvance = async (adv) => {
+    const { error } = await supabase.from("rent_advances").delete().eq("id", adv.id);
+    if (error) return { error: error.message };
+    setRentAdvances((p) => p.filter((x) => x.id !== adv.id));
+    await syncAdvancesForUnit(adv.unitId);       // retire proprement l'effet sur les tableaux
+    return { message: "Avance supprimée ; les tableaux ont été remis à jour" };
+  };
+
   const savePeriodContent = async (periodId, lines, charges) => {
     await supabase.from("rent_lines").delete().eq("period_id", periodId);
     await supabase.from("rent_charges").delete().eq("period_id", periodId);
@@ -1875,7 +2051,8 @@ function useStore(userId) {
         comment: l.comment || "", position: i, vacant: vac,
         months: Math.max(1, Number(l.months) || 1), prepaid: !!l.prepaid && !vac,
         /* Instantané : les arriérés reportés sont figés dans la ligne du mois */
-        carried_arrears: vac ? 0 : Math.max(0, Number(l.carriedArrears) || 0) };
+        carried_arrears: vac ? 0 : Math.max(0, Number(l.carriedArrears) || 0),
+        advance_in: vac ? 0 : Math.max(0, Number(l.advanceIn) || 0), advance_ref: vac ? "" : (l.advanceRef || "") };
     });
     const cPayload = charges.filter((c) => (c.label || "").trim()).map((c, i) => ({
       period_id: periodId, label: c.label, amount: Number(c.amount) || 0,
@@ -1895,6 +2072,14 @@ function useStore(userId) {
     ]);
     if (l.data) setRentLines(l.data.map(mRLine));
     if (c.data) setRentCharges(c.data.map(mRCharge));
+    /* Propagation vers les mois suivants (jamais vers les précédents) */
+    if (!err) {
+      const per = (await supabase.from("rent_periods").select("*").eq("id", periodId).single()).data;
+      if (per && await cascadeFrom(per.property_id, per.scope, per.period)) {
+        const again = await fetchAll("rent_lines", { col: "position" });
+        if (again.data) setRentLines(again.data.map(mRLine));
+      }
+    }
     return { error: err?.message, saved: enBase.length };
   };
   const setPeriodStatus = async (id, status) => {
@@ -2130,9 +2315,13 @@ function useStore(userId) {
        l'argent est encaissé, où il réduit les arriérés reportés. */
     const moisPaiement = String(paidOn || isoDate(new Date())).slice(0, 7);
 
+    const futurs = [];            // mois payés d'avance → enregistrés comme avance
+    const touches = [];
     for (const mDu of mois) {
+      if (mDu > moisPaiement) { futurs.push(mDu); continue; }
       const surArriere = mDu < moisPaiement;
       const m = surArriere ? moisPaiement : mDu;
+      touches.push(m);
       let period = rentPeriods.find((p) => p.propertyId === doc.propertyId
         && p.period === m && p.scope === "comptable");
       if (!period) {
@@ -2145,7 +2334,7 @@ function useStore(userId) {
         }).select().single();
         if (ins.error || !ins.data) { manquants.push(m); continue; }
         period = mPeriod(ins.data);
-        const seed = seedPeriod({ period, rentPeriods, rentLines, rentCharges, units });
+        const seed = seedPeriod({ period, rentPeriods, rentLines, rentCharges, units, advances: rentAdvances });
         if (seed.lines.length) {
           await supabase.from("rent_lines").insert(seed.lines.map((l, i) => ({
             period_id: period.id, unit_id: l.unitId || null, unit_label: l.unitLabel || "",
@@ -2153,7 +2342,8 @@ function useStore(userId) {
             expected: Number(l.expected) || 0, collected: Number(l.collected) || 0,
             paid_at: l.paidAt || null, charges: Number(l.charges) || 0, comment: l.comment || "",
             position: i, vacant: !!l.vacant, months: l.months || 1, prepaid: !!l.prepaid,
-            carried_arrears: l.vacant ? 0 : Math.max(0, Number(l.carriedArrears) || 0) })));
+            carried_arrears: l.vacant ? 0 : Math.max(0, Number(l.carriedArrears) || 0),
+            advance_in: Number(l.advanceIn) || 0, advance_ref: l.advanceRef || "" })));
         }
         if (seed.charges.length) {
           await supabase.from("rent_charges").insert(seed.charges.map((c, i) => ({
@@ -2210,7 +2400,19 @@ function useStore(userId) {
         if (!error) done += 1;
       }
     }
+    /* Mois futurs : ils ne se « paient » pas dans un tableau qui n'existe pas
+       encore. Ils sont enregistrés comme AVANCE, appliquée automatiquement
+       aux tableaux existants et à ceux qui seront créés. */
+    if (futurs.length && doc.unitId) {
+      const prop = properties.find((p) => p.id === doc.propertyId);
+      const own = owners.find((o) => o.id === prop?.ownerId);
+      const ra = await saveAdvance({ unitId: doc.unitId, propertyId: doc.propertyId, tenantName: doc.clientName || "",
+        amount: parMois * futurs.length, monthsCount: futurs.length, startPeriod: futurs[0], paidAt: String(paidOn).slice(0, 10),
+        mode: own?.advanceMode || "immediat", receiptDocId: doc.id, notes: `Quittance ${doc.ref}` });
+      if (!ra.error || /déjà donné lieu/.test(ra.error)) done += futurs.length;
+    }
     if (done) {
+      if (touches.length) await cascadeFrom(doc.propertyId, "comptable", touches.sort()[0]);
       const { data } = await fetchAll("rent_lines", { col: "position" });
       if (data) setRentLines(data.map(mRLine));
     }
@@ -2331,7 +2533,7 @@ function useStore(userId) {
        et fiches existants les ignorent sans autre modification. */
     quotes: activeQuotes, quotesAll: quotes, quoteLines, templates, documents,
     units, rentPeriods, rentLines, rentCharges, requests, taxRecords, complaints, folderFiles,
-    cashEntries, handovers, formerTenants, prospects, prospected, weeklyReports,
+    cashEntries, handovers, formerTenants, prospects, prospected, weeklyReports, rentAdvances,
     actions: {
       createTask, updateTask, deleteTask, startTimer, stopTimer, pauseTask, finishTask, addManualTime, deleteEntry,
       ensureDm, sendMessage, markRead, saveDept, deleteDept, updateProfile, adminUsers,
@@ -2346,6 +2548,7 @@ function useStore(userId) {
       uploadFolderFile, deleteFolderFile, approveDocument, applyReceiptToRent,
       saveCashEntry, deleteCashEntry, createHandover, answerHandover,
       applyAdvanceToPeriods, archiveTenant, deleteFormerTenant,
+      saveAdvance, deleteAdvance, syncAdvancesForUnit, cascadeFrom,
       saveProspect, deleteProspect, saveProspected, deleteProspected, uploadProspectedPhoto,
       saveWeeklyReport, deleteWeeklyReport, reload: load,
     },
@@ -3868,6 +4071,11 @@ function OwnerModal({ initial, onSave, onClose }) {
         <Field label="N° CNI / RCCM"><input className={inputCls} style={inputStyle} value={f.idNumber} onChange={(e) => set("idNumber", e.target.value)} /></Field>
       </div>
       <Field label="Adresse"><input className={inputCls} style={inputStyle} value={f.address} onChange={(e) => set("address", e.target.value)} /></Field>
+      <Field label="Avances sur loyers de ses locataires" hint="Choix par défaut, modifiable avance par avance">
+        <select className={inputCls} style={inputStyle} value={f.advanceMode || "immediat"} onChange={(e) => set("advanceMode", e.target.value)}>
+          {Object.entries(ADVANCE_MODE).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+        </select>
+      </Field>
       <Field label="Notes"><textarea className={inputCls} style={inputStyle} rows={2} value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
       {err && <p className="text-xs text-red-600 mb-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
       <div className="flex justify-end gap-2"><button onClick={onClose} className="kb-btn kb-btn-ghost">Annuler</button>
@@ -4843,8 +5051,12 @@ function periodTotals(lines, charges, rate) {
   const toCollect = occupied.reduce((a, l) => a + lineToCollect(l), 0);
   /* Payé : tout ce qui a été encaissé ce mois-ci, y compris le règlement
      d'arriérés reportés — cet argent revient au propriétaire. */
-  const collected = occupied.reduce((a, l) => a + (Number(l.collected) || 0), 0);
+  /* Avances encaissées ce mois et reversées immédiatement : elles s'ajoutent
+     à l'encaissé (prestation comprise) sans changer le reste à payer. */
+  const advanceIn = occupied.reduce((a, l) => a + (Number(l.advanceIn) || 0), 0);
+  const collected = occupied.reduce((a, l) => a + (Number(l.collected) || 0), 0) + advanceIn;
   const arrears = occupied.reduce((a, l) => a + lineDue(l), 0);
+  const paidOnArrears = occupied.reduce((a, l) => a + linePaidOnArrears(l), 0);
   const deducted = lines.reduce((a, l) => a + (Number(l.charges) || 0), 0);
   const netAfter = collected - deducted;
   const chargeRows = charges.filter((c) => (c.kind || "charge") === "charge");
@@ -4856,14 +5068,15 @@ function periodTotals(lines, charges, rate) {
                       − prestation agence + sommes à verser en plus */
   const netOwner = collected - deducted - chargesTotal - fee + supplementsTotal;
   const st = occupied.map(lineStatus);
-  const nPaid = st.filter((x) => x === "paye" || x === "avance").length;
-  const nPartial = st.filter((x) => x === "partiel").length;
+  const nPaid = st.filter((x) => x === "paye" || x === "avance" || x === "apure").length;
+  const nPartial = st.filter((x) => x === "partiel" || x === "apurement").length;
   const nUnpaid = st.filter((x) => x === "impaye").length;
   const nVacant = vacantLines.length;
   const nPrepaid = prepaidLines.length;
   const nActive = occupied.length;
-  const rateCollected = toCollect > 0 ? collected / toCollect : 0;
-  return { expected, carried, toCollect, collected, arrears, deducted, netAfter, chargesTotal, supplementsTotal,
+  /* Taux de recouvrement : sur les seules sommes dues (hors avances futures) */
+  const rateCollected = toCollect > 0 ? Math.min(1, (collected - advanceIn) / toCollect) : 0;
+  return { expected, carried, toCollect, collected, arrears, advanceIn, paidOnArrears, deducted, netAfter, chargesTotal, supplementsTotal,
     chargeRows, supplementRows, fee, netOwner, nPaid, nPartial, nUnpaid, nVacant, nPrepaid, nActive,
     rateCollected, vacantLines, prepaidLines, activeLines: active };
 }
@@ -4899,7 +5112,20 @@ function advanceRank(unit, period) {
    à défaut des lots du patrimoine. Les encaissements repartent à zéro,
    les arriérés sont rappelés en commentaire, et les mois couverts par
    l'avance d'entrée sont marqués comme déjà réglés. */
-function seedPeriod({ period, rentPeriods, rentLines, rentCharges, units }) {
+function seedPeriod(args) {
+  const res = seedPeriodBase(args);
+  const advances = args.advances || [];
+  if (!advances.length) return res;
+  /* Les avances enregistrées s'appliquent d'elles-mêmes au nouveau mois */
+  return { ...res, lines: res.lines.map((l) => {
+    if (isVacantLine(l)) return l;
+    const uid = l.unitId || (args.units || []).find((u) => u.propertyId === args.period.propertyId && normName(u.label) === normName(l.unitLabel))?.id;
+    if (!uid) return l;
+    return applyAdvanceState({ ...l, unitId: uid }, advanceStateFor(uid, args.period.period, advances));
+  }) };
+}
+
+function seedPeriodBase({ period, rentPeriods, rentLines, rentCharges, units }) {
   const unitById = Object.fromEntries(units.map((u) => [u.id, u]));
   const findUnit = (l) => unitById[l.unitId]
     || units.find((u) => u.propertyId === period.propertyId
@@ -5010,7 +5236,7 @@ function seedPeriod({ period, rentPeriods, rentLines, rentCharges, units }) {
 }
 
 /* ================= Éditeur d'une période ================= */
-function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, readOnly, onSave, onSaveRate, onClose }) {
+function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, readOnly, onSave, onSaveRate, onClose, prevLines = [] }) {
   /* Tableau vierge : on l'amorce depuis le mois précédent, sinon depuis les lots */
   const isNew = lines0.length === 0 && charges0.length === 0;
   const [lines, setLines] = useState(() => lines0.length ? lines0.map((l) => ({ ...l })) : (isNew ? seed.lines : []));
@@ -5127,9 +5353,24 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
                   <input disabled={readOnly || vacant || prepaid} type="number" min={0} step={5000} className="w-full px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={vacant ? 0 : l.expected} onChange={(e) => setLine(i, "expected", e.target.value)} />
                   {lineMonths(l) > 1 && <div className="text-[9px] text-right" style={{ color: "var(--muted)" }}>{lineMonths(l)} mois</div>}
                 </td>
-                <td className="px-1 py-1"><input disabled={readOnly || vacant} type="number" min={0} step={5000} className="w-full px-2 py-1.5 rounded border text-xs text-right" style={{ ...inputStyle, color: lineCarried(l) > 0 ? "#B5171D" : "var(--ink)" }} value={vacant ? 0 : (l.carriedArrears ?? 0)} onChange={(e) => setLine(i, "carriedArrears", e.target.value)} /></td>
+                <td className="px-1 py-1">
+                  {(() => {
+                    /* Reporté depuis le mois précédent : calculé, jamais saisi à la main */
+                    const pm = (prevLines || []).find((x) => sameLotLine(x, l) && normName(x.tenantName) === normName(l.tenantName) && x.carriedArrears !== null && x.carriedArrears !== undefined);
+                    if (pm && !vacant) return (
+                      <div className="px-2 py-1.5 rounded text-xs text-right tabular-nums" title="Reste à payer du mois précédent, mis à jour automatiquement"
+                        style={{ background: "#F6F8FA", color: lineCarried(l) > 0 ? "#B5171D" : "var(--muted)" }}>{fcfa(lineCarried(l))}</div>
+                    );
+                    return <input disabled={readOnly || vacant} type="number" min={0} step={5000} className="w-full px-2 py-1.5 rounded border text-xs text-right"
+                      style={{ ...inputStyle, color: lineCarried(l) > 0 ? "#B5171D" : "var(--ink)" }} value={vacant ? 0 : (l.carriedArrears ?? 0)}
+                      onChange={(e) => setLine(i, "carriedArrears", e.target.value)} title="Premier tableau : arriéré antérieur à saisir" />;
+                  })()}
+                </td>
                 <td className="px-2 py-1 text-right font-semibold tabular-nums">{vacant ? "—" : fcfa(total)}</td>
-                <td className="px-1 py-1"><input disabled={readOnly || vacant} type="number" min={0} step={5000} className="w-full px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={vacant ? 0 : l.collected} onChange={(e) => setLine(i, "collected", e.target.value)} /></td>
+                <td className="px-1 py-1">
+                  <input disabled={readOnly || vacant} type="number" min={0} step={5000} className="w-full px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={vacant ? 0 : l.collected} onChange={(e) => setLine(i, "collected", e.target.value)} />
+                  {Number(l.advanceIn) > 0 && <div className="text-[9px] text-right font-semibold" style={{ color: "#2E78A8" }} title="Avance encaissée ce mois et reversée au propriétaire">+ avance {fcfa(l.advanceIn)}</div>}
+                </td>
                 <td className="px-1 py-1"><input disabled={readOnly} type="date" className="w-full px-2 py-1.5 rounded border text-xs" style={inputStyle} value={l.paidAt || ""} onChange={(e) => setLine(i, "paidAt", e.target.value)} /></td>
                 <td className="px-2 py-1 text-right font-bold tabular-nums" style={{ color: reste > 0 ? "#D81F26" : "var(--muted)" }}>{vacant ? "—" : fcfa(reste)}</td>
                 <td className="px-1 py-1 text-center">
@@ -5152,7 +5393,8 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
         </table>
       </div>
       <p className="text-[11px] mb-2" style={{ color: "var(--muted)" }}>
-        Les arriérés reportés sont recopiés du mois précédent à la création du tableau, puis figés : payer un arriéré ce mois-ci ne modifie jamais le tableau du mois passé.
+        Les arriérés reportés viennent du mois précédent et se mettent à jour d'eux-mêmes. Une correction se propage aux mois suivants, jamais aux mois précédents.
+        Les avances enregistrées pour un locataire s'appliquent automatiquement aux mois qu'elles couvrent.
       </p>
       {!readOnly && <button onClick={() => setLines((p) => [...p, { unitLabel: "", tenantName: "", expected: 0, carriedArrears: 0, collected: 0, charges: 0, comment: "" }])} className="kb-btn kb-btn-ghost text-sm mb-4"><Plus size={14} /> Ajouter un locataire</button>}
 
@@ -5309,7 +5551,7 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
                 <td className="px-1.5 py-1.5 text-right tabular-nums">{vacant ? "—" : fcfa(lineRent(l))}{lineMonths(l) > 1 && <div style={{ fontSize: 8 }}>{lineMonths(l)} mois</div>}</td>
                 <td className="px-1.5 py-1.5 text-right tabular-nums" style={{ color: lineCarried(l) > 0 ? "#B5171D" : "inherit" }}>{vacant ? "—" : fcfa(lineCarried(l))}</td>
                 <td className="px-1.5 py-1.5 text-right tabular-nums font-semibold">{vacant ? "—" : fcfa(lineToCollect(l))}</td>
-                <td className="px-1.5 py-1.5 text-right tabular-nums">{vacant ? "—" : fcfa(l.collected)}</td>
+                <td className="px-1.5 py-1.5 text-right tabular-nums">{vacant ? "—" : fcfa(l.collected)}{Number(l.advanceIn) > 0 && <div style={{ fontSize: 8, color: "#2E78A8", fontWeight: 700 }}>+ avance {fcfa(l.advanceIn)}</div>}</td>
                 <td className="px-1.5 py-1.5">{l.paidAt ? fr(l.paidAt + "T00:00:00", { day: "2-digit", month: "2-digit" }) : "—"}</td>
                 <td className="px-1.5 py-1.5 text-right tabular-nums font-bold" style={{ color: reste > 0 ? "#D81F26" : "inherit" }}>{vacant ? "—" : fcfa(reste)}</td>
                 <td className="px-1.5 py-1.5 text-center"><span className="font-bold" style={{ color: st.color }}>{st.label}</span></td>
@@ -5388,6 +5630,57 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
         </div>
 
         {t.netOwner > 0 && <p className="text-[11px] italic mt-3">Arrêté le présent état à la somme de <strong>{amountInWords(t.netOwner)}</strong> à verser au propriétaire.</p>}
+
+        {/* Suivi des arriérés : qui éponge sa dette, qui l'a soldée */}
+        {(() => {
+          const suivis = lines.filter((l) => !isVacantLine(l) && lineCarried(l) > 0);
+          if (!suivis.length) return null;
+          return (
+            <div className="mt-3">
+              <p className="text-[11px] font-bold mb-1" style={{ color: "#B7791F" }}>SUIVI DES ARRIÉRÉS DES MOIS PRÉCÉDENTS</p>
+              <table className="w-full text-[10px]">
+                <thead><tr style={{ background: "#FFF8EC" }}>
+                  <th className="text-left px-1.5 py-1 font-semibold">Locataire</th>
+                  <th className="text-right px-1.5 py-1 font-semibold">Arriéré reporté</th>
+                  <th className="text-right px-1.5 py-1 font-semibold">Réglé ce mois sur l'arriéré</th>
+                  <th className="text-right px-1.5 py-1 font-semibold">Arriéré restant</th>
+                  <th className="text-left px-1.5 py-1 font-semibold">Situation</th>
+                </tr></thead>
+                <tbody>{suivis.map((l, i) => {
+                  const regle = linePaidOnArrears(l);
+                  const restant = lineCarried(l) - regle;
+                  const st = lineStatus(l);
+                  return (
+                    <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
+                      <td className="px-1.5 py-1">{l.tenantName || l.unitLabel}</td>
+                      <td className="px-1.5 py-1 text-right tabular-nums">{fcfa(lineCarried(l))}</td>
+                      <td className="px-1.5 py-1 text-right tabular-nums" style={{ color: regle > 0 ? "#3d7d20" : "inherit" }}>{fcfa(regle)}</td>
+                      <td className="px-1.5 py-1 text-right tabular-nums font-semibold" style={{ color: restant > 0 ? "#B5171D" : "#3d7d20" }}>{fcfa(restant)}</td>
+                      <td className="px-1.5 py-1 font-semibold" style={{ color: PAY_STATUS[st].color }}>
+                        {st === "apure" ? "Arriéré soldé" : regle > 0 ? "Éponge sa dette" : "Aucun versement sur l'arriéré"}
+                      </td>
+                    </tr>
+                  );
+                })}</tbody>
+              </table>
+              <p className="text-[9px] mt-0.5 italic" style={{ color: "var(--muted)" }}>Les versements soldent d'abord l'arriéré le plus ancien, puis le loyer du mois.</p>
+            </div>
+          );
+        })()}
+
+        {/* Avances sur loyers */}
+        {(() => {
+          const recues = lines.filter((l) => Number(l.advanceIn) > 0);
+          const couverts = lines.filter((l) => l.advanceRef);
+          if (!recues.length && !couverts.length) return null;
+          return (
+            <div className="mt-3 rounded p-2" style={{ background: "#E8F2F8", border: "1px solid #BFDBFE" }}>
+              <p className="text-[11px] font-bold" style={{ color: "#1F5C82" }}>AVANCES SUR LOYERS</p>
+              {recues.map((l, i) => <p key={"r" + i} className="text-[10px]" style={{ color: "#1F5C82" }}>{l.tenantName} : avance de {fcfa(l.advanceIn)} encaissée ce mois et reversée au propriétaire (mois futurs marqués « AVANCE »).</p>)}
+              {couverts.map((l, i) => <p key={"c" + i} className="text-[10px]" style={{ color: "#1F5C82" }}>{l.tenantName} : {l.comment}</p>)}
+            </div>
+          );
+        })()}
 
         {arrearsRows.length > 0 && (
           <div className="rounded p-2 mt-3" style={{ background: "#FDEAEA", border: "1px solid #F5C6C7" }}>
@@ -5780,7 +6073,12 @@ function Recouvrement({ store, me, userId }) {
         owner={ownerById[propById[editor.period.propertyId]?.ownerId]} units={units}
         lines0={rentLines.filter((l) => l.periodId === editor.period.id)}
         charges0={rentCharges.filter((c) => c.periodId === editor.period.id)}
-        seed={seedPeriod({ period: editor.period, rentPeriods, rentLines, rentCharges, units })}
+        seed={seedPeriod({ period: editor.period, rentPeriods, rentLines, rentCharges, units, advances: store.rentAdvances || [] })}
+        prevLines={(() => {
+          const pr = rentPeriods.filter((p) => p.propertyId === editor.period.propertyId && p.scope === editor.period.scope && p.period < editor.period.period)
+            .sort((a, b) => b.period.localeCompare(a.period))[0];
+          return pr ? rentLines.filter((l) => l.periodId === pr.id) : [];
+        })()}
         readOnly={editor.readOnly}
         onSaveRate={async (prop, r) => { await actions.saveProperty({ ...prop, feeRate: r }); }}
         onSave={async (p, lines, charges) => {
@@ -7917,6 +8215,95 @@ function DocumentSheet({ doc, unit, property, owner, author, validator, onBack }
 }
 
 /* ---------------- Module LOCATAIRES ---------------- */
+/* ---------------- Avances sur loyers : saisie et suivi ---------------- */
+function AdvanceModal({ unit, property, owner, advances, canDelete, onSave, onDelete, onClose }) {
+  const loyer = Number(unit?.rent) || 0;
+  const [f, setF] = useState(() => ({
+    unitId: unit.id, propertyId: unit.propertyId, tenantName: unit.tenantName || "",
+    monthsCount: 3, amount: loyer * 3, startPeriod: periodAdd(currentPeriod(), 1),
+    paidAt: isoDate(new Date()), mode: owner?.advanceMode || "immediat", notes: "",
+  }));
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState(""); const [msg, setMsg] = useState("");
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const setMois = (n) => setF((p) => ({ ...p, monthsCount: n, amount: loyer > 0 ? loyer * (Number(n) || 0) : p.amount }));
+  const apercu = f.startPeriod && Number(f.monthsCount) > 0 ? advancePeriods(f) : [];
+  const parMois = advancePerMonth(f);
+  const miens = (advances || []).filter((a) => a.unitId === unit.id).sort((a, b) => b.startPeriod.localeCompare(a.startPeriod));
+  const submit = async () => {
+    setErr(""); setMsg(""); setBusy(true);
+    const r = await onSave(f);
+    setBusy(false);
+    if (r?.error) { setErr(r.error); return; }
+    setMsg(r?.message || "Avance enregistrée");
+  };
+  return (
+    <Modal title={`Avance sur loyers — ${unit.tenantName || unit.label}`} onClose={onClose}>
+      <div className="rounded-lg p-3 mb-3 text-xs" style={{ background: "#F6F8FA", color: "var(--muted)" }}>
+        {property?.name} · {unit.label} · loyer {fcfa(loyer)}{owner ? ` · propriétaire ${owner.name}` : ""}
+      </div>
+
+      <div className="grid sm:grid-cols-3 gap-3">
+        <Field label="Nombre de mois payés">
+          <input type="number" min={1} max={36} className={inputCls} style={inputStyle} value={f.monthsCount} onChange={(e) => setMois(e.target.value)} />
+        </Field>
+        <Field label="Premier mois couvert">
+          <input type="month" className={inputCls} style={inputStyle} value={f.startPeriod} onChange={(e) => set("startPeriod", e.target.value)} />
+        </Field>
+        <Field label="Montant total (FCFA)" hint={loyer ? `Soit ${fcfa(parMois)} par mois` : undefined}>
+          <input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.amount} onChange={(e) => set("amount", e.target.value)} />
+        </Field>
+      </div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Date de paiement"><input type="date" className={inputCls} style={inputStyle} value={f.paidAt} onChange={(e) => set("paidAt", e.target.value)} /></Field>
+        <Field label="Reversement au propriétaire" hint={owner ? `Préférence de ${owner.name} : ${ADVANCE_MODE[owner.advanceMode || "immediat"].short}` : undefined}>
+          <select className={inputCls} style={inputStyle} value={f.mode} onChange={(e) => set("mode", e.target.value)}>
+            {Object.entries(ADVANCE_MODE).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+        </Field>
+      </div>
+      {loyer > 0 && parMois !== loyer && <p className="text-[11px] mb-2" style={{ color: "#B7791F" }}><AlertTriangle size={11} className="inline" /> {fcfa(parMois)} par mois, alors que le loyer est de {fcfa(loyer)}.</p>}
+
+      {apercu.length > 0 && (
+        <div className="rounded-lg p-3 mb-3 text-xs" style={{ background: "#E8F2F8", color: "#1F5C82" }}>
+          <p className="font-semibold mb-1">Ce qui se fera automatiquement :</p>
+          {f.mode === "immediat" ? (<>
+            <p>• {periodLabel(String(f.paidAt).slice(0, 7))} : {fcfa(f.amount)} encaissés et reversés au propriétaire (prestation comprise).</p>
+            <p>• {apercu.map(periodLabel).join(", ")} : marqués « AVANCE », rien à reverser.</p>
+          </>) : (<>
+            <p>• {periodLabel(String(f.paidAt).slice(0, 7))} : l'agence conserve l'avance.</p>
+            <p>• {apercu.map(periodLabel).join(", ")} : {fcfa(parMois)} reversés chaque mois, marqués « PAYÉ ».</p>
+          </>)}
+          <p className="mt-1" style={{ color: "var(--muted)" }}>Tableaux déjà créés mis à jour tout de suite ; les suivants le seront à leur création.</p>
+        </div>
+      )}
+      <Field label="Précision (facultatif)"><input className={inputCls} style={inputStyle} value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Ex. versement Wave, reçu n°…" /></Field>
+
+      {err && <p className="text-xs text-red-600 mb-2 flex items-center gap-1"><AlertTriangle size={13} /> {err}</p>}
+      {msg && <p className="text-xs mb-2 flex items-center gap-1" style={{ color: "#3d7d20" }}><CheckCircle2 size={13} /> {msg}</p>}
+      <div className="flex justify-end gap-2 mb-4">
+        <button onClick={onClose} className="kb-btn kb-btn-ghost">Fermer</button>
+        <button disabled={busy} onClick={submit} className="kb-btn kb-btn-primary disabled:opacity-40"><Check size={16} /> {busy ? "Application aux tableaux…" : "Enregistrer l'avance"}</button>
+      </div>
+
+      {miens.length > 0 && (<>
+        <p className="text-xs font-semibold mb-1.5">Avances enregistrées pour ce locataire</p>
+        <div className="divide-y rounded-lg border" style={{ borderColor: "var(--line)" }}>
+          {miens.map((a) => {
+            const ps = advancePeriods(a);
+            return (
+              <div key={a.id} className="flex items-center justify-between px-3 py-2 gap-2 text-xs">
+                <span>{fcfa(a.amount)} · {periodLabel(ps[0])} → {periodLabel(ps[ps.length - 1])} · payée le {String(a.paidAt).slice(0, 10).split("-").reverse().join("/")} · {ADVANCE_MODE[a.mode].short}</span>
+                {canDelete(a) && <button onClick={async () => { if (confirm("Supprimer cette avance ? Les tableaux concernés seront remis à jour.")) { const r = await onDelete(a); if (r?.error) setErr(r.error); else setMsg(r.message); } }}
+                  className="p-1 text-slate-300 hover:text-red-500" title="Supprimer l'avance"><Trash2 size={13} /></button>}
+              </div>
+            );
+          })}
+        </div>
+      </>)}
+    </Modal>
+  );
+}
+
 function Locataires({ store, me, userId }) {
   const { units, properties, owners, documents, members, rentPeriods, rentLines, formerTenants, actions } = store;
   const [search, setSearch] = useState("");
@@ -7925,6 +8312,7 @@ function Locataires({ store, me, userId }) {
   const [onlyArrears, setOnlyArrears] = useState(false);
   const [tenantModal, setTenantModal] = useState(null);
   const [archiveModal, setArchiveModal] = useState(null);
+  const [advModal, setAdvModal] = useState(null);
   const [soldeModal, setSoldeModal] = useState(null);
   const [tab, setTab] = useState("actifs");
   const [receiptModal, setReceiptModal] = useState(null);
@@ -8110,6 +8498,10 @@ function Locataires({ store, me, userId }) {
                         )}
                       </div>
                     ) : <span className="text-xs" style={{ color: "#4F9E2A" }}>à jour</span>}
+                    {(() => {
+                      const fin = advanceCoverageEnd(u.id, store.rentAdvances, currentPeriod());
+                      return fin ? <p className="text-[10px] mt-0.5 font-semibold" style={{ color: "#2E78A8" }}>payé d'avance jusqu'à {periodLabel(fin)}</p> : null;
+                    })()}
                   </td>
                   <td className="px-3 py-2.5">
                     {pay ? <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: st.bg, color: st.color }}>{st.label} · {pay.period}</span>
@@ -8120,6 +8512,7 @@ function Locataires({ store, me, userId }) {
                     <div className="flex gap-1 justify-end">
                       <button onClick={() => setReceiptModal({ unit: u, property: p })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Établir une quittance"><Receipt size={14} /></button>
                       <button onClick={() => setTenantModal({ unit: u, property: p })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Modifier le locataire"><Pencil size={14} /></button>
+                      {u.tenantName && <button onClick={() => setAdvModal({ unit: u, property: p })} className="p-1.5 rounded-lg hover:bg-sky-50 text-slate-400" title="Avance sur plusieurs mois"><CalendarClock size={14} /></button>}
                       {u.tenantName && <button onClick={() => setArchiveModal({ unit: u, property: p })} className="p-1.5 rounded-lg hover:bg-amber-50 text-slate-400" title="Enregistrer son départ"><DoorClosed size={14} /></button>}
                     </div>
                   </td>
@@ -8237,6 +8630,10 @@ function Locataires({ store, me, userId }) {
           return r;
         }} onClose={() => setTenantModal(null)} />}
 
+      {advModal && <AdvanceModal unit={advModal.unit} property={advModal.property}
+        owner={owners.find((o) => o.id === advModal.property?.ownerId)} advances={store.rentAdvances || []}
+        canDelete={(a) => canSupervise(me.role) || a.createdBy === userId}
+        onSave={actions.saveAdvance} onDelete={actions.deleteAdvance} onClose={() => setAdvModal(null)} />}
       {archiveModal && <ArchiveTenantModal unit={archiveModal.unit} property={archiveModal.property}
         arrears={situation(archiveModal.unit)} onArchive={actions.archiveTenant} onClose={() => setArchiveModal(null)} />}
 
