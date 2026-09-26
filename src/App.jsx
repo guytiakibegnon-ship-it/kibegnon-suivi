@@ -6,7 +6,7 @@
  * ==========================================================================*/
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
-  AlertTriangle, AlignCenter, AlignJustify, AlignLeft, AlignRight, Archive, ArchiveRestore, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, Banknote, BarChart3, Bell, BellOff, BellRing, Bold, Briefcase, Building2, CalendarClock, CalendarDays, CalendarOff, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, DoorClosed, DoorOpen, Download, Eraser, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Highlighter, Home, Image, Inbox, IndentDecrease, IndentIncrease, Italic, KeyRound, Landmark, Layers, LayoutDashboard, Link2, List, ListChecks, ListOrdered, Lock, LogOut, Mail, MapPin, Maximize2, MessageCircle, MessageCircleWarning, MessageSquare, Minimize2, Minus, Package, Palette, Paperclip, Pause, Pencil, Percent, Phone, PhoneIncoming, Play, Plus, Printer, Receipt, Redo2, RotateCcw, Scale, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, Strikethrough, Subscript, Superscript, Table2, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, Underline, Undo2, Upload, UserPlus, UserRound, Users, Wallet, X, Zap,
+  AlertTriangle, AlignCenter, AlignJustify, AlignLeft, AlignRight, Archive, ArchiveRestore, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, Banknote, BarChart3, Bell, BellOff, BellRing, Bold, Briefcase, Building2, CalendarClock, CalendarDays, CalendarOff, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, DoorClosed, DoorOpen, Download, Eraser, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Highlighter, Home, Image, Inbox, IndentDecrease, IndentIncrease, Italic, KeyRound, Landmark, Layers, LayoutDashboard, Link2, List, ListChecks, ListOrdered, Lock, LogOut, Mail, MapPin, Maximize2, MessageCircle, MessageCircleWarning, MessageSquare, Minimize2, Minus, Package, Palette, Paperclip, Pause, Pencil, Percent, Phone, PhoneIncoming, Play, Plus, Printer, Receipt, Redo2, RefreshCw, RotateCcw, Scale, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, Strikethrough, Subscript, Superscript, Table2, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, Underline, Undo2, Unlock, Upload, UserPlus, UserRound, Users, Wallet, X, Zap,
 } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { supabase, AUTH_DOMAIN } from "./supabaseClient";
@@ -974,7 +974,7 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "25.0";
+const APP_VERSION = "26.0";
 const APP_BUILD = "2026-09-26";
 
 /* ---- Papier à en-tête de l'agence ---- */
@@ -1216,7 +1216,8 @@ const mQuote   = (r) => ({ id: r.id, ref: r.ref, artisanName: r.artisan_name, tr
   recordedBy: r.recorded_by, createdAt: Date.parse(r.created_at) });
 const mQLine   = (r) => ({ id: r.id, quoteId: r.quote_id, label: r.label, qty: Number(r.qty), unit: r.unit, price: Number(r.unit_price), position: r.position });
 const mUnit    = (r) => ({ id: r.id, propertyId: r.property_id, label: r.label, kind: r.kind, floor: r.floor, rooms: r.rooms, surface: r.surface_m2, rent: Number(r.rent_amount), charges: Number(r.charges_amount), status: r.status, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, leaseStart: r.lease_start, notes: r.notes, tenantEmail: r.tenant_email || "", leaseEnd: r.lease_end, dueDay: r.due_day || 5, deposit: Number(r.deposit) || 0, advanceMonths: Number(r.advance_months) || 0, advanceStart: r.advance_start, arrearsAmount: Number(r.arrears_amount) || 0, arrearsMonths: Number(r.arrears_months) || 0, arrearsNote: r.arrears_note || "" });
-const mPeriod  = (r) => ({ id: r.id, propertyId: r.property_id, period: r.period, scope: r.scope, rate: Number(r.agency_rate), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
+const mPeriod  = (r) => ({ id: r.id, propertyId: r.property_id, period: r.period, scope: r.scope, rate: Number(r.agency_rate), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at),
+  locked: !!r.locked, lockedAt: r.locked_at, lockedBy: r.locked_by, unlockLog: r.unlock_log || [] });
 const mRLine   = (r) => ({ id: r.id, periodId: r.period_id, unitId: r.unit_id, unitLabel: r.unit_label, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, expected: Number(r.expected), collected: Number(r.collected), paidAt: r.paid_at, charges: Number(r.charges), comment: r.comment, position: r.position, vacant: !!r.vacant, months: Math.max(1, Number(r.months) || 1), prepaid: !!r.prepaid, carriedArrears: r.carried_arrears === null || r.carried_arrears === undefined ? null : Number(r.carried_arrears),
   advanceIn: Number(r.advance_in) || 0, advanceRef: r.advance_ref || "" });
 const mRCharge = (r) => ({ id: r.id, periodId: r.period_id, label: r.label, amount: Number(r.amount), observation: r.observation, position: r.position, kind: r.kind || "charge" });
@@ -1948,6 +1949,7 @@ function useStore(userId) {
     return { error: error?.message, id: data?.id };
   };
   const deletePeriod = async (id) => {
+    if (rentPeriods.find((x) => x.id === id)?.locked) return { error: "Tableau arrêté pour virement : il ne peut pas être supprimé." };
     setRentPeriods((p) => p.filter((x) => x.id !== id));
     const { error } = await supabase.from("rent_periods").delete().eq("id", id);
     return { error: error?.message };
@@ -1961,24 +1963,75 @@ function useStore(userId) {
   const cascadeFrom = async (propertyId, scope, fromPeriod) => {
     const { data: ps } = await supabase.from("rent_periods").select("*").eq("property_id", propertyId).eq("scope", scope);
     const periods = (ps || []).map(mPeriod).sort((a, b) => a.period.localeCompare(b.period));
-    let prev = null; let changes = 0;
+    const { data: us } = await supabase.from("units").select("*").eq("property_id", propertyId);
+    const lots = (us || []).map(mUnit);
+    /* Ancien commentaire « Arriéré 2026-09 : 130 000 F » : remplacé par le vrai report */
+    const ancienNote = /^Arriéré \d{4}-\d{2} : [^·]*$/;
+    let prev = null; let changes = 0; let bloque = null;
     for (const p of periods) {
       const lines = (await fetchPeriodLines(p.id)).map(mRLine);
-      if (prev && p.period > fromPeriod) {
-        for (const l of lines) {
-          if (isVacantLine(l) || l.carriedArrears === null || l.carriedArrears === undefined) continue;
+      const aTraiter = p.period > fromPeriod;
+      for (const l of lines) {
+        if (!aTraiter || isVacantLine(l)) continue;
+        let voulu = null;
+        if (prev) {
           const m = prev.find((x) => sameLotLine(x, l) && normName(x.tenantName) === normName(l.tenantName));
-          if (!m || m.carriedArrears === null || m.carriedArrears === undefined || isVacantLine(m)) continue;
-          const voulu = lineDue(m);
-          if (Math.abs(voulu - lineCarried(l)) > 0.5) {
-            const { error } = await supabase.from("rent_lines").update({ carried_arrears: voulu }).eq("id", l.id);
-            if (!error) { l.carriedArrears = voulu; changes += 1; }
-          }
+          if (m && !isVacantLine(m)) voulu = lineDue(m);            // reste à payer du mois précédent
+          else if (l.carriedArrears === null || l.carriedArrears === undefined) voulu = 0;
+        } else if (l.carriedArrears === null || l.carriedArrears === undefined) {
+          /* Tout premier tableau du bien : arriéré antérieur à l'outil, s'il y en a un */
+          const u = lots.find((x) => sameLotLine({ unitId: x.id, unitLabel: x.label }, l));
+          voulu = u && normName(u.tenantName) === normName(l.tenantName) ? (Number(u.arrearsAmount) || 0) : 0;
         }
+        if (voulu === null) continue;
+        const ancien = l.carriedArrears === null || l.carriedArrears === undefined;
+        if (!ancien && Math.abs(voulu - lineCarried(l)) <= 0.5) continue;
+        /* Un tableau arrêté pour virement ne change JAMAIS : la chaîne se
+           poursuit avec les montants qu'il contient. */
+        if (p.locked) { if (!ancien && !bloque) bloque = p.period; continue; }
+        const maj = { carried_arrears: voulu };
+        if (ancien && ancienNote.test(l.comment || "")) maj.comment = "";
+        const { error } = await supabase.from("rent_lines").update(maj).eq("id", l.id);
+        if (!error) { l.carriedArrears = voulu; if (maj.comment === "") l.comment = ""; changes += 1; }
       }
       prev = lines;
     }
-    return changes;
+    return { changes, bloque };
+  };
+  /* Remet toute la chaîne d'un bien d'aplomb, depuis son premier tableau */
+  const recalcAllCarried = async () => {
+    const { data: ps } = await supabase.from("rent_periods").select("*");
+    const couples = [...new Set((ps || []).map((p) => `${p.property_id}|${p.scope}`))];
+    let changes = 0; const bloques = [];
+    for (const c of couples) {
+      const [pid, sc] = c.split("|");
+      const r = await cascadeFrom(pid, sc, "");
+      changes += r.changes; if (r.bloque) bloques.push(r.bloque);
+    }
+    const { data } = await fetchAll("rent_lines", { col: "position" });
+    if (data) setRentLines(data.map(mRLine));
+    return { changes, bloques, message: `${changes} report(s) d'arriérés mis à jour` + (bloques.length ? ` — ${bloques.length} tableau(x) arrêté(s) laissé(s) intact(s)` : "") };
+  };
+  /* ══ ARRÊT POUR VIREMENT ══ */
+  const lockPeriod = async (id) => {
+    const { data, error } = await supabase.from("rent_periods").update({ locked: true, locked_at: new Date().toISOString(),
+      locked_by: userId, status: "valide" }).eq("id", id).select().single();
+    if (error) return { error: error.message };
+    const p = mPeriod(data);
+    setRentPeriods((x) => x.map((y) => (y.id === id ? p : y)));
+    /* Le reste à payer arrêté ce jour devient l'arriéré reporté du mois suivant */
+    const r = await cascadeFrom(p.propertyId, p.scope, p.period);
+    const { data: lignes } = await fetchAll("rent_lines", { col: "position" });
+    if (lignes) setRentLines(lignes.map(mRLine));
+    return { message: `${periodLabel(p.period)} arrêté pour virement` + (r.changes ? ` — ${r.changes} arriéré(s) reporté(s) sur le mois suivant` : "") };
+  };
+  const unlockPeriod = async (period, reason) => {
+    if (!(reason || "").trim()) return { error: "Indiquez le motif du déverrouillage." };
+    const log = [...(period.unlockLog || []), { at: new Date().toISOString(), by: userId, reason: reason.trim() }];
+    const { data, error } = await supabase.from("rent_periods").update({ locked: false, unlock_log: log }).eq("id", period.id).select().single();
+    if (error) return { error: error.message };
+    setRentPeriods((x) => x.map((y) => (y.id === period.id ? mPeriod(data) : y)));
+    return { message: `${periodLabel(period.period)} déverrouillé — pensez à l'arrêter de nouveau après correction` };
   };
 
   /* ══ AVANCES : application automatique à tous les tableaux concernés ══ */
@@ -1994,6 +2047,7 @@ function useStore(userId) {
       const periods = (ps || []).map(mPeriod).filter((p) => p.scope === scope).sort((a, b) => a.period.localeCompare(b.period));
       let premier = null;
       for (const p of periods) {
+        if (p.locked) continue;                          // tableau arrêté pour virement : intouchable
         const lines = (await fetchPeriodLines(p.id)).map(mRLine);
         const line = lines.find((l) => sameLotLine(l, { unitId: unit.id, unitLabel: unit.label }));
         if (!line || isVacantLine(line)) continue;
@@ -2040,6 +2094,8 @@ function useStore(userId) {
   };
 
   const savePeriodContent = async (periodId, lines, charges) => {
+    const verrou = (await supabase.from("rent_periods").select("*").eq("id", periodId).single()).data;
+    if (verrou?.locked) return { error: `Le tableau de ${periodLabel(verrou.period)} est arrêté pour virement : déverrouillez-le d'abord.` };
     await supabase.from("rent_lines").delete().eq("period_id", periodId);
     await supabase.from("rent_charges").delete().eq("period_id", periodId);
     const lPayload = lines.filter((l) => (l.tenantName || l.unitLabel || "").trim()).map((l, i) => {
@@ -2075,7 +2131,14 @@ function useStore(userId) {
     /* Propagation vers les mois suivants (jamais vers les précédents) */
     if (!err) {
       const per = (await supabase.from("rent_periods").select("*").eq("id", periodId).single()).data;
-      if (per && await cascadeFrom(per.property_id, per.scope, per.period)) {
+      /* Le mois enregistré reçoit le report de son prédécesseur, puis la chaîne continue */
+      const rc = per ? await cascadeFrom(per.property_id, per.scope, periodAdd(per.period, -1)) : { changes: 0 };
+      if (rc.bloque) {
+        const lbl = periodLabel(rc.bloque);
+        const deMois = /^[AEIOUYÉÈ]/i.test(lbl) ? `d'${lbl}` : `de ${lbl}`;      // « d'Octobre », « de Septembre »
+        err = { message: `Enregistré. La correction ne s'est pas propagée au-delà ${deMois}, tableau arrêté pour virement : déverrouillez-le pour la répercuter.` };
+      }
+      if (rc.changes) {
         const again = await fetchAll("rent_lines", { col: "position" });
         if (again.data) setRentLines(again.data.map(mRLine));
       }
@@ -2083,8 +2146,10 @@ function useStore(userId) {
     return { error: err?.message, saved: enBase.length };
   };
   const setPeriodStatus = async (id, status) => {
+    if (rentPeriods.find((x) => x.id === id)?.locked) return { error: "Tableau arrêté pour virement." };
     setRentPeriods((p) => p.map((x) => (x.id === id ? { ...x, status } : x)));
-    await supabase.from("rent_periods").update({ status }).eq("id", id);
+    const { error } = await supabase.from("rent_periods").update({ status }).eq("id", id);
+    return { error: error?.message };
   };
 
   /* ================= ACTIONS : TRANSPORT & PERMISSIONS ================= */
@@ -2319,8 +2384,13 @@ function useStore(userId) {
     const touches = [];
     for (const mDu of mois) {
       if (mDu > moisPaiement) { futurs.push(mDu); continue; }
-      const surArriere = mDu < moisPaiement;
-      const m = surArriere ? moisPaiement : mDu;
+      let surArriere = mDu < moisPaiement;
+      let m = surArriere ? moisPaiement : mDu;
+      /* Mois arrêté pour virement : il est figé. Le paiement est porté sur le
+         premier mois suivant encore ouvert, comme règlement d'arriéré. */
+      while (rentPeriods.some((p) => p.propertyId === doc.propertyId && p.period === m && p.scope === "comptable" && p.locked)) {
+        m = periodAdd(m, 1); surArriere = true;
+      }
       touches.push(m);
       let period = rentPeriods.find((p) => p.propertyId === doc.propertyId
         && p.period === m && p.scope === "comptable");
@@ -2548,7 +2618,7 @@ function useStore(userId) {
       uploadFolderFile, deleteFolderFile, approveDocument, applyReceiptToRent,
       saveCashEntry, deleteCashEntry, createHandover, answerHandover,
       applyAdvanceToPeriods, archiveTenant, deleteFormerTenant,
-      saveAdvance, deleteAdvance, syncAdvancesForUnit, cascadeFrom,
+      saveAdvance, deleteAdvance, syncAdvancesForUnit, cascadeFrom, recalcAllCarried, lockPeriod, unlockPeriod,
       saveProspect, deleteProspect, saveProspected, deleteProspected, uploadProspectedPhoto,
       saveWeeklyReport, deleteWeeklyReport, reload: load,
     },
@@ -5513,7 +5583,10 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
 
       <PrintPage className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }} note={`État établi par ${author?.name || "—"} · Taux de recouvrement du mois : ${(t.rateCollected * 100).toFixed(1)} %`}>
         <PrintHead title={sc.label} subtitle={periodLabel(period.period)} extra={
-          <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
+          <>
+            <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
+            {period.locked && <p className="text-[11px] font-bold mt-0.5" style={{ color: "var(--ink)" }}>ARRÊTÉ POUR VIREMENT{period.lockedAt ? ` LE ${fr(period.lockedAt, { day: "2-digit", month: "2-digit", year: "numeric" })}` : ""}</p>}
+          </>
         } />
 
         <div className="grid sm:grid-cols-4 gap-3 py-3 text-xs">
@@ -5952,7 +6025,19 @@ function Recouvrement({ store, me, userId }) {
     <div>
       <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
         <h1 className="text-xl font-bold">Recouvrement</h1>
-        <button onClick={() => setCreator(true)} className="kb-btn kb-btn-primary"><Plus size={16} /> Nouveau tableau</button>
+        <div className="flex gap-2 flex-wrap">
+          {canSupervise(me.role) && (
+            <button onClick={async (e) => {
+              const b = e.currentTarget; b.disabled = true; b.textContent = "Mise à jour en cours…";
+              const r = await actions.recalcAllCarried(); b.disabled = false;
+              alert(r?.error || r?.message);
+              b.textContent = "Mettre à jour les reports d'arriérés";
+            }} className="kb-btn kb-btn-ghost text-sm" title="Recalcule, pour tous les biens, les arriérés reportés d'un mois sur l'autre (les tableaux arrêtés restent intacts)">
+              <RefreshCw size={14} /> Mettre à jour les reports d'arriérés
+            </button>
+          )}
+          <button onClick={() => setCreator(true)} className="kb-btn kb-btn-primary"><Plus size={16} /> Nouveau tableau</button>
+        </div>
       </div>
       <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>Un tableau par bâtiment et par mois. Chaque auteur modifie ses propres tableaux ; la direction consulte l'ensemble.</p>
 
@@ -6024,7 +6109,9 @@ function Recouvrement({ store, me, userId }) {
                     <p className="text-sm font-semibold">{prop?.name || "Bâtiment supprimé"}</p>
                     <Chip color={RENT_SCOPE[p.scope].color}>{periodLabel(p.period)}</Chip>
                     <Chip color={st.color} dot>{st.label}</Chip>
-                    {!mine && <Chip color="#94A3B8"><Lock size={10} /> lecture</Chip>}
+                    {p.locked && <Chip color="#1A1C20" bg="#E5E7EB"><Lock size={10} /> Arrêté pour virement{p.lockedAt ? ` le ${fr(p.lockedAt, { day: "2-digit", month: "2-digit", year: "numeric" })}` : ""}{p.lockedBy && memberById[p.lockedBy] ? ` par ${memberById[p.lockedBy].name}` : ""}</Chip>}
+                    {!mine && !p.locked && <Chip color="#94A3B8"><Lock size={10} /> lecture</Chip>}
+                    {(p.unlockLog || []).length > 0 && <span className="text-[10px]" style={{ color: "#B7791F" }} title={(p.unlockLog || []).map((x) => `${fr(x.at, { day: "2-digit", month: "2-digit" })} — ${memberById[x.by]?.name || "?"} : ${x.reason}`).join("\n")}>déverrouillé {p.unlockLog.length} fois</span>}
                   </div>
                   <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>
                     {t.nActive} locataire(s){t.nVacant > 0 ? ` · ${t.nVacant} lot(s) vacant(s)` : ""} · {t.nPaid} à jour ·{" "}
@@ -6044,7 +6131,7 @@ function Recouvrement({ store, me, userId }) {
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-2 shrink-0">
-                  {mine && <select value={p.status} onChange={(e) => actions.setPeriodStatus(p.id, e.target.value)}
+                  {mine && !p.locked && <select value={p.status} onChange={async (e) => { const r = await actions.setPeriodStatus(p.id, e.target.value); if (r?.error) alert(r.error); }}
                     className="text-xs px-2 py-1 rounded-lg border bg-white" style={{ borderColor: st.color + "55", color: st.color }}>
                     {Object.entries(RENT_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                   </select>}
@@ -6053,8 +6140,26 @@ function Recouvrement({ store, me, userId }) {
                     {(t.nPartial + t.nUnpaid) > 0 && (
                       <button onClick={() => setArrearsId(p.id)} className="p-1.5 rounded-lg hover:bg-red-50" style={{ color: "#D81F26" }} title="État des arriérés (document séparé)"><AlertTriangle size={14} /></button>
                     )}
-                    <button onClick={() => setEditor({ period: p, readOnly: !mine })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title={mine ? "Modifier" : "Consulter"}>{mine ? <Pencil size={14} /> : <Eye size={14} />}</button>
-                    {isAdmin(me.role) && <button onClick={async () => { if (confirm("Supprimer ce tableau ?")) await actions.deletePeriod(p.id); }} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>}
+                    <button onClick={() => setEditor({ period: p, readOnly: !mine || p.locked })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"
+                      title={p.locked ? "Consulter (tableau arrêté pour virement)" : mine ? "Modifier" : "Consulter"}>{mine && !p.locked ? <Pencil size={14} /> : <Eye size={14} />}</button>
+                    {canSupervise(me.role) && !p.locked && (
+                      <button onClick={async () => {
+                        if (!confirm(`Arrêter le tableau de ${periodLabel(p.period)} pour virement au propriétaire ?\n\nIl ne pourra plus être modifié. Les impayés et paiements partiels seront reportés automatiquement sur le mois suivant.`)) return;
+                        const r = await actions.lockPeriod(p.id); alert(r?.error || r?.message);
+                      }} className="kb-btn text-xs px-2 py-1" style={{ background: "#1A1C20", color: "#fff" }} title="Arrêter pour virement : bloque toute modification">
+                        <Lock size={12} /> Arrêter pour virement
+                      </button>
+                    )}
+                    {canSupervise(me.role) && p.locked && (
+                      <button onClick={async () => {
+                        const motif = prompt(`Déverrouiller ${periodLabel(p.period)} pour corriger une erreur.\n\nMotif (obligatoire, conservé dans l'historique) :`, "");
+                        if (motif === null) return;
+                        const r = await actions.unlockPeriod(p, motif); alert(r?.error || r?.message);
+                      }} className="kb-btn kb-btn-ghost text-xs px-2 py-1" style={{ color: "#B7791F" }} title="Modification manuelle exceptionnelle">
+                        <Unlock size={12} /> Déverrouiller
+                      </button>
+                    )}
+                    {isAdmin(me.role) && !p.locked && <button onClick={async () => { if (confirm("Supprimer ce tableau ?")) { const r = await actions.deletePeriod(p.id); if (r?.error) alert(r.error); } }} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>}
                   </div>
                 </div>
               </div>
