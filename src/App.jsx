@@ -974,7 +974,7 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "26.0";
+const APP_VERSION = "28.0";
 const APP_BUILD = "2026-09-26";
 
 /* ---- Papier à en-tête de l'agence ---- */
@@ -1734,14 +1734,17 @@ function useStore(userId) {
       quoteId = data.id;
     }
 
-    /* Lignes de travaux */
-    const { data: anciennes } = await supabase.from("quote_lines").select("id").eq("quote_id", quoteId);
-    const payload = vraies.map((l, i) => ({ quote_id: quoteId, label: l.label.trim(),
-      qty: Number(l.qty), unit: l.unit || "u", unit_price: Number(l.price), position: i }));
-    const ins = await supabase.from("quote_lines").insert(payload);
-    if (ins.error) { await refreshQuotes(); return { error: "Les lignes n'ont pas pu être enregistrées ; l'ancien détail est conservé. " + ins.error.message }; }
-    const ids = (anciennes || []).map((x) => x.id);
-    if (ids.length) await supabase.from("quote_lines").delete().in("id", ids);
+    /* Lignes de travaux : remplacées D'UN BLOC par la base (fonction
+       replace_quote_lines). Soit tout réussit, soit rien ne change : il ne
+       peut plus rester d'anciennes lignes à côté des nouvelles. */
+    const lignes = vraies.map((l, i) => ({ label: l.label.trim(), qty: Number(l.qty), unit: l.unit || "u",
+      unit_price: Number(l.price), position: i }));
+    const rl = await supabase.rpc("replace_quote_lines", { q_id: quoteId, lignes });
+    if (rl.error) { await refreshQuotes(); return { error: "Les lignes n'ont pas pu être enregistrées ; l'ancien détail est conservé. " + rl.error.message }; }
+    if (Number(rl.data) !== lignes.length) {
+      await refreshQuotes();
+      return { error: `Enregistrement incomplet : ${rl.data} ligne(s) enregistrée(s) sur ${lignes.length}.` };
+    }
 
     /* Pièce jointe : le nouveau fichier est envoyé d'abord ; l'ancien n'est
        effacé qu'une fois le nouveau bien rattaché au devis. */
@@ -2236,9 +2239,28 @@ function useStore(userId) {
     return { id: data?.id };
   };
   const deleteProspected = async (id) => {
+    const bien = prospected.find((x) => x.id === id);
+    const { data, error } = await supabase.from("prospected_properties").delete().eq("id", id).select();
+    if (error) return { error: error.message };
+    if (!data || !data.length) return { error: "Suppression refusée : seuls la direction et l'auteur de la fiche peuvent la supprimer." };
+    /* Les photos du bien sont retirées du stockage avec lui */
+    const chemins = (bien?.photos || []).map((ph) => String(ph.url || "").split("/prospection/")[1]).filter(Boolean);
+    if (chemins.length) await supabase.storage.from("prospection").remove(chemins);
     setProspected((p) => p.filter((x) => x.id !== id));
-    const { error } = await supabase.from("prospected_properties").delete().eq("id", id);
-    return { error: error?.message };
+    return { message: "Bien prospecté supprimé" };
+  };
+  const deleteProspectedPhoto = async (bien, index) => {
+    const ph = (bien.photos || [])[index];
+    if (!ph) return { error: "Photo introuvable." };
+    const chemin = String(ph.url || "").split("/prospection/")[1];
+    if (chemin) {
+      const { error } = await supabase.storage.from("prospection").remove([chemin]);
+      if (error) return { error: "La photo n'a pas pu être supprimée : " + error.message };
+    }
+    const photos = (bien.photos || []).filter((_, i) => i !== index);
+    const history = [...(bien.history || []), { date: isoDate(new Date()), type: "photo", text: `Photo supprimée : ${ph.name || "sans nom"}`, by: "", byId: userId }];
+    const r = await saveProspected({ ...bien, photos, history });
+    return r?.error ? r : { message: "Photo supprimée" };
   };
   const uploadProspectedPhoto = async (bien, file) => {
     if (!file || file.size > 10 * 1024 * 1024) return { error: "Photo trop volumineuse (10 Mo maximum)." };
@@ -2294,10 +2316,14 @@ function useStore(userId) {
     if (data) setProspects((p) => (p.some((x) => x.id === data.id) ? p : [mProspect(data), ...p]));
     return { id: data?.id };
   };
+  /* Suppression VÉRIFIÉE : la base renvoie ce qu'elle a réellement supprimé.
+     Un refus silencieux (droits insuffisants) devient un message clair. */
   const deleteProspect = async (id) => {
+    const { data, error } = await supabase.from("prospects").delete().eq("id", id).select();
+    if (error) return { error: error.message };
+    if (!data || !data.length) return { error: "Suppression refusée : seuls la direction et l'auteur de la fiche peuvent la supprimer." };
     setProspects((p) => p.filter((x) => x.id !== id));
-    const { error } = await supabase.from("prospects").delete().eq("id", id);
-    return { error: error?.message };
+    return { message: "Prospect supprimé" };
   };
 
   /* ================= ACTIONS : CAISSE ================= */
@@ -2619,7 +2645,7 @@ function useStore(userId) {
       saveCashEntry, deleteCashEntry, createHandover, answerHandover,
       applyAdvanceToPeriods, archiveTenant, deleteFormerTenant,
       saveAdvance, deleteAdvance, syncAdvancesForUnit, cascadeFrom, recalcAllCarried, lockPeriod, unlockPeriod,
-      saveProspect, deleteProspect, saveProspected, deleteProspected, uploadProspectedPhoto,
+      saveProspect, deleteProspect, saveProspected, deleteProspected, uploadProspectedPhoto, deleteProspectedPhoto,
       saveWeeklyReport, deleteWeeklyReport, reload: load,
     },
   };
@@ -9226,7 +9252,9 @@ function ProspectModal({ initial, properties, units, members, onSave, onClose })
 }
 
 /* ---------------- Fiche détaillée : historique des échanges ---------------- */
-function ProspectDetail({ prospect: p, property, unit, member, onAddContact, onEdit, onBack }) {
+function ProspectDetail({ prospect: p, property, unit, member, me, onAddContact, onEdit, onDelete, onDeleteContact, onBack }) {
+  const peutSupprimer = me && (canSupervise(me.role) || p.createdBy === me.id);
+  const direction = me && canSupervise(me.role);
   const [channel, setChannel] = useState("telephone");
   const [result, setResult] = useState("");
   const [busy, setBusy] = useState(false);
@@ -9247,7 +9275,15 @@ function ProspectDetail({ prospect: p, property, unit, member, onAddContact, onE
     <div>
       <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
         <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
-        <button onClick={() => onEdit(p)} className="kb-btn kb-btn-ghost text-sm"><Pencil size={14} /> Modifier</button>
+        <div className="flex gap-1.5">
+          <button onClick={() => onEdit(p)} className="kb-btn kb-btn-ghost text-sm"><Pencil size={14} /> Modifier</button>
+          {peutSupprimer && onDelete && (
+            <button onClick={async () => {
+              if (!confirm(`Supprimer définitivement la fiche de ${p.name} (${p.ref}) et tout son historique ?\n\nÀ utiliser en cas d'erreur de saisie.`)) return;
+              const r = await onDelete(p.id); if (r?.error) alert(r.error);
+            }} className="kb-btn kb-btn-ghost text-sm" style={{ color: "#D81F26" }} title="Supprimer cette fiche (erreur de saisie)"><Trash2 size={14} /> Supprimer</button>
+          )}
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border p-4 mb-4" style={{ borderColor: "var(--line)" }}>
@@ -9293,6 +9329,10 @@ function ProspectDetail({ prospect: p, property, unit, member, onAddContact, onE
                   <span className="text-xs font-medium">{fr(c.date + "T00:00:00", { day: "numeric", month: "short", year: "numeric" })}</span>
                   <Chip color="#2E78A8">{CONTACT_CHANNEL[c.channel] || c.channel}</Chip>
                   {c.by && <span className="text-[11px]" style={{ color: "var(--muted)" }}>par {c.by}</span>}
+                  {direction && onDeleteContact && (
+                    <button onClick={async () => { if (confirm("Supprimer cet échange de l'historique ?")) { const r = await onDeleteContact(p, c); if (r?.error) alert(r.error); } }}
+                      className="ml-auto p-1 text-slate-300 hover:text-red-500" title="Supprimer cet échange (erreur)"><Trash2 size={12} /></button>
+                  )}
                 </div>
                 <p className="text-sm mt-1">{c.result}</p>
               </div>
@@ -9324,7 +9364,10 @@ function Prospects({ store, me, userId, initialModal, onModalConsumed }) {
   if (detail) {
     return <ProspectDetail prospect={detail} property={propById[detail.propertyId]} unit={unitById[detail.unitId]}
       member={memberById[detail.assignedTo]}
+      me={me}
       onAddContact={async (p, entry) => actions.saveProspect({ ...p, contacts: [...(p.contacts || []), entry] })}
+      onDeleteContact={async (p, c) => actions.saveProspect({ ...p, contacts: (p.contacts || []).filter((x) => x !== c) })}
+      onDelete={async (id) => { const r = await actions.deleteProspect(id); if (!r?.error) setDetailId(null); return r; }}
       onEdit={(p) => setModal(p)} onBack={() => setDetailId(null)} />;
   }
 
@@ -9639,7 +9682,8 @@ function ProspectedModal({ initial, existing, members, userId, onSave, onClose, 
 }
 
 /* ---------------- Fiche détaillée ---------------- */
-function ProspectedDetail({ bien: b, members, me, onEdit, onAddHistory, onSetStatus, onUploadPhoto, onDelete, onBack }) {
+function ProspectedDetail({ bien: b, members, me, onEdit, onAddHistory, onSetStatus, onUploadPhoto, onDelete, onDeletePhoto, onDeleteHistory, onBack }) {
+  const peutEffacer = canSupervise(me.role) || b.createdBy === me.id;
   const memberById = Object.fromEntries(members.map((m) => [m.id, m]));
   const [type, setType] = useState("contact");
   const [text, setText] = useState("");
@@ -9678,7 +9722,7 @@ function ProspectedDetail({ bien: b, members, me, onEdit, onAddHistory, onSetSta
           <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={async (e) => { for (const f of e.target.files || []) await onUploadPhoto(b, f); e.target.value = ""; }} />
           <button onClick={() => fileRef.current?.click()} className="kb-btn kb-btn-ghost text-sm"><Image size={14} /> Ajouter des photos</button>
           {(canSupervise(me.role) || b.createdBy === me.id) && (
-            <button onClick={async () => { if (confirm(`Supprimer définitivement ${b.ref} ?`)) { await onDelete(b.id); onBack(); } }} className="kb-btn kb-btn-ghost text-sm" style={{ color: "#D81F26" }}><Trash2 size={14} /></button>
+            <button onClick={async () => { if (confirm(`Supprimer définitivement ${b.ref}, ses photos et son historique ?`)) { const r = await onDelete(b.id); if (r?.error) alert(r.error); else onBack(); } }} className="kb-btn kb-btn-ghost text-sm" style={{ color: "#D81F26" }}><Trash2 size={14} /></button>
           )}
         </div>
       </div>
@@ -9752,9 +9796,15 @@ function ProspectedDetail({ bien: b, members, me, onEdit, onAddHistory, onSetSta
         <SectionCard title={`Photos (${b.photos.length})`} icon={Image}>
           <div className="flex flex-wrap gap-2">
             {b.photos.map((p, i) => (
-              <a key={i} href={p.url} target="_blank" rel="noreferrer">
-                <img src={p.url} alt={p.name || ""} className="h-24 w-32 object-cover rounded-lg border" style={{ borderColor: "var(--line)" }} />
-              </a>
+              <div key={i} className="relative">
+                <a href={p.url} target="_blank" rel="noreferrer">
+                  <img src={p.url} alt={p.name || ""} className="h-24 w-32 object-cover rounded-lg border" style={{ borderColor: "var(--line)" }} />
+                </a>
+                {peutEffacer && onDeletePhoto && (
+                  <button onClick={async () => { if (confirm("Supprimer définitivement cette photo ?")) { const r = await onDeletePhoto(b, i); if (r?.error) alert(r.error); } }}
+                    className="absolute top-1 right-1 rounded-full bg-white/90 p-1 shadow" style={{ color: "#D81F26" }} title="Supprimer la photo"><X size={12} /></button>
+                )}
+              </div>
             ))}
           </div>
         </SectionCard>
@@ -9783,6 +9833,10 @@ function ProspectedDetail({ bien: b, members, me, onEdit, onAddHistory, onSetSta
                 <span className="text-xs font-medium">{fr(h.date + "T00:00:00", { day: "numeric", month: "short", year: "numeric" })}{h.time ? ` à ${h.time}` : ""}</span>
                 <Chip color={h.type === "statut" ? "#7C3AED" : h.type === "relance" ? "#EA580C" : h.type === "visite" || h.type === "rdv" ? "#0891B2" : "#2E78A8"}>{PP_HISTORY_TYPE[h.type] || h.type}</Chip>
                 {h.by && <span className="text-[11px]" style={{ color: "var(--muted)" }}>par {h.by}</span>}
+                {canSupervise(me.role) && onDeleteHistory && (
+                  <button onClick={async () => { if (confirm("Supprimer cette entrée de l'historique ?")) { const r = await onDeleteHistory(b, h); if (r?.error) alert(r.error); } }}
+                    className="ml-auto p-1 text-slate-300 hover:text-red-500" title="Supprimer cette entrée (erreur)"><Trash2 size={12} /></button>
+                )}
               </div>
               <p className="text-sm mt-1">{h.text}</p>
             </div>
@@ -9819,6 +9873,8 @@ function NouveauxBiens({ store, me, userId }) {
         history: [...(b.history || []), { date: isoDate(new Date()), type: "statut", text: `${PP_STATUS[b.status]?.label || b.status} → ${PP_STATUS[s].label}`, by: me.name, byId: me.id }] })}
       onUploadPhoto={actions.uploadProspectedPhoto}
       onDelete={actions.deleteProspected}
+      onDeletePhoto={actions.deleteProspectedPhoto}
+      onDeleteHistory={(bien, h) => actions.saveProspected({ ...bien, history: (bien.history || []).filter((x) => x !== h) })}
       onBack={() => setDetailId(null)} />;
   }
 
