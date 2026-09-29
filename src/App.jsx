@@ -400,6 +400,9 @@ const periodAdd = (p, n) => {
 const advancePeriods = (a) => Array.from({ length: Math.max(1, Number(a.monthsCount) || 1) }, (_, i) => periodAdd(a.startPeriod, i));
 const advancePerMonth = (a) => Math.round((Number(a.amount) || 0) / Math.max(1, Number(a.monthsCount) || 1));
 const normName = (x) => (x || "").trim().toLowerCase();
+/* Avance légale d'entrée : libellé du supplément et observations posées par l'outil */
+const ENTRY_ADV_PREFIX = "Avance d'entrée — ";
+const AUTO_ENTRY_COMMENT = /^(Avance versée à l'entrée|Entrée du locataire|Réglé d'avance \(mois|Avance d'entrée|Couvert par l'avance d'entrée)/;
 const sameLotLine = (a, b) => (a.unitId && b.unitId && a.unitId === b.unitId) || (normName(a.unitLabel) && normName(a.unitLabel) === normName(b.unitLabel));
 /* État attendu d'une ligne pour un mois donné, d'après les avances du lot */
 function advanceStateFor(unitId, period, advances) {
@@ -974,7 +977,7 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "28.0";
+const APP_VERSION = "29.0";
 const APP_BUILD = "2026-09-26";
 
 /* ---- Papier à en-tête de l'agence ---- */
@@ -1813,56 +1816,72 @@ function useStore(userId) {
   /* Répercute l'avance d'entrée sur les tableaux de recouvrement DÉJÀ créés,
      suivi commercial comme état comptable. Sans cela, un locataire ayant payé
      d'avance ressort en impayé sur les mois concernés. */
+  /* Référence vers la propagation des arriérés (définie plus bas dans le store) */
+  const cascadeRef = useRef(null);
+
+  /* ══ AVANCE LÉGALE D'ENTRÉE appliquée aux tableaux existants ══
+     Mois couverts : « AVANCE », rien d'encaissé sur la ligne.
+     Mois d'entrée : l'avance entière est ajoutée aux « sommes à verser en
+     plus » — reversée au propriétaire, SANS frais d'agence.
+     Convertit aussi les mois d'entrée enregistrés à l'ancienne façon
+     (N mois portés dans « Payé », prestation prélevée dessus). */
   const applyAdvanceToPeriods = async (unit) => {
     const mois = coveredMonths(unit?.advanceStart || unit?.leaseStart, unit?.advanceMonths);
     if (!mois.length || !unit?.propertyId) return { touched: 0 };
-    let touched = 0;
-    for (const period of rentPeriods.filter((p) => p.propertyId === unit.propertyId && mois.includes(p.period))) {
-      const line = rentLines.find((l) => l.periodId === period.id
-        && (l.unitId === unit.id
-          || (l.unitLabel || "").toLowerCase() === (unit.label || "").toLowerCase()));
-      const rank = advanceRank(unit, period.period);
+    const nb = Number(unit.advanceMonths) || 1;
+    const loyer = Number(unit.rent) || 0;
+    const paidAt = (unit.advanceStart || unit.leaseStart || "").slice(0, 10) || null;
+    const { data: ps } = await supabase.from("rent_periods").select("*").eq("property_id", unit.propertyId);
+    let touched = 0; const debuts = {};
+    const noter = (p) => { if (!debuts[p.scope] || p.period < debuts[p.scope]) debuts[p.scope] = p.period; };
+    for (const p of (ps || []).map(mPeriod).filter((x) => mois.includes(x.period) && !x.locked)) {
+      const rank = advanceRank(unit, p.period);
       if (!rank) continue;
-      const nb = Number(unit.advanceMonths) || 1;
-      const loyer = Number(unit.rent) || 0;
-      const paidAt = (unit.advanceStart || unit.leaseStart || "").slice(0, 10) || null;
-      /* Mois d'entrée : on porte les N mois et on encaisse le tout.
-         Mois suivants : réglé d'avance, rien à reverser à nouveau. */
-      const entree = rank === 1;
-      const comment = entree
-        ? (nb > 1 ? `Entrée du locataire — ${nb} mois d'avance encaissés et reversés`
-                  : "Entrée du locataire — avance encaissée")
-        : `Réglé d'avance (mois ${rank}/${nb}) — somme déjà reversée au propriétaire`;
+      const lines = (await fetchPeriodLines(p.id)).map(mRLine);
+      const line = lines.find((l) => sameLotLine(l, { unitId: unit.id, unitLabel: unit.label }));
+      const auto = !line || !line.comment || AUTO_ENTRY_COMMENT.test(line.comment);
+      const comment = auto ? entryAdvanceComment(rank, nb) : line.comment;
       if (line) {
-        if (entree) {
-          const attendu = loyer * nb;
-          if ((Number(line.collected) || 0) >= attendu) continue;
-          const { error } = await supabase.from("rent_lines")
-            .update({ expected: attendu, collected: attendu, months: nb, prepaid: false,
-              paid_at: paidAt, comment, vacant: false }).eq("id", line.id);
-          if (!error) touched += 1;
-        } else {
-          if (line.prepaid) continue;
-          const { error } = await supabase.from("rent_lines")
-            .update({ expected: loyer, collected: 0, months: 1, prepaid: true,
-              paid_at: paidAt, comment, vacant: false }).eq("id", line.id);
-          if (!error) touched += 1;
+        /* Le loyer d'un mois couvert n'est jamais « encaissé » sur la ligne :
+           seul un règlement d'arriéré reporté peut y figurer. */
+        const ancienne = Number(line.months) > 1;
+        const collected = ancienne ? 0 : Math.min(Number(line.collected) || 0, lineCarried(line));
+        const dejaBon = line.prepaid && Number(line.months) === 1 && Number(line.expected) === loyer
+          && (Number(line.collected) || 0) === collected && line.comment === comment;
+        if (!dejaBon) {
+          const { error } = await supabase.from("rent_lines").update({ expected: loyer, collected, months: 1, prepaid: true,
+            paid_at: paidAt, comment, vacant: false }).eq("id", line.id);
+          if (!error) { touched += 1; noter(p); }
         }
       } else {
         const { error } = await supabase.from("rent_lines").insert({
-          period_id: period.id, unit_id: unit.id, unit_label: unit.label || "",
+          period_id: p.id, unit_id: unit.id, unit_label: unit.label || "",
           tenant_name: unit.tenantName || "", tenant_phone: unit.tenantPhone || "",
-          expected: entree ? loyer * nb : loyer,
-          collected: entree ? loyer * nb : 0,
-          months: entree ? nb : 1, prepaid: !entree, carried_arrears: 0,
-          paid_at: paidAt, charges: 0, comment, position: 999, vacant: false,
-        });
-        if (!error) touched += 1;
+          expected: loyer, collected: 0, months: 1, prepaid: true, carried_arrears: 0,
+          paid_at: paidAt, charges: 0, comment, position: 999, vacant: false });
+        if (!error) { touched += 1; noter(p); }
+      }
+      /* Mois d'entrée : le supplément « avance d'entrée », une seule fois */
+      if (rank === 1) {
+        const sup = entryAdvanceSupplement(unit, p.period);
+        const { data: ch } = await supabase.from("rent_charges").select("*").eq("period_id", p.id);
+        const charges = (ch || []).map(mRCharge);
+        const existant = charges.find((c) => isEntryAdvanceCharge(c, unit));
+        if (sup && !existant) {
+          const { error } = await supabase.from("rent_charges").insert({ period_id: p.id, label: sup.label, amount: sup.amount,
+            observation: sup.observation, kind: "supplement", position: charges.length });
+          if (!error) { touched += 1; noter(p); }
+        } else if (sup && existant && (existant.label || "").startsWith(ENTRY_ADV_PREFIX) && Number(existant.amount) !== sup.amount) {
+          const { error } = await supabase.from("rent_charges").update({ label: sup.label, amount: sup.amount }).eq("id", existant.id);
+          if (!error) { touched += 1; noter(p); }
+        }
       }
     }
+    for (const [scope, depuis] of Object.entries(debuts)) await cascadeRef.current?.(unit.propertyId, scope, depuis);
     if (touched) {
-      const { data } = await fetchAll("rent_lines", { col: "position" });
-      if (data) setRentLines(data.map(mRLine));
+      const [l, c] = await Promise.all([fetchAll("rent_lines", { col: "position" }), fetchAll("rent_charges", { col: "position" })]);
+      if (l.data) setRentLines(l.data.map(mRLine));
+      if (c.data) setRentCharges(c.data.map(mRCharge));
     }
     return { touched };
   };
@@ -2001,8 +2020,16 @@ function useStore(userId) {
     }
     return { changes, bloque };
   };
+  cascadeRef.current = cascadeFrom;
+
   /* Remet toute la chaîne d'un bien d'aplomb, depuis son premier tableau */
   const recalcAllCarried = async () => {
+    /* 1. Avances légales d'entrée : remises dans les « sommes à verser en plus » */
+    const { data: tousLots } = await supabase.from("units").select("*");
+    let avancesEntree = 0;
+    for (const u of (tousLots || []).map(mUnit).filter((x) => Number(x.advanceMonths) > 0 && (x.tenantName || "").trim())) {
+      avancesEntree += (await applyAdvanceToPeriods(u)).touched;
+    }
     const { data: ps } = await supabase.from("rent_periods").select("*");
     const couples = [...new Set((ps || []).map((p) => `${p.property_id}|${p.scope}`))];
     let changes = 0; const bloques = [];
@@ -2013,7 +2040,9 @@ function useStore(userId) {
     }
     const { data } = await fetchAll("rent_lines", { col: "position" });
     if (data) setRentLines(data.map(mRLine));
-    return { changes, bloques, message: `${changes} report(s) d'arriérés mis à jour` + (bloques.length ? ` — ${bloques.length} tableau(x) arrêté(s) laissé(s) intact(s)` : "") };
+    return { changes, bloques, message: `${changes} report(s) d'arriérés mis à jour`
+      + (avancesEntree ? ` — ${avancesEntree} correction(s) d'avances d'entrée` : "")
+      + (bloques.length ? ` — ${bloques.length} tableau(x) arrêté(s) laissé(s) intact(s)` : "") };
   };
   /* ══ ARRÊT POUR VIREMENT ══ */
   const lockPeriod = async (id) => {
@@ -5203,6 +5232,38 @@ function advanceRank(unit, period) {
   return diff >= 0 && diff < n ? diff + 1 : 0;
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   AVANCE LÉGALE D'ENTRÉE
+   Payée par le nouveau locataire à son entrée dans le bien. Elle est
+   reversée INTÉGRALEMENT au propriétaire le mois d'entrée, SANS frais
+   d'agence, dans « Sommes à verser en plus ». Les mois qu'elle couvre
+   s'affichent « AVANCE » (rien à encaisser, rien à reverser de nouveau).
+   À ne pas confondre avec les avances d'un locataire qui paie plusieurs
+   mois en cours de bail (rent_advances), qui suivent leurs propres règles.
+   ══════════════════════════════════════════════════════════════════════ */
+function entryAdvanceComment(rank, n) {
+  return rank === 1
+    ? `Avance d'entrée (mois 1/${n}) — reversée au propriétaire dans les sommes à verser en plus`
+    : `Couvert par l'avance d'entrée (mois ${rank}/${n}) — déjà reversée au propriétaire`;
+}
+/* Le supplément à reverser, le mois d'entrée seulement */
+function entryAdvanceSupplement(u, period) {
+  if (!u || advanceRank(u, period) !== 1) return null;
+  const n = Number(u.advanceMonths) || 0, loyer = Number(u.rent) || 0;
+  if (!n || !loyer || !(u.tenantName || "").trim() || u.status === "vacant") return null;
+  const mois = coveredMonths(u.advanceStart || u.leaseStart, n).map(periodLabel).join(", ");
+  return { label: `${ENTRY_ADV_PREFIX}${u.tenantName} (${u.label}) — ${n} mois : ${mois}`, amount: loyer * n,
+    observation: "Avance légale d'entrée — non soumise aux frais d'agence", kind: "supplement" };
+}
+/* Ce supplément existe-t-il déjà (créé par l'outil, ou saisi à la main par l'équipe) ? */
+function isEntryAdvanceCharge(c, u) {
+  if ((c.kind || "charge") !== "supplement" || !u) return false;
+  const lbl = c.label || "";
+  if (lbl.startsWith(ENTRY_ADV_PREFIX) && lbl.includes(`(${u.label})`)) return true;
+  const nom = normName(u.tenantName).split(" ")[0];
+  return !!nom && nom.length > 2 && /avance/i.test(lbl) && normName(lbl).includes(nom);
+}
+
 /* ---- Amorçage d'un tableau mensuel ----
    On repart du mois précédent du même bâtiment (locataires, loyers, charges),
    à défaut des lots du patrimoine. Les encaissements repartent à zéro,
@@ -5231,10 +5292,13 @@ function seedPeriodBase({ period, rentPeriods, rentLines, rentCharges, units }) 
     const rank = advanceRank(unit, period.period);
     if (!rank) return line;
     const n = Number(unit.advanceMonths) || 0;
-    return { ...line, collected: line.expected,
+    return { ...line, prepaid: true, months: 1, collected: 0,
       paidAt: (unit.advanceStart || unit.leaseStart || "").slice(0, 10),
-      comment: `Avance versée à l'entrée (mois ${rank}/${n})` };
+      comment: entryAdvanceComment(rank, n) };
   };
+  /* Suppléments « avance d'entrée » des locataires entrant CE mois-ci */
+  const supplementsEntree = units.filter((u) => u.propertyId === period.propertyId)
+    .map((u) => entryAdvanceSupplement(u, period.period)).filter(Boolean);
 
   const prev = rentPeriods
     .filter((p) => p.propertyId === period.propertyId && p.scope === period.scope && p.period < period.period)
@@ -5279,7 +5343,7 @@ function seedPeriodBase({ period, rentPeriods, rentLines, rentCharges, units }) 
             tenantName: u?.tenantName || l.tenantName, tenantPhone: u?.tenantPhone || l.tenantPhone,
             expected: u?.rent || l.expected, collected: 0, paidAt: "", charges: 0,
             months: 1, prepaid: true, vacant: false, carriedArrears: arrear,
-            comment: `Réglé d'avance (mois ${rangAv}/${u.advanceMonths}) — somme déjà reversée au propriétaire` };
+            comment: entryAdvanceComment(rangAv, Number(u.advanceMonths) || 0) };
         }
         const base = { unitId: l.unitId || u?.id || null, unitLabel: l.unitLabel,
           tenantName: vacantNow ? (u ? "" : l.tenantName) : (u?.tenantName || l.tenantName),
@@ -5301,7 +5365,7 @@ function seedPeriodBase({ period, rentPeriods, rentLines, rentCharges, units }) 
     const charges = rentCharges.filter((c) => c.periodId === prev.id && (c.kind || "charge") === "charge")
       .sort((a, b) => a.position - b.position)
       .map((c) => ({ label: c.label, amount: c.amount, observation: c.observation || "", kind: "charge" }));
-    return { lines, charges, source: `report de ${prev.period}` };
+    return { lines, charges: [...charges, ...supplementsEntree], source: `report de ${prev.period}` };
   }
 
   const us = units.filter((u) => u.propertyId === period.propertyId);
@@ -5313,21 +5377,9 @@ function seedPeriodBase({ period, rentPeriods, rentLines, rentCharges, units }) 
       /* Premier tableau : l'arriéré antérieur à l'outil devient l'arriéré reporté */
       carriedArrears: vacant ? 0 : (Number(u.arrearsAmount) || 0) };
     if (vacant) return base;
-    const rang = advanceRank(u, period.period);
-    if (rang > 1) {
-      return { ...base, prepaid: true,
-        comment: `Réglé d'avance (mois ${rang}/${u.advanceMonths}) — somme déjà reversée au propriétaire` };
-    }
-    if (rang === 1 && Number(u.advanceMonths) > 1) {
-      /* Mois d'entrée : les mois d'avance sont encaissés et reversés maintenant */
-      const nb = Number(u.advanceMonths);
-      return { ...base, months: nb, expected: (u.rent || 0) * nb, collected: (u.rent || 0) * nb,
-        paidAt: (u.advanceStart || u.leaseStart || "").slice(0, 10),
-        comment: `Entrée du locataire — ${nb} mois d'avance encaissés et reversés` };
-    }
     return applyAdvance(base, u);
   });
-  return { lines, charges: DEFAULT_CHARGES.map((label) => ({ label, amount: 0, observation: "", kind: "charge" })),
+  return { lines, charges: [...DEFAULT_CHARGES.map((label) => ({ label, amount: 0, observation: "", kind: "charge" })), ...supplementsEntree],
     source: us.length ? "lots du bâtiment" : "" };
 }
 
@@ -7681,11 +7733,12 @@ function TenantModal({ unit, property, onSave, onClose }) {
           f.advanceStart ? (
             <div className="rounded-lg p-2.5 mt-1" style={{ background: "#EAF6E3" }}>
               <p className="text-[11px]" style={{ color: "#3d7d20" }}>
-                <strong>{fcfa((Number(f.rent) || 0) * Number(f.advanceMonths))}</strong> d'avance —
-                mois marqués réglés : <strong>{coveredMonths(f.advanceStart, f.advanceMonths).map((m) => periodLabel(m)).join(", ")}</strong>.
+                <strong>{fcfa((Number(f.rent) || 0) * Number(f.advanceMonths))}</strong> d'avance légale d'entrée —
+                mois couverts, marqués « AVANCE » : <strong>{coveredMonths(f.advanceStart, f.advanceMonths).map((m) => periodLabel(m)).join(", ")}</strong>.
               </p>
               <p className="text-[11px] mt-0.5" style={{ color: "#3d7d20" }}>
-                Les tableaux de recouvrement existants (commercial et comptable) seront mis à jour à l'enregistrement.
+                Reversée en totalité au propriétaire le mois d'entrée, dans les <strong>sommes à verser en plus</strong>, <strong>sans frais d'agence</strong>.
+                Les tableaux existants sont mis à jour à l'enregistrement.
               </p>
             </div>
           ) : (
