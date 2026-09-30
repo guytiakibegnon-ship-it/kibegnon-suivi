@@ -6,7 +6,7 @@
  * ==========================================================================*/
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
-  AlertTriangle, AlignCenter, AlignJustify, AlignLeft, AlignRight, Archive, ArchiveRestore, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, Banknote, BarChart3, Bell, BellOff, BellRing, Bold, Briefcase, Building2, CalendarClock, CalendarDays, CalendarOff, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, DoorClosed, DoorOpen, Download, Eraser, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Highlighter, Home, Image, Inbox, IndentDecrease, IndentIncrease, Italic, KeyRound, Landmark, Layers, LayoutDashboard, Link2, List, ListChecks, ListOrdered, Lock, LogOut, Mail, MapPin, Maximize2, MessageCircle, MessageCircleWarning, MessageSquare, Minimize2, Minus, Package, Palette, Paperclip, Pause, Pencil, Percent, Phone, PhoneIncoming, Play, Plus, Printer, Receipt, Redo2, RefreshCw, RotateCcw, Scale, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, Strikethrough, Subscript, Superscript, Table2, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, Underline, Undo2, Unlock, Upload, UserPlus, UserRound, Users, Wallet, X, Zap,
+  AlertTriangle, AlignCenter, AlignJustify, AlignLeft, AlignRight, Archive, ArchiveRestore, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, Banknote, BarChart3, Bell, BellOff, BellRing, Bold, Briefcase, Building2, CalendarClock, CalendarDays, CalendarOff, Camera, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList, Clock, DoorClosed, DoorOpen, Download, Eraser, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Highlighter, Home, Image, Inbox, IndentDecrease, IndentIncrease, Italic, KeyRound, Landmark, Layers, LayoutDashboard, Link2, List, ListChecks, ListOrdered, Lock, LogOut, Mail, MapPin, Maximize2, MessageCircle, MessageCircleWarning, MessageSquare, Minimize2, Minus, Package, Palette, Paperclip, Pause, Pencil, Percent, Phone, PhoneIncoming, Play, Plus, Printer, Receipt, Redo2, RefreshCw, RotateCcw, Scale, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, Strikethrough, Subscript, Superscript, Table2, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, Underline, Undo2, Unlock, Upload, UserPlus, UserRound, Users, Wallet, Wrench, X, Zap,
 } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { supabase, AUTH_DOMAIN } from "./supabaseClient";
@@ -46,6 +46,18 @@ const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
 const DEPT_PALETTE = ["#D81F26", "#2E78A8", "#4F9E2A", "#C58A1B", "#7C3AED", "#0D9488", "#EA580C", "#DB2777"];
 
 /* ---- Métier immobilier ---- */
+const FOLDER_CATEGORY = {
+  contrat:          "Contrat / bail",
+  piece_identite:   "Pièce d'identité",
+  etat_des_lieux:   "État des lieux",
+  justificatif:     "Justificatif",
+  correspondance:   "Correspondance",
+  photo:            "Photo",
+  titre_propriete:  "Titre de propriété",
+  fiscal:           "Document fiscal",
+  autre:            "Autre",
+};
+
 const NATURE = {
   contrat:      { label: "Contrat",        color: "#2E78A8" },
   visite:       { label: "Visite",         color: "#0D9488" },
@@ -977,7 +989,7 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "29.0";
+const APP_VERSION = "30.0";
 const APP_BUILD = "2026-09-26";
 
 /* ---- Papier à en-tête de l'agence ---- */
@@ -1192,7 +1204,7 @@ async function fetchPeriodLines(periodId) {
 /* ---- mappers DB (snake_case) -> UI (camelCase) ---- */
 const mProfile = (r) => ({ id: r.id, name: r.full_name, username: r.username, role: r.role, deptId: r.dept_id, color: r.color, active: r.active });
 const mDept    = (r) => ({ id: r.id, name: r.name, color: r.color });
-const mTask    = (r) => ({ id: r.id, title: r.title, description: r.description, deptId: r.dept_id, assigneeId: r.assignee_id, urgency: r.urgency, status: r.status, estMin: r.est_min, weekStart: r.week_start, day: r.day, dueDate: r.due_date, createdBy: r.created_by, createdAt: Date.parse(r.created_at), propertyId: r.property_id, ownerId: r.owner_id, nature: r.nature || "autre", assigneeIds: r.assignee_ids || [], startTime: r.start_time || "", reminderMin: Number(r.reminder_min) || 0 });
+const mTask    = (r) => ({ id: r.id, title: r.title, description: r.description, deptId: r.dept_id, assigneeId: r.assignee_id, urgency: r.urgency, status: r.status, estMin: r.est_min, weekStart: r.week_start, day: r.day, dueDate: r.due_date, createdBy: r.created_by, createdAt: Date.parse(r.created_at), propertyId: r.property_id, ownerId: r.owner_id, nature: r.nature || "autre", assigneeIds: r.assignee_ids || [], startTime: r.start_time || "", reminderMin: Number(r.reminder_min) || 0, visitId: r.visit_id || null });
 const mEntry   = (r) => ({ id: r.id, taskId: r.task_id, userId: r.user_id, start: Date.parse(r.start_at), end: Date.parse(r.end_at), durationSeconds: r.duration_seconds, note: r.note });
 const mTimer   = (r) => ({ userId: r.user_id, taskId: r.task_id, startedAt: Date.parse(r.started_at) });
 const mChannel = (r) => ({ id: r.id, type: r.type, name: r.name });
@@ -1215,7 +1227,7 @@ const mQuote   = (r) => ({ id: r.id, ref: r.ref, artisanName: r.artisan_name, tr
   /* Le total affiché partout (listes, statistiques) est le TTC */
   total: r.amount_ttc === null || r.amount_ttc === undefined ? Number(r.total_amount) || 0 : Number(r.amount_ttc),
   fileUrl: r.file_url || "", filePath: r.file_path || "", fileName: r.file_name || "", fileType: r.file_type || "",
-  archived: !!r.archived, archivedAt: r.archived_at, archivedBy: r.archived_by, archiveReason: r.archive_reason || "",
+  archived: !!r.archived, archivedAt: r.archived_at, archivedBy: r.archived_by, archiveReason: r.archive_reason || "", artisanId: r.artisan_id || "",
   recordedBy: r.recorded_by, createdAt: Date.parse(r.created_at) });
 const mQLine   = (r) => ({ id: r.id, quoteId: r.quote_id, label: r.label, qty: Number(r.qty), unit: r.unit, price: Number(r.unit_price), position: r.position });
 const mUnit    = (r) => ({ id: r.id, propertyId: r.property_id, label: r.label, kind: r.kind, floor: r.floor, rooms: r.rooms, surface: r.surface_m2, rent: Number(r.rent_amount), charges: Number(r.charges_amount), status: r.status, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, leaseStart: r.lease_start, notes: r.notes, tenantEmail: r.tenant_email || "", leaseEnd: r.lease_end, dueDay: r.due_day || 5, deposit: Number(r.deposit) || 0, advanceMonths: Number(r.advance_months) || 0, advanceStart: r.advance_start, arrearsAmount: Number(r.arrears_amount) || 0, arrearsMonths: Number(r.arrears_months) || 0, arrearsNote: r.arrears_note || "" });
@@ -1225,12 +1237,22 @@ const mRLine   = (r) => ({ id: r.id, periodId: r.period_id, unitId: r.unit_id, u
   advanceIn: Number(r.advance_in) || 0, advanceRef: r.advance_ref || "" });
 const mRCharge = (r) => ({ id: r.id, periodId: r.period_id, label: r.label, amount: Number(r.amount), observation: r.observation, position: r.position, kind: r.kind || "charge" });
 const mFormer   = (r) => ({ id: r.id, unitId: r.unit_id, propertyId: r.property_id, unitLabel: r.unit_label, name: r.name, phone: r.phone, email: r.email, leaseStart: r.lease_start, leaseEnd: r.lease_end, departureDate: r.departure_date, reason: r.reason, rent: Number(r.rent_amount) || 0, deposit: Number(r.deposit) || 0, depositRefund: Number(r.deposit_refund) || 0, balanceDue: Number(r.balance_due) || 0, notes: r.notes, archivedBy: r.archived_by });
+const mVisit = (r) => ({ id: r.id, ref: r.ref, propertyId: r.property_id, unitId: r.unit_id, visitDate: r.visit_date, startTime: r.start_time || "", endTime: r.end_time || "",
+  agentId: r.agent_id, visitType: r.visit_type, reasons: r.reasons || [], reasonDetail: r.reason_detail || "", propertyStatus: r.property_status,
+  persons: r.persons || [], checklist: r.checklist || {}, findings: r.findings || "", anomalies: r.anomalies || [], works: r.works || [],
+  report: r.report || "", observations: r.observations || "", status: r.status, nextNeeded: !!r.next_needed, nextDate: r.next_date || "",
+  nextReason: r.next_reason || "", nextAgentId: r.next_agent_id, nextVisitId: r.next_visit_id, complaintId: r.complaint_id || "",
+  snapshot: r.snapshot || {}, ownerInformedAt: r.owner_informed_at, closedAt: r.closed_at, validatedBy: r.validated_by, validatedAt: r.validated_at,
+  managerNote: r.manager_note || "", createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
+const mArtisan = (r) => ({ id: r.id, name: r.name, company: r.company || "", trade: r.trade || "", phone: r.phone || "", phone2: r.phone2 || "",
+  email: r.email || "", commune: r.commune || "", notes: r.notes || "", active: r.active !== false, createdBy: r.created_by });
 const mProspected = (r) => ({ id: r.id, ref: r.ref, ownerName: r.owner_name, ownerPhone: r.owner_phone, ownerPhone2: r.owner_phone2, ownerWhatsapp: r.owner_whatsapp, ownerType: r.owner_type, ownerNotes: r.owner_notes, kind: r.kind, commune: r.commune, quartier: r.quartier, address: r.address, landmark: r.landmark, rooms: r.rooms, bedrooms: r.bedrooms, bathrooms: r.bathrooms, floor: r.floor, surface: r.surface, furnished: !!r.furnished, condition: r.condition, availability: r.availability, operation: r.operation, rent: r.rent, salePrice: r.sale_price, negotiable: !!r.negotiable, ownerInterest: r.owner_interest, potential: r.potential, prospectedAt: r.prospected_at, agentId: r.agent_id, method: r.method, identifiedHow: r.identified_how, nextAction: r.next_action, nextContact: r.next_contact, notes: r.notes, status: r.status, photos: r.photos || [], history: r.history || [], propertyId: r.property_id, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
 const mReport    = (r) => ({ id: r.id, agentId: r.agent_id, weekStart: r.week_start, zone: r.zone, objectives: r.objectives || {}, manual: r.manual || {}, qualitative: r.qualitative || {}, top: r.top || [], status: r.status, submittedAt: r.submitted_at, validatedBy: r.validated_by, validatedAt: r.validated_at, managerNote: r.manager_note || "", createdAt: Date.parse(r.created_at) });
 const mProspect = (r) => ({ id: r.id, ref: r.ref, propertyId: r.property_id, unitId: r.unit_id, operation: r.operation, name: r.name, phone: r.phone, email: r.email, source: r.source, interest: r.interest, status: r.status, nextContact: r.next_contact, assignedTo: r.assigned_to, notes: r.notes, lossReason: r.loss_reason || "", contacts: r.contacts || [], createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
 const mCash     = (r) => ({ id: r.id, date: r.entry_date, direction: r.direction, amount: Number(r.amount), label: r.label, category: r.category, method: r.method, propertyId: r.property_id, ownerId: r.owner_id, reference: r.reference, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at) });
 const mHandover = (r) => ({ id: r.id, date: r.handover_date, amount: Number(r.amount), fromUser: r.from_user, toUser: r.to_user, status: r.status, approvedAt: r.approved_at, note: r.note, responseNote: r.response_note, createdAt: Date.parse(r.created_at) });
-const mFolderFile = (r) => ({ id: r.id, scope: r.scope, unitId: r.unit_id, ownerId: r.owner_id, formerTenantId: r.former_tenant_id, propertyId: r.property_id, category: r.category, label: r.label, fileUrl: r.file_url, fileName: r.file_name, fileType: r.file_type, fileSize: Number(r.file_size) || 0, notes: r.notes, uploadedBy: r.uploaded_by, createdAt: Date.parse(r.created_at) });
+const mFolderFile = (r) => ({ id: r.id, scope: r.scope, unitId: r.unit_id, ownerId: r.owner_id, formerTenantId: r.former_tenant_id, propertyId: r.property_id, category: r.category, label: r.label, fileUrl: r.file_url, fileName: r.file_name, fileType: r.file_type, fileSize: Number(r.file_size) || 0, notes: r.notes, uploadedBy: r.uploaded_by, createdAt: Date.parse(r.created_at),
+  visitId: r.visit_id || null, caption: r.caption || "", location: r.location || "" });
 const mComplaint = (r) => ({ id: r.id, ref: r.ref, propertyId: r.property_id, unitId: r.unit_id, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, category: r.category, cause: r.cause, priority: r.priority, description: r.description, reportedAt: r.reported_at, channel: r.channel, status: r.status, assignedTo: r.assigned_to, quoteId: r.quote_id, cost: Number(r.cost) || 0, resolution: r.resolution, resolvedAt: r.resolved_at, createdBy: r.created_by });
 const mTax     = (r) => ({ id: r.id, propertyId: r.property_id, unitId: r.unit_id, customLabel: r.custom_label, ownerId: r.owner_id, ownerLabel: r.owner_label, taxYear: r.tax_year, noticeNumber: r.notice_number, taxedAmount: Number(r.taxed_amount), installments: r.installments || [], receipts: r.receipts, declarationNext: r.declaration_next, notes: r.notes, createdBy: r.created_by, ncc: r.ncc || "", declarationDate: r.declaration_date, nextBase: r.next_base, withholdings: r.withholdings || [], taxCenter: r.tax_center || "" });
 const mReq     = (r) => ({ id: r.id, reqType: r.req_type, userId: r.user_id, date: r.req_date, amount: Number(r.amount), destination: r.destination, mode: r.transport_mode, propertyId: r.property_id, startDate: r.start_date, endDate: r.end_date, absenceType: r.absence_type, motif: r.motif, status: r.status, decidedBy: r.decided_by, decidedAt: r.decided_at, decisionNote: r.decision_note, createdAt: Date.parse(r.created_at) });
@@ -1276,6 +1298,8 @@ function useStore(userId) {
   const [prospected, setProspected] = useState([]);
   const [weeklyReports, setWeeklyReports] = useState([]);
   const [rentAdvances, setRentAdvances] = useState([]);
+  const [visits, setVisits] = useState([]);
+  const [artisans, setArtisans] = useState([]);
   const [handovers, setHandovers] = useState([]);
 
   /* Référence vivante des membres, utilisée par les notifications */
@@ -1283,7 +1307,7 @@ function useStore(userId) {
   useEffect(() => { membersRef.current = members; }, [members]);
 
   const load = useCallback(async () => {
-    const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc, un, rp, rlin, rch, rq, tax, cp, ff, ce, ho, ft, prs, ppr, wrp, adv] = await Promise.all([
+    const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc, un, rp, rlin, rch, rq, tax, cp, ff, ce, ho, ft, prs, ppr, wrp, adv, vis, art] = await Promise.all([
       supabase.from("departments").select("*").order("created_at"),
       supabase.from("profiles").select("*").order("created_at"),
       fetchAll("tasks"),
@@ -1317,6 +1341,8 @@ function useStore(userId) {
       supabase.from("prospected_properties").select("*").order("prospected_at", { ascending: false }),
       supabase.from("weekly_reports").select("*").order("week_start", { ascending: false }),
       fetchAll("rent_advances", { col: "paid_at", asc: false }),
+      fetchAll("property_visits", { col: "visit_date", asc: false }),
+      fetchAll("artisans", { col: "name" }),
     ]);
     setDepartments((dep.data || []).map(mDept));
     setMembers((prof.data || []).map(mProfile));
@@ -1351,6 +1377,8 @@ function useStore(userId) {
     setProspected((ppr.data || []).map(mProspected));
     setWeeklyReports((wrp.data || []).map(mReport));
     setRentAdvances((adv?.data || []).map(mAdvance));
+    setVisits((vis?.data || []).map(mVisit));
+    setArtisans((art?.data || []).map(mArtisan));
     setLoading(false);
   }, []);
 
@@ -1389,6 +1417,8 @@ function useStore(userId) {
     const upPp = upsertBy("id", mProspected)(setProspected), rmPp = removeBy("id")(setProspected);
     const upWr = upsertBy("id", mReport)(setWeeklyReports), rmWr = removeBy("id")(setWeeklyReports);
     const upAv = upsertBy("id", mAdvance)(setRentAdvances), rmAv = removeBy("id")(setRentAdvances);
+    const upVi = upsertBy("id", mVisit)(setVisits), rmVi = removeBy("id")(setVisits);
+    const upAr = upsertBy("id", mArtisan)(setArtisans), rmAr = removeBy("id")(setArtisans);
     const h = (up, rm, key = "id") => (p) => p.eventType === "DELETE" ? rm(p.old[key]) : up(p.new);
 
     const ch = supabase.channel("kibegnon-rt")
@@ -1434,6 +1464,8 @@ function useStore(userId) {
       .on("postgres_changes", { event: "*", schema: "public", table: "prospects" }, h(upPr, rmPr))
       .on("postgres_changes", { event: "*", schema: "public", table: "prospected_properties" }, h(upPp, rmPp))
       .on("postgres_changes", { event: "*", schema: "public", table: "rent_advances" }, h(upAv, rmAv))
+      .on("postgres_changes", { event: "*", schema: "public", table: "property_visits" }, h(upVi, rmVi))
+      .on("postgres_changes", { event: "*", schema: "public", table: "artisans" }, h(upAr, rmAr))
       .on("postgres_changes", { event: "*", schema: "public", table: "weekly_reports" }, (p) => {
         if (p.eventType === "DELETE") return rmWr(p.old.id);
         /* La direction est prévenue à la soumission, le commercial à la validation ou au renvoi */
@@ -1493,7 +1525,7 @@ function useStore(userId) {
       day: f.day ?? null, due_date: f.dueDate || null, created_by: userId,
       property_id: f.propertyId || null, owner_id: f.ownerId || null, nature: f.nature || "autre",
       assignee_ids: f.assigneeIds || [], start_time: f.startTime || null,
-      reminder_min: Number(f.reminderMin) || 0,
+      reminder_min: Number(f.reminderMin) || 0, visit_id: f.visitId || null,
     }).select().single();
     // Affichage immédiat sans attendre l'écho temps réel
     if (data) setTasks((p) => (p.some((t) => t.id === data.id) ? p : [...p, mTask(data)]));
@@ -1724,7 +1756,7 @@ function useStore(userId) {
       owner_id: f.ownerId || null, quote_date: f.date, source: f.source, object: f.object || "",
       description: f.description || "", status: f.status, notes: f.notes || "",
       vat_applicable: !!f.vatApplicable, vat_rate: Number(f.vatRate) || 0,
-      amount_ht: m.ht, amount_vat: m.vat, amount_ttc: m.ttc };
+      amount_ht: m.ht, amount_vat: m.vat, amount_ttc: m.ttc, artisan_id: f.artisanId || null };
 
     let quoteId = f.id;
     if (quoteId) {
@@ -2244,6 +2276,125 @@ function useStore(userId) {
     return { error: error?.message };
   };
 
+  /* ================= ACTIONS : VISITES DES BIENS GÉRÉS ================= */
+  /* Jour du Planning : 0 = lundi … 5 = samedi ; dimanche = non planifié */
+  const jourPlanning = (iso) => { if (!iso) return null; const g = new Date(iso + "T00:00:00").getDay(); return g === 0 ? null : g - 1; };
+  const saveVisit = async (f, ctx = {}) => {
+    if (!f.propertyId) return { error: "Sélectionnez le bien visité." };
+    const texte = (x) => (x === null || x === undefined ? "" : String(x));
+    const cles = ["propertyName", "propertyRef", "unitLabel", "address", "commune", "quartier", "kind", "ownerName", "ownerPhone", "ownerEmail", "tenantName", "tenantPhone", "agentName", "manager"];
+    /* Les informations du bien sont figées au moment de la clôture */
+    const snapshot = f.snapshot?.frozen ? f.snapshot
+      : { ...Object.fromEntries(cles.map((k) => [k, texte(ctx[k])])), frozen: f.status === "cloturee" };
+    const row = { property_id: f.propertyId, unit_id: f.unitId || null, visit_date: f.visitDate, start_time: f.startTime || null, end_time: f.endTime || null,
+      agent_id: f.agentId || userId, visit_type: f.visitType, reasons: f.reasons || [], reason_detail: f.reasonDetail || "",
+      property_status: f.propertyStatus || "autre", persons: (f.persons || []).filter((p) => (p.name || "").trim()), checklist: f.checklist || {},
+      findings: f.findings || "", anomalies: f.anomalies || [], works: f.works || [], report: f.report || "", observations: f.observations || "",
+      status: f.status || "en_cours", next_needed: !!f.nextNeeded, next_date: f.nextNeeded ? (f.nextDate || null) : null,
+      next_reason: f.nextNeeded ? (f.nextReason || "") : "", next_agent_id: f.nextNeeded ? (f.nextAgentId || null) : null,
+      next_visit_id: f.nextVisitId || null, complaint_id: f.complaintId || null, snapshot,
+      closed_at: f.status === "cloturee" ? (f.closedAt || new Date().toISOString()) : (f.closedAt || null) };
+    const q = f.id ? supabase.from("property_visits").update(row).eq("id", f.id).select().single()
+                   : supabase.from("property_visits").insert({ ...row, created_by: userId }).select().single();
+    const { data, error } = await q;
+    if (error) return { error: error.message };
+    if (!data) return { error: "Enregistrement refusé : cette visite ne peut plus être modifiée avec votre compte." };
+    const v = mVisit(data);
+    setVisits((p) => [v, ...p.filter((x) => x.id !== v.id)]);
+    /* Visite réalisée : la tâche « Visite » qui la programmait est terminée */
+    if (["cloturee", "validee"].includes(v.status)) {
+      const { data: tk } = await supabase.from("tasks").update({ status: "termine" }).eq("visit_id", v.id).eq("nature", "visite").select();
+      if (tk?.length) setTasks((p) => p.map((t) => { const n = tk.find((x) => x.id === t.id); return n ? mTask(n) : t; }));
+    }
+    return { id: v.id, ref: v.ref, message: f.id ? "Visite enregistrée" : `Visite ${v.ref} créée` };
+  };
+  const setVisitStatus = async (v, status, note) => {
+    const { data, error } = await supabase.from("property_visits").update({ status, manager_note: note || "",
+      validated_by: status === "validee" ? userId : null, validated_at: status === "validee" ? new Date().toISOString() : null })
+      .eq("id", v.id).select().single();
+    if (error) return { error: error.message };
+    if (!data) return { error: "Action refusée." };
+    setVisits((p) => p.map((x) => (x.id === v.id ? mVisit(data) : x)));
+    return { message: status === "validee" ? "Visite validée" : "Visite renvoyée à l'agent pour correction" };
+  };
+  const deleteVisit = async (id) => {
+    const { data, error } = await supabase.from("property_visits").delete().eq("id", id).select();
+    if (error) return { error: error.message };
+    if (!data || !data.length) return { error: "Suppression refusée : droits insuffisants." };
+    setVisits((p) => p.filter((x) => x.id !== id));
+    return { message: "Visite supprimée" };
+  };
+  const markOwnerInformed = async (id) => {
+    const { data } = await supabase.from("property_visits").update({ owner_informed_at: new Date().toISOString() }).eq("id", id).select().single();
+    if (data) setVisits((p) => p.map((x) => (x.id === id ? mVisit(data) : x)));
+  };
+  /* Action de suivi → tâche (Tâches + Planning + rappel) */
+  const createVisitTask = async (visit, a) => {
+    const prop = properties.find((p) => p.id === visit.propertyId);
+    const base = a.dueDate ? new Date(a.dueDate + "T00:00:00") : new Date();
+    return createTask({ title: a.title.trim(), description: [a.description, `Issue de la visite ${visit.ref || ""} — ${prop?.name || ""}`].filter(Boolean).join("\n"),
+      assigneeId: a.assigneeId, assigneeIds: [a.assigneeId], urgency: a.urgency || "normale", status: "a_faire", estMin: 30,
+      weekStart: mondayIso(base), day: jourPlanning(a.dueDate), dueDate: a.dueDate || null, propertyId: visit.propertyId,
+      ownerId: prop?.ownerId || null, nature: "travaux", visitId: visit.id, reminderMin: 60 });
+  };
+  /* Prochaine visite : une visite « programmée » + sa tâche « Visite » dans le Planning */
+  const scheduleNextVisit = async (v) => {
+    if (!v.nextDate) return { error: "Date de la prochaine visite manquante." };
+    const prop = properties.find((p) => p.id === v.propertyId);
+    const agent = v.nextAgentId || v.agentId || userId;
+    const { data, error } = await supabase.from("property_visits").insert({ property_id: v.propertyId, unit_id: v.unitId || null,
+      visit_date: v.nextDate, agent_id: agent, visit_type: "controle_etat", reason_detail: v.nextReason || `Suite de la visite ${v.ref || ""}`,
+      status: "programmee", created_by: userId }).select().single();
+    if (error || !data) return { error: error?.message || "Programmation impossible." };
+    const nv = mVisit(data);
+    setVisits((p) => [nv, ...p.filter((x) => x.id !== nv.id)]);
+    await createTask({ title: `Visite — ${prop?.name || "bien"}${v.nextReason ? " : " + v.nextReason : ""}`, description: `Programmée à l'issue de la visite ${v.ref || ""}`,
+      assigneeId: agent, assigneeIds: [agent], urgency: "normale", status: "a_faire", estMin: 60,
+      weekStart: mondayIso(new Date(v.nextDate + "T00:00:00")), day: jourPlanning(v.nextDate), dueDate: v.nextDate,
+      propertyId: v.propertyId, ownerId: prop?.ownerId || null, nature: "visite", visitId: nv.id, reminderMin: 60 });
+    const { data: src } = await supabase.from("property_visits").update({ next_visit_id: nv.id }).eq("id", v.id).select().single();
+    if (src) setVisits((p) => p.map((x) => (x.id === v.id ? mVisit(src) : x)));
+    return { id: nv.id };
+  };
+
+  /* ================= ACTIONS : RÉPERTOIRE DES ARTISANS ================= */
+  const saveArtisan = async (f) => {
+    if (!(f.name || "").trim()) return { error: "Le nom de l'artisan est obligatoire." };
+    const row = { name: f.name.trim(), company: f.company || "", trade: f.trade || "", phone: f.phone || "", phone2: f.phone2 || "",
+      email: f.email || "", commune: f.commune || "", notes: f.notes || "", active: f.active !== false };
+    const q = f.id ? supabase.from("artisans").update(row).eq("id", f.id).select().single()
+                   : supabase.from("artisans").insert({ ...row, created_by: userId }).select().single();
+    const { data, error } = await q;
+    if (error) return { error: error.message };
+    if (!data) return { error: "Enregistrement refusé." };
+    setArtisans((p) => [mArtisan(data), ...p.filter((x) => x.id !== data.id)]);
+    return { id: data.id, message: "Artisan enregistré" };
+  };
+  const deleteArtisan = async (id) => {
+    const { data, error } = await supabase.from("artisans").delete().eq("id", id).select();
+    if (error) return { error: error.message };
+    if (!data || !data.length) return { error: "Suppression refusée : réservée à la direction." };
+    setArtisans((p) => p.filter((x) => x.id !== id));
+    return { message: "Artisan retiré du répertoire (ses devis sont conservés)" };
+  };
+  /* Remplit le répertoire avec les artisans déjà cités dans les devis (sans doublon) */
+  const importArtisansFromQuotes = async () => {
+    const tel = (x) => (x || "").replace(/\D/g, "").slice(-8);
+    const connus = (a) => artisans.some((x) => (tel(a.phone) && tel(x.phone) === tel(a.phone)) || normName(x.name) === normName(a.name));
+    const vus = new Map();
+    for (const q of quotes) {
+      const nom = (q.artisanName || "").trim(); if (!nom) continue;
+      const cle = tel(q.phone) || normName(nom);
+      if (!vus.has(cle)) vus.set(cle, { name: nom, company: q.companyName || "", trade: q.trade || "", phone: q.phone || "" });
+    }
+    const nouveaux = [...vus.values()].filter((a) => !connus(a));
+    if (!nouveaux.length) return { message: "Aucun nouvel artisan à importer : le répertoire est à jour." };
+    const { data, error } = await supabase.from("artisans").insert(nouveaux.map((a) => ({ ...a, created_by: userId }))).select();
+    if (error) return { error: error.message };
+    setArtisans((p) => [...(data || []).map(mArtisan), ...p]);
+    return { message: `${(data || []).length} artisan(s) importé(s) depuis les devis` };
+  };
+
   /* ================= ACTIONS : NOUVEAUX BIENS PROSPECTÉS ================= */
   const saveProspected = async (f) => {
     const num = (v) => (v === "" || v === null || v === undefined) ? null : Number(v);
@@ -2408,6 +2559,7 @@ function useStore(userId) {
       property_id: meta.propertyId || null, category: meta.category || "autre",
       label: meta.label || file.name, file_url: pub.publicUrl, file_name: file.name,
       file_type: file.type, file_size: file.size, uploaded_by: userId,
+      visit_id: meta.visitId || null, caption: meta.caption || "", location: meta.location || "",
     }).select().single();
     if (data) setFolderFiles((p) => (p.some((x) => x.id === data.id) ? p : [mFolderFile(data), ...p]));
     return { error: error?.message };
@@ -2658,7 +2810,7 @@ function useStore(userId) {
        et fiches existants les ignorent sans autre modification. */
     quotes: activeQuotes, quotesAll: quotes, quoteLines, templates, documents,
     units, rentPeriods, rentLines, rentCharges, requests, taxRecords, complaints, folderFiles,
-    cashEntries, handovers, formerTenants, prospects, prospected, weeklyReports, rentAdvances,
+    cashEntries, handovers, formerTenants, prospects, prospected, weeklyReports, rentAdvances, visits, artisans,
     actions: {
       createTask, updateTask, deleteTask, startTimer, stopTimer, pauseTask, finishTask, addManualTime, deleteEntry,
       ensureDm, sendMessage, markRead, saveDept, deleteDept, updateProfile, adminUsers,
@@ -2674,6 +2826,8 @@ function useStore(userId) {
       saveCashEntry, deleteCashEntry, createHandover, answerHandover,
       applyAdvanceToPeriods, archiveTenant, deleteFormerTenant,
       saveAdvance, deleteAdvance, syncAdvancesForUnit, cascadeFrom, recalcAllCarried, lockPeriod, unlockPeriod,
+      saveVisit, setVisitStatus, deleteVisit, markOwnerInformed, createVisitTask, scheduleNextVisit,
+      saveArtisan, deleteArtisan, importArtisansFromQuotes,
       saveProspect, deleteProspect, saveProspected, deleteProspected, uploadProspectedPhoto, deleteProspectedPhoto,
       saveWeeklyReport, deleteWeeklyReport, reload: load,
     },
@@ -3722,7 +3876,7 @@ function Documents({ store, me }) {
    MODULE DEVIS ARTISANS
    ══════════════════════════════════════════════════════════════════════ */
 /* ---------------- Modale de saisie ---------------- */
-function QuoteModal({ initial, initialLines, properties, owners, units = [], locked = false, onSave, onClose }) {
+function QuoteModal({ initial, initialLines, properties, owners, units = [], artisans = [], locked = false, onSave, onClose }) {
   const [f, setF] = useState(() => ({
     artisanName: "", trade: "", phone: "", companyName: "", propertyId: "", unitId: "", ownerId: "",
     date: isoDate(new Date()), source: "whatsapp", object: "", description: "", status: "recu", notes: "",
@@ -3769,6 +3923,17 @@ function QuoteModal({ initial, initialLines, properties, owners, units = [], loc
       )}
       <fieldset disabled={locked} style={{ border: "none", padding: 0, margin: 0 }}>
       <p className="text-xs font-semibold mb-2" style={{ color: "var(--brass)" }}>ARTISAN</p>
+      {artisans.some((a) => a.active) && (
+        <Field label="Choisir dans le répertoire des artisans" hint="Remplit le nom, l'entreprise, le métier et le téléphone">
+          <select className={inputCls} style={inputStyle} value={f.artisanId || ""} onChange={(e) => {
+            const a = artisans.find((x) => x.id === e.target.value);
+            setF((p) => ({ ...p, artisanId: e.target.value, ...(a ? { artisanName: a.name, companyName: a.company, trade: a.trade, phone: a.phone } : {}) }));
+          }}>
+            <option value="">— Saisie libre —</option>
+            {artisans.filter((a) => a.active || a.id === f.artisanId).map((a) => <option key={a.id} value={a.id}>{a.name}{a.company ? ` — ${a.company}` : ""}{a.trade ? ` · ${a.trade}` : ""}</option>)}
+          </select>
+        </Field>
+      )}
       <div className="grid sm:grid-cols-2 gap-3">
         <Field label="Nom de l'artisan *"><input className={inputCls} style={inputStyle} value={f.artisanName} autoFocus onChange={(e) => set("artisanName", e.target.value)} placeholder="Ex. M. TRAORÉ Ibrahim" /></Field>
         <Field label="Nom de l'entreprise"><input className={inputCls} style={inputStyle} value={f.companyName} onChange={(e) => set("companyName", e.target.value)} placeholder="Ex. TRAORÉ Plomberie Services" /></Field>
@@ -4046,12 +4211,14 @@ function Devis({ store, me }) {
   const [filterProp, setFilterProp] = useState("all");
   const [modal, setModal] = useState(null);
   const [sheetId, setSheetId] = useState(null);
+  const [showDirectory, setShowDirectory] = useState(false);
 
   const propById = useMemo(() => Object.fromEntries(properties.map((p) => [p.id, p])), [properties]);
   const ownerById = useMemo(() => Object.fromEntries(owners.map((o) => [o.id, o])), [owners]);
   const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
   const sup = canSupervise(me.role);
 
+  if (showDirectory) return <ArtisanDirectory store={store} me={me} onBack={() => setShowDirectory(false)} />;
   const sheet = quotesAll.find((q) => q.id === sheetId);
   if (sheet) {
     return <QuoteSheet quote={sheet} lines={quoteLines.filter((l) => l.quoteId === sheet.id)}
@@ -4074,7 +4241,10 @@ function Devis({ store, me }) {
     <div>
       <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
         <h1 className="text-xl font-bold">Devis artisans</h1>
-        <button onClick={() => setModal({})} className="kb-btn kb-btn-primary"><Plus size={16} /> Nouveau devis</button>
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={() => setShowDirectory(true)} className="kb-btn kb-btn-ghost"><Wrench size={15} /> Répertoire des artisans ({(store.artisans || []).length})</button>
+          <button onClick={() => setModal({})} className="kb-btn kb-btn-primary"><Plus size={16} /> Nouveau devis</button>
+        </div>
       </div>
       <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>Recopiez les devis reçus sur papier ou par WhatsApp : chaque fiche conserve la paternité de l'artisan et sert de preuve de dépense au dossier du propriétaire.</p>
 
@@ -4163,7 +4333,7 @@ function Devis({ store, me }) {
         sub="Recopiez ici les devis papier ou WhatsApp de vos artisans."
         action={<button onClick={() => setModal({})} className="kb-btn kb-btn-primary"><Plus size={15} /> Nouveau devis</button>} />}
 
-      {modal && <QuoteModal initial={modal} initialLines={modal._lines} properties={properties} owners={owners} units={units}
+      {modal && <QuoteModal initial={modal} initialLines={modal._lines} properties={properties} owners={owners} units={units} artisans={store.artisans || []}
         locked={modal.status === "paye" && !!modal.id && !isAdmin(me.role)}
         onSave={actions.saveQuote} onClose={(r) => { setModal(null); if (r?.id) notify2(r); }} />}
       {delTarget && <QuoteDeleteModal quote={delTarget} block={quoteDeletionBlock(delTarget, complaints)} canDelete={sup}
@@ -4389,7 +4559,7 @@ function Register({ title, subtitle, columns, rows, onBack, footer }) {
 }
 
 /* ---------------- Fiche d'un bien ---------------- */
-function PropertyDetail({ property, owner, agent, units, tasks, quotes, releases, releaseLines, products, members, canDelete, onDelete, onBack, onEdit }) {
+function PropertyDetail({ property, owner, agent, units, tasks, quotes, releases, releaseLines, products, members, canDelete, onDelete, onBack, onEdit, visits = [], onOpenVisit, onNewVisit }) {
   const pUnits = units.filter((u) => u.propertyId === property.id);
   const pTasks = tasks.filter((t) => t.propertyId === property.id);
   const pQuotes = quotes.filter((q) => q.propertyId === property.id);
@@ -4497,6 +4667,8 @@ function PropertyDetail({ property, owner, agent, units, tasks, quotes, releases
         </div> : <p className="text-sm text-center py-6" style={{ color: "var(--muted)" }}>Aucune sortie enregistrée.</p>}
       </SectionCard>
 
+      {onOpenVisit && <VisitHistory visits={visits} members={members} onOpen={onOpenVisit} onNew={onNewVisit} />}
+
       <SectionCard title="Tâches liées" icon={ListChecks} pad={false}>
         {pTasks.length ? <div className="divide-y" style={{ borderColor: "var(--line)" }}>
           {pTasks.map((t) => <div key={t.id} className="flex items-center justify-between px-4 py-2.5 gap-2">
@@ -4512,7 +4684,7 @@ function PropertyDetail({ property, owner, agent, units, tasks, quotes, releases
 }
 
 /* ---------------- Vue principale ---------------- */
-function Patrimoine({ store, me, onSignalProspect }) {
+function Patrimoine({ store, me, onSignalProspect, onOpenVisit, onNewVisit }) {
   const { owners, properties, units, tasks, quotes, releases, releaseLines, products, members, actions } = store;
   const [tab, setTab] = useState("biens");
   const [search, setSearch] = useState("");
@@ -4616,6 +4788,8 @@ function Patrimoine({ store, me, onSignalProspect }) {
       <PropertyDetail property={detail} owner={ownerById[detail.ownerId]} agent={memberById[detail.agentId]}
         units={units} tasks={tasks} quotes={quotes} releases={releases} releaseLines={releaseLines}
         products={products} members={members} canDelete={sup}
+        visits={(store.visits || []).filter((v) => v.propertyId === detail.id).sort((a, b) => (a.visitDate < b.visitDate ? 1 : -1))}
+        onOpenVisit={onOpenVisit} onNewVisit={onNewVisit ? () => onNewVisit(detail.id) : undefined}
         onDelete={async () => {
           const pu = units.filter((u) => u.propertyId === detail.id).length;
           if (!confirm(`Supprimer définitivement « ${detail.name} » ?\n\nSeront également supprimés : ${pu} lot(s), les tableaux de recouvrement, les plaintes et les devis de ce bien.\nCette action est irréversible.`)) return;
@@ -10575,6 +10749,936 @@ function RapportProspection({ store, me, userId }) {
   );
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   VISITES DES BIENS GÉRÉS
+   Branchée sur l'existant : Patrimoine (bien, lot, propriétaire, locataire),
+   Tâches et Planning (actions, prochaine visite), Devis artisans (travaux),
+   Plaintes (visite suite à réclamation), Dossiers numériques (photos).
+   ══════════════════════════════════════════════════════════════════════ */
+const VISIT_TYPES = {
+  courtoisie: "Visite de courtoisie", controle_etat: "Contrôle de l'état du bien", controle_technique: "Contrôle technique",
+  apres_travaux: "Contrôle après travaux", avec_proprietaire: "Visite avec le propriétaire", avec_locataire: "Visite avec le locataire",
+  avec_prospect: "Visite avec un prospect", etat_des_lieux: "Visite pour état des lieux", reclamation: "Visite suite à une réclamation",
+  incident: "Visite suite à un incident", preparation_travaux: "Préparation de travaux", suivi_travaux: "Suivi de travaux", autre: "Autre",
+};
+const VISIT_REASONS = ["Contrôle général", "Vérification de l'état du logement", "Réclamation d'un locataire", "Vérification d'une fuite",
+  "Problème électrique", "Problème de plomberie", "Humidité", "Dégradation", "Suivi de travaux", "Vérification après intervention d'un artisan",
+  "Préparation d'une relocation", "Vérification avant entrée d'un nouveau locataire", "Demande du propriétaire", "Visite périodique", "Autre"];
+const VISIT_PROPERTY_STATUS = { loue: "Loué", vacant: "Vacant", en_travaux: "En travaux", attente_location: "En attente de location",
+  attente_reparation: "En attente de réparation", autre: "Autre" };
+const PERSON_QUALITY = { proprietaire: "Propriétaire", locataire: "Locataire", gardien: "Gardien", prestataire: "Prestataire",
+  artisan: "Artisan", prospect: "Prospect", responsable_entreprise: "Responsable d'entreprise", autre: "Autre" };
+const VISIT_CHECKLIST = [
+  ["Structure", [["murs", "Murs"], ["plafonds", "Plafonds"], ["sols", "Sols"], ["portes", "Portes"], ["fenetres", "Fenêtres"], ["serrures", "Serrures"]]],
+  ["Électricité", [["installation_elec", "Installation électrique"], ["interrupteurs", "Interrupteurs"], ["prises", "Prises"], ["eclairage", "Éclairage"], ["tableau_elec", "Tableau électrique"]]],
+  ["Plomberie", [["robinets", "Robinets"], ["evier_plomb", "Évier"], ["lavabo_plomb", "Lavabo"], ["douche_plomb", "Douche"], ["wc_plomb", "WC"], ["canalisations", "Canalisations"], ["fuites", "Fuites éventuelles"]]],
+  ["Cuisine", [["evier_cuisine", "Évier"], ["meubles_cuisine", "Meubles"], ["plans_travail", "Plans de travail"], ["equipements_cuisine", "Équipements"]]],
+  ["Salle d'eau", [["douche_sde", "Douche"], ["wc_sde", "WC"], ["lavabo_sde", "Lavabo"], ["carrelage_sde", "Carrelage"], ["evacuation", "Évacuation"]]],
+  ["Extérieurs / parties communes", [["cour", "Cour"], ["parking", "Parking"], ["escaliers", "Escaliers"], ["couloirs", "Couloirs"], ["jardin", "Jardin"], ["facade", "Façade"], ["portail", "Portail"], ["eclairage_ext", "Éclairage extérieur"], ["securite", "Sécurité"]]],
+  ["Propreté", [["proprete", "Propreté générale"], ["dechets", "Déchets"], ["odeurs", "Mauvaises odeurs"], ["entretien", "Entretien"]]],
+];
+const CHECK_STATE = {
+  bon:        { label: "Bon état",          dot: "🟢", color: "#4F9E2A" },
+  surveiller: { label: "À surveiller",      dot: "🟠", color: "#EA580C" },
+  probleme:   { label: "Problème constaté", dot: "🔴", color: "#D81F26" },
+  nv:         { label: "Non vérifié",       dot: "⚪", color: "#94A3B8" },
+};
+const ANOMALY_URGENCY = { faible: { label: "Faible", color: "#64748B" }, moyen: { label: "Moyen", color: "#C58A1B" },
+  eleve: { label: "Élevé", color: "#EA580C" }, urgent: { label: "Urgent", color: "#D81F26" } };
+const ANOMALY_STATUS = { a_traiter: "À traiter", en_cours: "En cours", devis_demande: "Devis demandé", devis_recu: "Devis reçu",
+  attente_proprietaire: "En attente d'accord propriétaire", programmes: "Travaux programmés", termine: "Terminé", sans_suite: "Sans suite" };
+const WORK_STATUS = ANOMALY_STATUS;
+const OWNER_APPROVAL = { en_attente: "En attente", acceptee: "Acceptée", refusee: "Refusée" };
+const VISIT_STATUS = {
+  programmee: { label: "Programmée",              color: "#7C3AED" },
+  en_cours:   { label: "En cours",                color: "#2E78A8" },
+  cloturee:   { label: "Clôturée — à valider",    color: "#C58A1B" },
+  a_corriger: { label: "Renvoyée pour correction", color: "#D81F26" },
+  validee:    { label: "Validée",                 color: "#4F9E2A" },
+  annulee:    { label: "Annulée",                 color: "#94A3B8" },
+};
+const VISIT_STALE_DAYS = 90;          // au-delà : « bien non visité récemment »
+const uidLocal = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+
+/* Le statut d'un travail se lit sur son devis, s'il en a un */
+function workLiveStatus(w, quote) {
+  if (!quote) return { status: w.status || "a_traiter", approval: w.ownerApproval || "en_attente" };
+  const m = { recu: ["devis_recu", "en_attente"], en_validation: ["attente_proprietaire", "en_attente"], valide: ["programmes", "acceptee"],
+    refuse: ["sans_suite", "refusee"], execute: ["termine", "acceptee"], paye: ["termine", "acceptee"] }[quote.status] || [w.status, w.ownerApproval];
+  return { status: m[0], approval: m[1] };
+}
+/* État général déduit de la grille */
+function visitGeneralState(v) {
+  const vals = Object.values(v?.checklist || {});
+  const pb = vals.filter((x) => x === "probleme").length, sv = vals.filter((x) => x === "surveiller").length;
+  if (!vals.some((x) => x && x !== "nv")) return { label: "Non évalué", color: "#94A3B8" };
+  if (pb) return { label: `${pb} problème${pb > 1 ? "s" : ""}`, color: "#D81F26" };
+  if (sv) return { label: `${sv} à surveiller`, color: "#EA580C" };
+  return { label: "Bon état", color: "#4F9E2A" };
+}
+/* Informations du bien : figées au jour de la visite une fois celle-ci clôturée */
+function visitContext(v, store) {
+  const property = store.properties.find((p) => p.id === v.propertyId);
+  const unit = (store.units || []).find((u) => u.id === v.unitId);
+  const owner = (store.owners || []).find((o) => o.id === property?.ownerId);
+  const agent = (store.members || []).find((m) => m.id === v.agentId);
+  const live = {
+    propertyName: property?.name || "", propertyRef: property?.ref || "", unitLabel: unit?.label || "",
+    address: [property?.address, property?.quartier, property?.commune].filter(Boolean).join(", "),
+    commune: property?.commune || "", quartier: property?.quartier || "", kind: property?.kind || "",
+    ownerName: owner?.name || "", ownerPhone: owner?.phone || "", ownerEmail: owner?.email || "",
+    tenantName: unit?.tenantName || "", tenantPhone: unit?.tenantPhone || "", agentName: agent?.name || "",
+    manager: (store.members || []).find((m) => m.id === property?.agentId)?.name || "",
+  };
+  const frozen = ["cloturee", "validee", "a_corriger"].includes(v.status) && v.snapshot && v.snapshot.propertyName;
+  return { ...(frozen ? { ...live, ...v.snapshot } : live), property, unit, owner, agent };
+}
+/* Compte rendu professionnel produit à partir des informations saisies */
+function visitAutoReport(v, store) {
+  const c = visitContext(v, store);
+  const d = v.visitDate ? fr(v.visitDate + "T00:00:00", { day: "2-digit", month: "long", year: "numeric" }) : "";
+  const member = (id) => (store.members || []).find((m) => m.id === id)?.name || "—";
+  const L = [];
+  L.push("COMPTE RENDU DE VISITE", "");
+  L.push(`Bien : ${c.propertyName}${c.unitLabel ? " — " + c.unitLabel : ""}`);
+  if (c.propertyRef) L.push(`Référence : ${c.propertyRef}`);
+  L.push(`Adresse : ${c.address || "—"}`);
+  L.push(`Date : ${d}${v.startTime ? ` de ${v.startTime.slice(0, 5)}` : ""}${v.endTime ? ` à ${v.endTime.slice(0, 5)}` : ""}`);
+  L.push(`Agent : ${c.agentName || "—"}`);
+  L.push(`Type : ${VISIT_TYPES[v.visitType] || "—"}`);
+  L.push(`Motif : ${[...(v.reasons || []), v.reasonDetail].filter(Boolean).join(" ; ") || "—"}`, "");
+  L.push("PERSONNES RENCONTRÉES");
+  L.push(...((v.persons || []).length ? v.persons.map((p) => `- ${p.name} (${PERSON_QUALITY[p.quality] || p.quality})${p.phone ? " — " + p.phone : ""}${p.notes ? " : " + p.notes : ""}`) : ["- Aucune"]), "");
+  L.push("ÉTAT GÉNÉRAL DU BIEN");
+  const pb = [], sv = [];
+  VISIT_CHECKLIST.forEach(([g, items]) => items.forEach(([k, lbl]) => {
+    if (v.checklist?.[k] === "probleme") pb.push(`${g} : ${lbl}`);
+    if (v.checklist?.[k] === "surveiller") sv.push(`${g} : ${lbl}`);
+  }));
+  L.push(`Appréciation : ${visitGeneralState(v).label}`);
+  if (pb.length) L.push(`Problèmes constatés : ${pb.join(", ")}`);
+  if (sv.length) L.push(`Points à surveiller : ${sv.join(", ")}`);
+  L.push("", "CONSTATATIONS", v.findings || "—", "");
+  L.push("ANOMALIES CONSTATÉES");
+  L.push(...((v.anomalies || []).length ? v.anomalies.map((a, i) => `${i + 1}. [${ANOMALY_URGENCY[a.urgency]?.label || "—"}] ${a.description}${a.location ? " (" + a.location + ")" : ""}${a.action ? " — Action : " + a.action : ""}${a.responsibleId ? " — Responsable : " + member(a.responsibleId) : ""}`) : ["Aucune anomalie."]), "");
+  L.push("TRAVAUX RECOMMANDÉS");
+  L.push(...((v.works || []).length ? v.works.map((w, i) => `${i + 1}. ${w.label}${w.location ? " (" + w.location + ")" : ""}${w.artisanName ? " — Artisan : " + w.artisanName : ""}${Number(w.estimate) ? " — Estimation : " + fcfa(w.estimate) : ""} — Priorité : ${URGENCY[w.priority]?.label || "Normale"}`) : ["Aucun travail recommandé."]), "");
+  const actions = (store.tasks || []).filter((t) => t.visitId === v.id && t.nature !== "visite");
+  L.push("ACTIONS À MENER");
+  L.push(...(actions.length ? actions.map((t) => `- ${t.title} — ${member(t.assigneeId)}${t.dueDate ? " — avant le " + fr(t.dueDate + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" }) : ""}`) : ["- Aucune"]), "");
+  if (v.observations) L.push("OBSERVATIONS COMPLÉMENTAIRES", v.observations, "");
+  L.push("PROCHAINE ACTION");
+  L.push(v.nextNeeded && v.nextDate ? `Prochaine visite prévue le ${fr(v.nextDate + "T00:00:00", { day: "2-digit", month: "long", year: "numeric" })}${v.nextReason ? " — " + v.nextReason : ""}${v.nextAgentId ? " — " + member(v.nextAgentId) : ""}.` : "Aucune prochaine visite programmée.");
+  return L.join("\n");
+}
+/* Contrôles avant clôture */
+function validateVisitClose(v) {
+  const e = [];
+  if (!v.propertyId) e.push("Sélectionnez le bien visité.");
+  if (!(v.report || "").trim()) e.push("Rédigez ou générez le compte rendu avant de clôturer.");
+  (v.anomalies || []).forEach((a, i) => {
+    if (a.urgency === "urgent" && (!(a.action || "").trim() || !a.responsibleId))
+      e.push(`Anomalie n°${i + 1} urgente : indiquez l'action recommandée et son responsable.`);
+  });
+  if (v.nextNeeded && !v.nextDate) e.push("Une prochaine visite est nécessaire : indiquez sa date.");
+  return e;
+}
+
+/* Encadré d'une section de la fiche. Défini HORS de la fiche : un composant
+   recréé à chaque rendu ferait perdre le curseur à chaque frappe. */
+function VisitSec({ n, t, children, right }) {
+  return (
+    <div className="bg-white rounded-xl border p-4 mb-3" style={{ borderColor: "var(--line)" }}>
+      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+        <p className="text-sm font-bold"><span className="inline-flex items-center justify-center rounded-full text-[11px] text-white mr-2" style={{ width: 22, height: 22, background: "var(--ink)" }}>{n}</span>{t}</p>
+        {right}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/* ---------------- Fiche de visite (création, saisie, clôture, validation) ---------------- */
+function VisitEditor({ store, me, visit, onClose, onOpenSheet }) {
+  const { properties, units, owners, members, complaints = [], quotesAll = [], tasks = [], folderFiles = [], artisans = [], actions } = store;
+  const sup = canSupervise(me.role);
+  const [f, setF] = useState(() => ({
+    propertyId: "", unitId: "", visitDate: isoDate(new Date()), startTime: "", endTime: "", agentId: me.id,
+    visitType: "courtoisie", reasons: [], reasonDetail: "", propertyStatus: "loue", persons: [], checklist: {},
+    findings: "", anomalies: [], works: [], report: "", observations: "", status: "en_cours",
+    nextNeeded: false, nextDate: "", nextReason: "", nextAgentId: me.id, complaintId: "", ...visit,
+  }));
+  const [busy, setBusy] = useState(false);
+  const [errs, setErrs] = useState([]);
+  const [msg, setMsg] = useState("");
+  const [quoteFor, setQuoteFor] = useState(null);       // travail pour lequel on crée un devis
+  const [newAction, setNewAction] = useState({ title: "", assigneeId: me.id, dueDate: "", urgency: "normale", description: "" });
+  const [photoMeta, setPhotoMeta] = useState({ caption: "", location: "", category: "photo" });
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const mine = f.agentId === me.id || f.createdBy === me.id || !f.id;
+  const editable = f.status !== "validee" && f.status !== "annulee" && (sup || mine);
+  const ctx = visitContext(f, store);
+  const propUnits = units.filter((u) => u.propertyId === f.propertyId);
+  const visitFiles = f.id ? folderFiles.filter((x) => x.visitId === f.id) : [];
+  const visitTasks = f.id ? tasks.filter((t) => t.visitId === f.id && t.nature !== "visite") : [];
+  const memberName = (id) => members.find((m) => m.id === id)?.name || "—";
+
+  const pickProperty = (id) => {
+    const p = properties.find((x) => x.id === id);
+    setF((s) => ({ ...s, propertyId: id, unitId: "", propertyStatus: p?.status === "travaux" ? "en_travaux" : s.propertyStatus }));
+  };
+  const pickUnit = (id) => {
+    const u = units.find((x) => x.id === id);
+    setF((s) => ({ ...s, unitId: id, propertyStatus: !u ? s.propertyStatus : (u.status === "vacant" || !(u.tenantName || "").trim()) ? "vacant" : "loue" }));
+  };
+
+  /* ---- enregistrement ---- */
+  const enregistrer = async (patch = {}, silencieux = false) => {
+    const donnees = { ...f, ...patch };
+    if (!donnees.propertyId) { setErrs(["Sélectionnez le bien visité avant d'enregistrer."]); return null; }
+    /* Doublon : même bien, même agent, même date */
+    const doublon = (store.visits || []).find((x) => x.id !== donnees.id && x.propertyId === donnees.propertyId
+      && x.agentId === donnees.agentId && x.visitDate === donnees.visitDate && x.status !== "annulee");
+    if (doublon && !donnees.id && !confirm(`Une visite ${doublon.ref} existe déjà pour ce bien, cet agent et cette date. Créer quand même une nouvelle visite ?`)) return null;
+    setBusy(true); setErrs([]);
+    const r = await actions.saveVisit(donnees, visitContext(donnees, store));
+    setBusy(false);
+    if (r?.error) { setErrs([r.error]); return null; }
+    setF((p) => ({ ...p, ...patch, id: r.id, ref: r.ref || p.ref, createdBy: p.createdBy || me.id }));
+    if (!silencieux) setMsg(r.message);
+    return r.id;
+  };
+  const assurerId = async () => f.id || (await enregistrer({}, true));
+
+  const cloturer = async () => {
+    const e = validateVisitClose(f);
+    if (e.length) { setErrs(e); return; }
+    const sansDevis = (f.works || []).filter((w) => w.quoteNeeded && !w.quoteId);
+    if (sansDevis.length && !confirm(`${sansDevis.length} travail(aux) nécessite(nt) un devis qui n'a pas encore été créé.\nClôturer quand même ? (vous pourrez créer les devis ensuite)`)) return;
+    const id = await enregistrer({ status: "cloturee" }, true);
+    if (!id) return;
+    if (f.nextNeeded && f.nextDate && !f.nextVisitId) {
+      const r = await actions.scheduleNextVisit({ ...f, id });
+      if (r?.error) { setErrs([r.error]); return; }
+      setF((p) => ({ ...p, nextVisitId: r.id }));
+    }
+    setMsg("Visite clôturée : elle est transmise à la direction pour validation.");
+  };
+
+  /* ---- anomalies ---- */
+  const setAno = (i, k, v) => set("anomalies", f.anomalies.map((a, j) => (j === i ? { ...a, [k]: v } : a)));
+  const addAno = (seed = {}) => set("anomalies", [...(f.anomalies || []), { id: uidLocal(), category: "Structure", description: "", location: "",
+    urgency: "moyen", photoId: "", action: "", responsibleId: "", plannedDate: "", status: "a_traiter", ...seed }]);
+  const reprendreProblemes = () => {
+    const deja = new Set((f.anomalies || []).map((a) => a.checkKey).filter(Boolean));
+    const nouvelles = [];
+    VISIT_CHECKLIST.forEach(([g, items]) => items.forEach(([k, lbl]) => {
+      if (f.checklist?.[k] === "probleme" && !deja.has(k))
+        nouvelles.push({ id: uidLocal(), checkKey: k, category: g, description: `${lbl} : problème constaté`, location: "",
+          urgency: "moyen", photoId: "", action: "", responsibleId: "", plannedDate: "", status: "a_traiter" });
+    }));
+    if (!nouvelles.length) { setMsg("Aucun nouveau problème à reprendre depuis la grille."); return; }
+    set("anomalies", [...(f.anomalies || []), ...nouvelles]);
+  };
+
+  /* ---- travaux ---- */
+  const setWork = (i, k, v) => set("works", f.works.map((w, j) => (j === i ? { ...w, [k]: v } : w)));
+  const addWork = (seed = {}) => set("works", [...(f.works || []), { id: uidLocal(), anomalyId: "", label: "", location: "", artisanId: "", artisanName: "",
+    quoteNeeded: true, quoteRequested: false, estimate: "", priority: "normale", ownerApproval: "en_attente", plannedDate: "", doneDate: "",
+    status: "a_traiter", quoteId: "", ...seed }]);
+
+  /* ---- actions → tâches ---- */
+  const creerAction = async () => {
+    if (!newAction.title.trim()) { setErrs(["Indiquez l'action à mener."]); return; }
+    const id = await assurerId(); if (!id) return;
+    const r = await actions.createVisitTask({ ...f, id }, newAction);
+    if (r?.error) { setErrs([r.error]); return; }
+    setNewAction({ title: "", assigneeId: me.id, dueDate: "", urgency: "normale", description: "" });
+    setMsg("Action créée : elle apparaît dans les Tâches et le Planning du responsable.");
+  };
+
+  /* ---- photos & documents ---- */
+  const envoyer = async (fichiers) => {
+    const id = await assurerId(); if (!id) return;
+    for (const fl of fichiers) {
+      const r = await actions.uploadFolderFile(fl, { scope: "bien", propertyId: f.propertyId, category: photoMeta.category,
+        label: photoMeta.caption || fl.name, visitId: id, caption: photoMeta.caption, location: photoMeta.location });
+      if (r?.error) { setErrs([r.error]); return; }
+    }
+    setPhotoMeta({ caption: "", location: "", category: "photo" });
+    setMsg(`${fichiers.length} fichier(s) ajouté(s) — visibles aussi dans le dossier du bien.`);
+  };
+
+  const st = VISIT_STATUS[f.status] || VISIT_STATUS.en_cours;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <button onClick={onClose} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Chip color={st.color}>{st.label}</Chip>
+          {f.id && <button onClick={() => onOpenSheet(f.id)} className="kb-btn kb-btn-ghost text-sm"><Printer size={14} /> Compte rendu PDF</button>}
+        </div>
+      </div>
+      <h1 className="text-xl font-bold mb-1">{f.ref ? `Fiche de visite ${f.ref}` : "Nouvelle visite"}</h1>
+      {f.status === "a_corriger" && f.managerNote && <p className="text-xs p-2 rounded mb-3" style={{ background: "#FDF2F2", color: "#B5171D" }}>Renvoyée par la direction : {f.managerNote}</p>}
+      {!editable && <p className="text-xs p-2 rounded mb-3" style={{ background: "#F1F5F9", color: "var(--muted)" }}><Lock size={12} className="inline" /> Consultation seule{f.status === "validee" ? " : visite validée par la direction." : "."}</p>}
+
+      <fieldset disabled={!editable} style={{ border: "none", padding: 0, margin: 0 }}>
+      <VisitSec n={1} t="Informations générales">
+        <div className="grid sm:grid-cols-4 gap-3">
+          <Field label="Date de la visite"><input type="date" className={inputCls} style={inputStyle} value={f.visitDate} onChange={(e) => set("visitDate", e.target.value)} /></Field>
+          <Field label="Heure de début"><input type="time" className={inputCls} style={inputStyle} value={(f.startTime || "").slice(0, 5)} onChange={(e) => set("startTime", e.target.value)} /></Field>
+          <Field label="Heure de fin"><input type="time" className={inputCls} style={inputStyle} value={(f.endTime || "").slice(0, 5)} onChange={(e) => set("endTime", e.target.value)} /></Field>
+          <Field label="Agent responsable">
+            <select className={inputCls} style={inputStyle} value={f.agentId || ""} onChange={(e) => set("agentId", e.target.value)} disabled={!sup}>
+              {members.filter((m) => m.active).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </Field>
+        </div>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <Field label="Type de visite">
+            <select className={inputCls} style={inputStyle} value={f.visitType} onChange={(e) => set("visitType", e.target.value)}>
+              {Object.entries(VISIT_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </Field>
+          {(f.visitType === "reclamation" || f.complaintId) && (
+            <Field label="Plainte à l'origine de la visite">
+              <select className={inputCls} style={inputStyle} value={f.complaintId || ""} onChange={(e) => set("complaintId", e.target.value)}>
+                <option value="">— Aucune —</option>
+                {complaints.filter((c) => !f.propertyId || c.propertyId === f.propertyId).map((c) => <option key={c.id} value={c.id}>{c.ref} · {c.tenantName || "—"} · {c.description?.slice(0, 40)}</option>)}
+              </select>
+            </Field>
+          )}
+        </div>
+        <p className="text-[11px]" style={{ color: "var(--muted)" }}>Fonction de l'agent : {ROLES[members.find((m) => m.id === f.agentId)?.role] || "—"} · Agence : Entreprise Kibegnon</p>
+      </VisitSec>
+
+      <VisitSec n={2} t="Identification du bien">
+        <div className="grid sm:grid-cols-2 gap-3">
+          <Field label="Bien / résidence *">
+            <select className={inputCls} style={inputStyle} value={f.propertyId} onChange={(e) => pickProperty(e.target.value)}>
+              <option value="">— Choisir le bien visité —</option>
+              {properties.map((p) => <option key={p.id} value={p.id}>{p.name}{p.commune ? ` · ${p.commune}` : ""}</option>)}
+            </select>
+          </Field>
+          <Field label="Appartement / local / bureau" hint="Vide = parties communes ou bien entier">
+            <select className={inputCls} style={inputStyle} value={f.unitId || ""} onChange={(e) => pickUnit(e.target.value)} disabled={!f.propertyId}>
+              <option value="">— Bien entier —</option>
+              {propUnits.map((u) => <option key={u.id} value={u.id}>{u.label}{u.tenantName ? ` — ${u.tenantName}` : " — vacant"}</option>)}
+            </select>
+          </Field>
+        </div>
+        {f.propertyId && (
+          <div className="rounded-lg p-3 mb-2 grid sm:grid-cols-3 gap-2 text-xs" style={{ background: "#F6F8FA" }}>
+            <div><span style={{ color: "var(--muted)" }}>Référence : </span>{ctx.propertyRef || "—"}</div>
+            <div><span style={{ color: "var(--muted)" }}>Adresse : </span>{ctx.address || "—"}</div>
+            <div><span style={{ color: "var(--muted)" }}>Type : </span>{PROPERTY_KIND[ctx.kind]?.label || PROPERTY_KIND[ctx.kind] || ctx.kind || "—"}{ctx.unit?.floor ? ` · étage ${ctx.unit.floor}` : ""}</div>
+            <div><span style={{ color: "var(--muted)" }}>Propriétaire : </span>{ctx.ownerName || "—"}{ctx.ownerPhone ? ` · ${ctx.ownerPhone}` : ""}</div>
+            <div><span style={{ color: "var(--muted)" }}>Gestionnaire : </span>{ctx.manager || "—"}</div>
+            <div><span style={{ color: "var(--muted)" }}>Locataire : </span>{ctx.tenantName || "—"}{ctx.tenantPhone ? ` · ${ctx.tenantPhone}` : ""}</div>
+          </div>
+        )}
+        <Field label="Statut du bien">
+          <select className={inputCls} style={inputStyle} value={f.propertyStatus} onChange={(e) => set("propertyStatus", e.target.value)}>
+            {Object.entries(VISIT_PROPERTY_STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </Field>
+      </VisitSec>
+
+      <VisitSec n={3} t="Personnes rencontrées" right={editable && <button type="button" onClick={() => set("persons", [...(f.persons || []), { name: "", quality: "locataire", phone: "", notes: "" }])} className="kb-btn kb-btn-ghost text-xs"><Plus size={12} /> Ajouter</button>}>
+        {!(f.persons || []).length && <p className="text-xs" style={{ color: "var(--muted)" }}>Aucune personne ajoutée.</p>}
+        {(f.persons || []).map((p, i) => (
+          <div key={i} className="grid sm:grid-cols-5 gap-2 mb-2 items-center">
+            <input className={inputCls + " sm:col-span-2"} style={inputStyle} value={p.name} placeholder="Nom et prénom" onChange={(e) => set("persons", f.persons.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
+            <select className={inputCls} style={inputStyle} value={p.quality} onChange={(e) => set("persons", f.persons.map((x, j) => (j === i ? { ...x, quality: e.target.value } : x)))}>
+              {Object.entries(PERSON_QUALITY).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+            <input className={inputCls} style={inputStyle} value={p.phone} placeholder="Téléphone" onChange={(e) => set("persons", f.persons.map((x, j) => (j === i ? { ...x, phone: e.target.value } : x)))} />
+            <div className="flex gap-1">
+              <input className={inputCls} style={inputStyle} value={p.notes} placeholder="Observations" onChange={(e) => set("persons", f.persons.map((x, j) => (j === i ? { ...x, notes: e.target.value } : x)))} />
+              <button type="button" onClick={() => set("persons", f.persons.filter((_, j) => j !== i))} className="p-1 text-slate-300 hover:text-red-500"><X size={14} /></button>
+            </div>
+          </div>
+        ))}
+        {f.propertyId && ctx.tenantName && !(f.persons || []).some((p) => normName(p.name) === normName(ctx.tenantName)) && editable && (
+          <button type="button" onClick={() => set("persons", [...(f.persons || []), { name: ctx.tenantName, quality: "locataire", phone: ctx.tenantPhone || "", notes: "" }])} className="text-xs underline" style={{ color: "#2E78A8" }}>+ Ajouter le locataire ({ctx.tenantName})</button>
+        )}
+      </VisitSec>
+
+      <VisitSec n={4} t="Motif de la visite">
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {VISIT_REASONS.map((r) => {
+            const on = (f.reasons || []).includes(r);
+            return <button type="button" key={r} onClick={() => set("reasons", on ? f.reasons.filter((x) => x !== r) : [...(f.reasons || []), r])}
+              className="text-xs rounded-full px-2.5 py-1 border" style={{ background: on ? "var(--ink)" : "#fff", color: on ? "#fff" : "var(--ink)", borderColor: on ? "var(--ink)" : "var(--line)" }}>{r}</button>;
+          })}
+        </div>
+        <Field label="Description du motif"><textarea className={inputCls} style={inputStyle} rows={2} value={f.reasonDetail} onChange={(e) => set("reasonDetail", e.target.value)} /></Field>
+      </VisitSec>
+
+      <VisitSec n={5} t="État général du bien" right={<span className="text-xs font-semibold" style={{ color: visitGeneralState(f).color }}>{visitGeneralState(f).label}</span>}>
+        {VISIT_CHECKLIST.map(([g, items]) => (
+          <div key={g} className="mb-3">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs font-semibold" style={{ color: "var(--brass)" }}>{g}</p>
+              {editable && <button type="button" onClick={() => set("checklist", { ...f.checklist, ...Object.fromEntries(items.map(([k]) => [k, "bon"])) })} className="text-[11px] underline" style={{ color: "#4F9E2A" }}>Tout en bon état</button>}
+            </div>
+            <div className="divide-y rounded-lg border" style={{ borderColor: "var(--line)" }}>
+              {items.map(([k, lbl]) => (
+                <div key={k} className="flex items-center justify-between px-2 py-1.5 gap-2 flex-wrap">
+                  <span className="text-xs">{lbl}</span>
+                  <div className="flex gap-1">
+                    {Object.entries(CHECK_STATE).map(([sk, s]) => {
+                      const on = (f.checklist?.[k] || "nv") === sk;
+                      return <button type="button" key={sk} title={s.label} onClick={() => set("checklist", { ...f.checklist, [k]: sk })}
+                        className="text-[11px] rounded-md px-1.5 py-0.5 border" style={{ background: on ? s.color + "18" : "#fff", borderColor: on ? s.color : "var(--line)", color: on ? s.color : "var(--muted)", fontWeight: on ? 700 : 400 }}>{s.dot} {s.label}</button>;
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </VisitSec>
+
+      <VisitSec n={6} t="Constatations effectuées lors de la visite">
+        <textarea className={inputCls} style={inputStyle} rows={5} value={f.findings} onChange={(e) => set("findings", e.target.value)}
+          placeholder="Ex. Lors de la visite, nous avons constaté une importante trace d'humidité sur le mur de la chambre principale…" />
+      </VisitSec>
+
+      <VisitSec n={7} t={`Anomalies / problèmes (${(f.anomalies || []).length})`} right={editable && <div className="flex gap-1.5 flex-wrap">
+          <button type="button" onClick={reprendreProblemes} className="kb-btn kb-btn-ghost text-xs">Reprendre les 🔴 de la grille</button>
+          <button type="button" onClick={() => addAno()} className="kb-btn kb-btn-ghost text-xs" style={{ color: "#D81F26" }}><AlertTriangle size={12} /> Signaler une anomalie</button></div>}>
+        {!(f.anomalies || []).length && <p className="text-xs" style={{ color: "var(--muted)" }}>Aucune anomalie signalée.</p>}
+        {(f.anomalies || []).map((a, i) => (
+          <div key={a.id} className="rounded-lg border p-3 mb-2" style={{ borderColor: a.urgency === "urgent" ? "#F5C6C7" : "var(--line)", background: a.urgency === "urgent" ? "#FDF7F7" : "#fff" }}>
+            <div className="flex items-center justify-between mb-2"><p className="text-xs font-bold">Anomalie n°{i + 1}</p>
+              <div className="flex gap-1">
+                {editable && <button type="button" onClick={() => addWork({ anomalyId: a.id, label: a.description, location: a.location, priority: a.urgency === "urgent" ? "urgente" : a.urgency === "eleve" ? "haute" : "normale" })} className="text-[11px] underline" style={{ color: "#EA580C" }}>→ créer un travail</button>}
+                {editable && <button type="button" onClick={() => set("anomalies", f.anomalies.filter((_, j) => j !== i))} className="p-1 text-slate-300 hover:text-red-500"><X size={13} /></button>}
+              </div></div>
+            <div className="grid sm:grid-cols-4 gap-2">
+              <select className={inputCls} style={inputStyle} value={a.category} onChange={(e) => setAno(i, "category", e.target.value)}>
+                {[...VISIT_CHECKLIST.map(([g]) => g), "Autre"].map((g) => <option key={g} value={g}>{g}</option>)}
+              </select>
+              <input className={inputCls + " sm:col-span-2"} style={inputStyle} value={a.description} placeholder="Description" onChange={(e) => setAno(i, "description", e.target.value)} />
+              <input className={inputCls} style={inputStyle} value={a.location} placeholder="Localisation (pièce…)" onChange={(e) => setAno(i, "location", e.target.value)} />
+              <select className={inputCls} style={inputStyle} value={a.urgency} onChange={(e) => setAno(i, "urgency", e.target.value)}>
+                {Object.entries(ANOMALY_URGENCY).map(([k, v]) => <option key={k} value={k}>Urgence : {v.label}</option>)}
+              </select>
+              <input className={inputCls + " sm:col-span-2"} style={inputStyle} value={a.action} placeholder={a.urgency === "urgent" ? "Action recommandée (obligatoire)" : "Action recommandée"} onChange={(e) => setAno(i, "action", e.target.value)} />
+              <select className={inputCls} style={inputStyle} value={a.responsibleId || ""} onChange={(e) => setAno(i, "responsibleId", e.target.value)}>
+                <option value="">— Responsable —</option>{members.filter((m) => m.active).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+              <input type="date" className={inputCls} style={inputStyle} value={a.plannedDate || ""} onChange={(e) => setAno(i, "plannedDate", e.target.value)} title="Date prévue d'intervention" />
+              <select className={inputCls} style={inputStyle} value={a.status} onChange={(e) => setAno(i, "status", e.target.value)}>
+                {Object.entries(ANOMALY_STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+              <select className={inputCls + " sm:col-span-2"} style={inputStyle} value={a.photoId || ""} onChange={(e) => setAno(i, "photoId", e.target.value)}>
+                <option value="">— Photo associée (section 9) —</option>{visitFiles.filter((x) => (x.fileType || "").startsWith("image/")).map((x) => <option key={x.id} value={x.id}>{x.caption || x.label}</option>)}
+              </select>
+            </div>
+          </div>
+        ))}
+      </VisitSec>
+
+      <VisitSec n={8} t={`Travaux / interventions à prévoir (${(f.works || []).length})`} right={editable && <button type="button" onClick={() => addWork()} className="kb-btn kb-btn-ghost text-xs" style={{ color: "#EA580C" }}><Wrench size={12} /> Créer un travail</button>}>
+        {!(f.works || []).length && <p className="text-xs" style={{ color: "var(--muted)" }}>Aucun travail prévu.</p>}
+        {(f.works || []).map((w, i) => {
+          const q = quotesAll.find((x) => x.id === w.quoteId);
+          const live = workLiveStatus(w, q);
+          return (
+            <div key={w.id} className="rounded-lg border p-3 mb-2" style={{ borderColor: "var(--line)" }}>
+              <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+                <p className="text-xs font-bold">Travail n°{i + 1} <span className="font-normal" style={{ color: "var(--muted)" }}>· {WORK_STATUS[live.status]} · accord propriétaire : {OWNER_APPROVAL[live.approval]}</span></p>
+                <div className="flex gap-1.5 items-center">
+                  {q ? <Chip color="#2E78A8">Devis {q.ref} · {fcfa(q.total)} · {QUOTE_STATUS[q.status]?.label}</Chip>
+                    : editable && <button type="button" onClick={async () => { const id = await assurerId(); if (id) setQuoteFor({ index: i, work: w }); }} className="kb-btn text-xs px-2 py-1" style={{ background: "var(--ink)", color: "#fff" }}><FileText size={12} /> Créer le devis</button>}
+                  {editable && <button type="button" onClick={() => set("works", f.works.filter((_, j) => j !== i))} className="p-1 text-slate-300 hover:text-red-500"><X size={13} /></button>}
+                </div>
+              </div>
+              <div className="grid sm:grid-cols-4 gap-2">
+                <input className={inputCls + " sm:col-span-2"} style={inputStyle} value={w.label} placeholder="Désignation des travaux" onChange={(e) => setWork(i, "label", e.target.value)} />
+                <input className={inputCls} style={inputStyle} value={w.location} placeholder="Localisation" onChange={(e) => setWork(i, "location", e.target.value)} />
+                <select className={inputCls} style={inputStyle} value={w.artisanId || ""} onChange={(e) => { const a = artisans.find((x) => x.id === e.target.value); setF((p) => ({ ...p, works: p.works.map((x, j) => (j === i ? { ...x, artisanId: e.target.value, artisanName: a ? a.name : x.artisanName } : x)) })); }}>
+                  <option value="">— Artisan du répertoire —</option>{artisans.filter((a) => a.active).map((a) => <option key={a.id} value={a.id}>{a.name}{a.trade ? ` · ${a.trade}` : ""}</option>)}
+                </select>
+                {!w.artisanId && <input className={inputCls} style={inputStyle} value={w.artisanName} placeholder="…ou nom de l'artisan" onChange={(e) => setWork(i, "artisanName", e.target.value)} />}
+                <input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={w.estimate} placeholder="Montant estimatif" onChange={(e) => setWork(i, "estimate", e.target.value)} />
+                <select className={inputCls} style={inputStyle} value={w.priority} onChange={(e) => setWork(i, "priority", e.target.value)}>
+                  {URGENCY_ORDER.map((k) => <option key={k} value={k}>Priorité : {URGENCY[k].label}</option>)}
+                </select>
+                <label className="flex items-center gap-1.5 text-xs"><input type="checkbox" checked={!!w.quoteNeeded} onChange={(e) => setWork(i, "quoteNeeded", e.target.checked)} /> Devis nécessaire</label>
+                {!q && <label className="flex items-center gap-1.5 text-xs"><input type="checkbox" checked={!!w.quoteRequested} onChange={(e) => setWork(i, "quoteRequested", e.target.checked)} /> Devis demandé</label>}
+                {!q && <select className={inputCls} style={inputStyle} value={w.ownerApproval} onChange={(e) => setWork(i, "ownerApproval", e.target.value)}>
+                  {Object.entries(OWNER_APPROVAL).map(([k, v]) => <option key={k} value={k}>Propriétaire : {v}</option>)}
+                </select>}
+                {!q && <select className={inputCls} style={inputStyle} value={w.status} onChange={(e) => setWork(i, "status", e.target.value)}>
+                  {Object.entries(WORK_STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>}
+                <input type="date" className={inputCls} style={inputStyle} value={w.plannedDate || ""} title="Date prévue" onChange={(e) => setWork(i, "plannedDate", e.target.value)} />
+                <input type="date" className={inputCls} style={inputStyle} value={w.doneDate || ""} title="Date de réalisation" onChange={(e) => setWork(i, "doneDate", e.target.value)} />
+              </div>
+              {q && <p className="text-[10px] mt-1" style={{ color: "var(--muted)" }}>Statut et accord du propriétaire suivis automatiquement depuis le devis {q.ref}.</p>}
+            </div>
+          );
+        })}
+      </VisitSec>
+      </fieldset>
+
+      <VisitSec n={9} t={`Photos et documents (${visitFiles.length})`}>
+        {editable && (
+          <div className="grid sm:grid-cols-4 gap-2 mb-3 items-end">
+            <Field label="Description"><input className={inputCls} style={inputStyle} value={photoMeta.caption} onChange={(e) => setPhotoMeta((p) => ({ ...p, caption: e.target.value }))} placeholder="Ex. Trace d'humidité chambre" /></Field>
+            <Field label="Localisation"><input className={inputCls} style={inputStyle} value={photoMeta.location} onChange={(e) => setPhotoMeta((p) => ({ ...p, location: e.target.value }))} placeholder="Chambre principale" /></Field>
+            <Field label="Nature">
+              <select className={inputCls} style={inputStyle} value={photoMeta.category} onChange={(e) => setPhotoMeta((p) => ({ ...p, category: e.target.value }))}>
+                {Object.entries(FOLDER_CATEGORY).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </Field>
+            <label className="kb-btn kb-btn-primary text-sm cursor-pointer mb-3 justify-center">
+              <Camera size={14} /> Ajouter photos / fichiers
+              <input type="file" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx" capture="environment" className="hidden"
+                onChange={(e) => { const fl = [...(e.target.files || [])]; e.target.value = ""; if (fl.length) envoyer(fl); }} />
+            </label>
+          </div>
+        )}
+        {visitFiles.length ? <div className="flex flex-wrap gap-2">
+          {visitFiles.map((x) => (
+            <a key={x.id} href={x.fileUrl} target="_blank" rel="noreferrer" className="block rounded-lg border overflow-hidden" style={{ borderColor: "var(--line)", width: 150 }}>
+              {(x.fileType || "").startsWith("image/") ? <img src={x.fileUrl} alt={x.caption || x.label} className="w-full object-cover" style={{ height: 100 }} />
+                : <div className="flex items-center justify-center text-xs" style={{ height: 100, background: "#F6F8FA" }}><FileText size={20} /></div>}
+              <p className="text-[10px] p-1.5 truncate">{x.caption || x.label}{x.location ? ` · ${x.location}` : ""}</p>
+            </a>
+          ))}
+        </div> : <p className="text-xs" style={{ color: "var(--muted)" }}>Aucune photo ni document.</p>}
+      </VisitSec>
+
+      <VisitSec n={10} t={`Actions à mener après la visite (${visitTasks.length})`}>
+        {visitTasks.map((t) => (
+          <div key={t.id} className="flex items-center justify-between py-1.5 border-b text-xs gap-2 flex-wrap" style={{ borderColor: "var(--line)" }}>
+            <span><strong>{t.title}</strong> · {memberName(t.assigneeId)}{t.dueDate ? ` · avant le ${fr(t.dueDate + "T00:00:00", { day: "2-digit", month: "2-digit" })}` : ""}</span>
+            <span className="flex gap-1"><Chip color={URGENCY[t.urgency]?.color}>{URGENCY[t.urgency]?.label}</Chip><Chip color={STATUS[t.status]?.color}>{STATUS[t.status]?.label}</Chip></span>
+          </div>
+        ))}
+        {editable && (
+          <div className="grid sm:grid-cols-5 gap-2 mt-2">
+            <input className={inputCls + " sm:col-span-2"} style={inputStyle} value={newAction.title} placeholder="Ex. Demander un devis au plombier" onChange={(e) => setNewAction((p) => ({ ...p, title: e.target.value }))} />
+            <select className={inputCls} style={inputStyle} value={newAction.assigneeId} onChange={(e) => setNewAction((p) => ({ ...p, assigneeId: e.target.value }))}>
+              {members.filter((m) => m.active).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+            <input type="date" className={inputCls} style={inputStyle} value={newAction.dueDate} onChange={(e) => setNewAction((p) => ({ ...p, dueDate: e.target.value }))} title="Date limite" />
+            <select className={inputCls} style={inputStyle} value={newAction.urgency} onChange={(e) => setNewAction((p) => ({ ...p, urgency: e.target.value }))}>
+              {URGENCY_ORDER.map((k) => <option key={k} value={k}>Priorité : {URGENCY[k].label}</option>)}
+            </select>
+            <input className={inputCls + " sm:col-span-4"} style={inputStyle} value={newAction.description} placeholder="Commentaire" onChange={(e) => setNewAction((p) => ({ ...p, description: e.target.value }))} />
+            <button type="button" onClick={creerAction} className="kb-btn kb-btn-ghost text-sm justify-center"><Plus size={13} /> Créer l'action</button>
+          </div>
+        )}
+        <p className="text-[10px] mt-1" style={{ color: "var(--muted)" }}>Chaque action devient une tâche : elle apparaît dans les Tâches et le Planning du responsable, avec rappel.</p>
+      </VisitSec>
+
+      <fieldset disabled={!editable} style={{ border: "none", padding: 0, margin: 0 }}>
+      <VisitSec n={11} t="Prochaine visite">
+        <label className="flex items-center gap-2 text-sm mb-2"><input type="checkbox" checked={!!f.nextNeeded} onChange={(e) => set("nextNeeded", e.target.checked)} /> Une prochaine visite est nécessaire</label>
+        {f.nextNeeded && (
+          <div className="grid sm:grid-cols-3 gap-2">
+            <Field label="Date prévue *"><input type="date" className={inputCls} style={inputStyle} value={f.nextDate || ""} onChange={(e) => set("nextDate", e.target.value)} /></Field>
+            <Field label="Agent responsable">
+              <select className={inputCls} style={inputStyle} value={f.nextAgentId || ""} onChange={(e) => set("nextAgentId", e.target.value)}>
+                {members.filter((m) => m.active).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Motif / commentaire"><input className={inputCls} style={inputStyle} value={f.nextReason} onChange={(e) => set("nextReason", e.target.value)} placeholder="Ex. Contrôle après travaux de plomberie" /></Field>
+          </div>
+        )}
+        {f.nextVisitId && <p className="text-[11px]" style={{ color: "#4F9E2A" }}><CheckCircle2 size={11} className="inline" /> Prochaine visite programmée : elle figure dans le Planning de l'agent.</p>}
+        {f.nextNeeded && !f.nextVisitId && <p className="text-[11px]" style={{ color: "var(--muted)" }}>Elle sera programmée dans le Planning à la clôture de cette visite.</p>}
+      </VisitSec>
+
+      <VisitSec n={12} t="Compte rendu de visite" right={editable && <button type="button" onClick={() => set("report", visitAutoReport(f, store))} className="kb-btn kb-btn-ghost text-xs"><FileText size={12} /> Générer automatiquement le compte rendu</button>}>
+        <textarea className={inputCls} style={{ ...inputStyle, fontFamily: "inherit" }} rows={12} value={f.report} onChange={(e) => set("report", e.target.value)} placeholder="Rédigez le compte rendu, ou générez-le puis complétez-le." />
+        <Field label="Observations complémentaires"><textarea className={inputCls} style={inputStyle} rows={2} value={f.observations} onChange={(e) => set("observations", e.target.value)} /></Field>
+      </VisitSec>
+      </fieldset>
+
+      {errs.length > 0 && (
+        <div className="rounded-lg border p-3 mb-3" style={{ borderColor: "#F5C6C7", background: "#FDF2F2" }}>
+          <p className="text-xs font-semibold mb-1" style={{ color: "#B5171D" }}><AlertTriangle size={13} className="inline mb-0.5" /> À corriger :</p>
+          {errs.map((e, i) => <p key={i} className="text-xs" style={{ color: "#B5171D" }}>• {e}</p>)}
+        </div>
+      )}
+      {msg && <p className="text-xs mb-3 flex items-center gap-1" style={{ color: "#3d7d20" }}><CheckCircle2 size={13} /> {msg}</p>}
+
+      <div className="sticky bottom-0 bg-white/95 border-t py-3 flex justify-end gap-2 flex-wrap" style={{ borderColor: "var(--line)" }}>
+        {editable && ["programmee", "en_cours", "a_corriger"].includes(f.status) && <>
+          <button disabled={busy} onClick={() => enregistrer(f.status === "programmee" ? { status: "en_cours" } : {})} className="kb-btn kb-btn-ghost"><Check size={15} /> Enregistrer</button>
+          <button disabled={busy} onClick={cloturer} className="kb-btn kb-btn-primary"><ClipboardCheck size={15} /> Clôturer la visite</button>
+        </>}
+        {sup && f.status === "cloturee" && <>
+          <button disabled={busy} onClick={async () => { const n = prompt("Motif du renvoi pour correction :", ""); if (n) { const r = await actions.setVisitStatus(f, "a_corriger", n); if (r?.error) setErrs([r.error]); else { setF((p) => ({ ...p, status: "a_corriger", managerNote: n })); setMsg(r.message); } } }} className="kb-btn text-sm" style={{ background: "#fff", color: "#D81F26", border: "1px solid #D81F2655" }}><ThumbsDown size={14} /> Renvoyer</button>
+          <button disabled={busy} onClick={async () => { const r = await actions.setVisitStatus(f, "validee", ""); if (r?.error) setErrs([r.error]); else { setF((p) => ({ ...p, status: "validee" })); setMsg(r.message); } }} className="kb-btn text-sm" style={{ background: "#4F9E2A", color: "#fff" }}><ThumbsUp size={14} /> Valider la visite</button>
+        </>}
+      </div>
+
+      {quoteFor && <QuoteModal
+        initial={{ propertyId: f.propertyId, unitId: f.unitId || "", ownerId: ctx.property?.ownerId || "", date: isoDate(new Date()),
+          object: quoteFor.work.label || "", description: `${quoteFor.work.location ? quoteFor.work.location + " — " : ""}Travaux issus de la visite ${f.ref || ""}`,
+          artisanId: quoteFor.work.artisanId || "", ...(() => { const a = artisans.find((x) => x.id === quoteFor.work.artisanId);
+            return a ? { artisanName: a.name, companyName: a.company, trade: a.trade, phone: a.phone } : { artisanName: quoteFor.work.artisanName || "" }; })() }}
+        initialLines={Number(quoteFor.work.estimate) ? [{ label: quoteFor.work.label || "Travaux", qty: 1, unit: "forfait", price: Number(quoteFor.work.estimate) }] : undefined}
+        properties={properties} owners={owners} units={units} artisans={artisans}
+        onSave={actions.saveQuote}
+        onClose={async (r) => {
+          const idx = quoteFor.index; setQuoteFor(null);
+          if (r?.id) {
+            const works = f.works.map((x, j) => (j === idx ? { ...x, quoteId: r.id, quoteRequested: true } : x));
+            setF((p) => ({ ...p, works }));
+            await enregistrer({ works }, true);
+            setMsg("Devis créé et rattaché au travail : son statut suivra désormais celui du devis.");
+          }
+        }} />}
+    </div>
+  );
+}
+
+/* ---------------- Compte rendu imprimable ---------------- */
+function VisitSheet({ visit: v, store, onBack, onInformed }) {
+  const c = visitContext(v, store);
+  const files = (store.folderFiles || []).filter((x) => x.visitId === v.id);
+  const photos = files.filter((x) => (x.fileType || "").startsWith("image/"));
+  const memberName = (id) => (store.members || []).find((m) => m.id === id)?.name || "—";
+  const d = (x) => (x ? fr(x + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—");
+  const T = ({ children }) => <p className="text-[11px] font-bold mt-4 mb-1.5" style={{ color: "var(--brass)" }}>{children}</p>;
+  const resume = `Bonjour ${c.ownerName || ""},\nNous avons effectué le ${d(v.visitDate)} une visite de votre bien ${c.propertyName}${c.unitLabel ? " (" + c.unitLabel + ")" : ""}.\nÉtat général : ${visitGeneralState(v).label}.${(v.anomalies || []).length ? `\nAnomalies relevées : ${v.anomalies.length}.` : ""}${(v.works || []).length ? `\nTravaux recommandés : ${v.works.map((w) => w.label).join(", ")}.` : ""}\nLe compte rendu détaillé est à votre disposition à l'agence.\nEntreprise Kibegnon`;
+  const tel = (c.ownerPhone || "").replace(/\D/g, "");
+  const wa = tel ? `https://wa.me/${tel.length <= 10 ? "225" + tel : tel}?text=${encodeURIComponent(resume)}` : "";
+  const mail = c.ownerEmail ? `mailto:${c.ownerEmail}?subject=${encodeURIComponent(`Compte rendu de visite — ${c.propertyName}`)}&body=${encodeURIComponent(resume)}` : "";
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
+        <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
+        <div className="flex gap-2 flex-wrap">
+          {(wa || mail) && <a href={wa || mail} target="_blank" rel="noreferrer" onClick={() => onInformed?.()} className="kb-btn kb-btn-ghost"><Send size={15} /> Informer le propriétaire</a>}
+          <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+        </div>
+      </div>
+      {v.ownerInformedAt && <p className="text-[11px] mb-2 print:hidden" style={{ color: "#4F9E2A" }}>Propriétaire informé le {fr(v.ownerInformedAt, { day: "2-digit", month: "2-digit", year: "numeric" })}.</p>}
+      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }} note={`Visite ${v.ref} — ${VISIT_STATUS[v.status]?.label || ""}`}>
+        <PrintHead title="COMPTE RENDU DE VISITE" subtitle={v.ref} extra={<p className="text-[11px]" style={{ color: "var(--muted)" }}>{VISIT_TYPES[v.visitType]}</p>} />
+        <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1 py-3 text-xs">
+          <p><span style={{ color: "var(--muted)" }}>Bien : </span><strong>{c.propertyName}{c.unitLabel ? ` — ${c.unitLabel}` : ""}</strong></p>
+          <p><span style={{ color: "var(--muted)" }}>Référence : </span>{c.propertyRef || "—"}</p>
+          <p><span style={{ color: "var(--muted)" }}>Adresse : </span>{c.address || "—"}</p>
+          <p><span style={{ color: "var(--muted)" }}>Date : </span>{d(v.visitDate)}{v.startTime ? ` · ${v.startTime.slice(0, 5)}` : ""}{v.endTime ? ` – ${v.endTime.slice(0, 5)}` : ""}</p>
+          <p><span style={{ color: "var(--muted)" }}>Propriétaire : </span>{c.ownerName || "—"}</p>
+          <p><span style={{ color: "var(--muted)" }}>Locataire : </span>{c.tenantName || "—"}</p>
+          <p><span style={{ color: "var(--muted)" }}>Agent : </span>{c.agentName || "—"}</p>
+          <p><span style={{ color: "var(--muted)" }}>Motif : </span>{[...(v.reasons || []), v.reasonDetail].filter(Boolean).join(" ; ") || "—"}</p>
+        </div>
+        <T>PERSONNES RENCONTRÉES</T>
+        {(v.persons || []).length ? <table className="w-full text-[10px]"><tbody>{v.persons.map((p, i) => (
+          <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-1.5 py-1">{p.name}</td><td className="px-1.5 py-1">{PERSON_QUALITY[p.quality]}</td><td className="px-1.5 py-1">{p.phone}</td><td className="px-1.5 py-1">{p.notes}</td></tr>))}</tbody></table>
+          : <p className="text-[11px]">Aucune.</p>}
+        <T>ÉTAT GÉNÉRAL DU BIEN — {visitGeneralState(v).label.toUpperCase()}</T>
+        <div className="grid grid-cols-2 gap-x-4 text-[10px]">
+          {VISIT_CHECKLIST.map(([g, items]) => {
+            const vus = items.filter(([k]) => v.checklist?.[k] && v.checklist[k] !== "nv");
+            if (!vus.length) return null;
+            return <div key={g} className="mb-1.5"><p className="font-semibold">{g}</p>{vus.map(([k, l]) => <p key={k}>{CHECK_STATE[v.checklist[k]].dot} {l} — {CHECK_STATE[v.checklist[k]].label}</p>)}</div>;
+          })}
+        </div>
+        <T>CONSTATATIONS</T><p className="text-[11px] whitespace-pre-wrap">{v.findings || "—"}</p>
+        <T>ANOMALIES CONSTATÉES ({(v.anomalies || []).length})</T>
+        {(v.anomalies || []).length ? <table className="w-full text-[10px]">
+          <thead><tr style={{ background: "#F1F3F5" }}><th className="text-left px-1.5 py-1">N°</th><th className="text-left px-1.5 py-1">Description</th><th className="text-left px-1.5 py-1">Lieu</th><th className="text-left px-1.5 py-1">Urgence</th><th className="text-left px-1.5 py-1">Action / responsable</th><th className="text-left px-1.5 py-1">Statut</th></tr></thead>
+          <tbody>{v.anomalies.map((a, i) => <tr key={a.id} className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-1.5 py-1">{i + 1}</td><td className="px-1.5 py-1">{a.description}</td><td className="px-1.5 py-1">{a.location}</td>
+            <td className="px-1.5 py-1" style={{ color: ANOMALY_URGENCY[a.urgency]?.color, fontWeight: 700 }}>{ANOMALY_URGENCY[a.urgency]?.label}</td><td className="px-1.5 py-1">{a.action}{a.responsibleId ? ` — ${memberName(a.responsibleId)}` : ""}</td><td className="px-1.5 py-1">{ANOMALY_STATUS[a.status]}</td></tr>)}</tbody>
+        </table> : <p className="text-[11px]">Aucune anomalie.</p>}
+        <T>TRAVAUX RECOMMANDÉS ({(v.works || []).length})</T>
+        {(v.works || []).length ? <table className="w-full text-[10px]">
+          <thead><tr style={{ background: "#F1F3F5" }}><th className="text-left px-1.5 py-1">Désignation</th><th className="text-left px-1.5 py-1">Artisan</th><th className="text-right px-1.5 py-1">Estimation</th><th className="text-left px-1.5 py-1">Priorité</th><th className="text-left px-1.5 py-1">Accord propriétaire</th><th className="text-left px-1.5 py-1">Statut</th></tr></thead>
+          <tbody>{v.works.map((w) => { const q = (store.quotesAll || store.quotes || []).find((x) => x.id === w.quoteId); const lv = workLiveStatus(w, q); return (
+            <tr key={w.id} className="border-b" style={{ borderColor: "var(--line)" }}><td className="px-1.5 py-1">{w.label}{w.location ? ` (${w.location})` : ""}{q ? ` — devis ${q.ref}` : ""}</td><td className="px-1.5 py-1">{w.artisanName || "—"}</td>
+              <td className="px-1.5 py-1 text-right">{q ? fcfa(q.total) : Number(w.estimate) ? fcfa(w.estimate) : "—"}</td><td className="px-1.5 py-1">{URGENCY[w.priority]?.label}</td><td className="px-1.5 py-1">{OWNER_APPROVAL[lv.approval]}</td><td className="px-1.5 py-1">{WORK_STATUS[lv.status]}</td></tr>); })}</tbody>
+        </table> : <p className="text-[11px]">Aucun travail recommandé.</p>}
+        <T>COMPTE RENDU</T><p className="text-[11px] whitespace-pre-wrap">{v.report || "—"}</p>
+        {v.observations && <><T>OBSERVATIONS COMPLÉMENTAIRES</T><p className="text-[11px] whitespace-pre-wrap">{v.observations}</p></>}
+        <T>PROCHAINE ACTION</T>
+        <p className="text-[11px]">{v.nextNeeded && v.nextDate ? `Prochaine visite le ${d(v.nextDate)}${v.nextReason ? " — " + v.nextReason : ""}${v.nextAgentId ? " — " + memberName(v.nextAgentId) : ""}.` : "Aucune prochaine visite programmée."}</p>
+        {photos.length > 0 && <><T>PHOTOS ({photos.length})</T>
+          <div className="grid grid-cols-3 gap-2">{photos.map((x, i) => <div key={x.id} style={{ breakInside: "avoid" }}><img src={x.fileUrl} alt="" className="w-full object-cover rounded" style={{ height: 110 }} /><p className="text-[9px] mt-0.5">Photo {i + 1} — {x.caption || x.label}{x.location ? ` (${x.location})` : ""}</p></div>)}</div></>}
+        {v.status === "validee" && <p className="text-[10px] mt-3 font-semibold" style={{ color: "#3d7d20" }}>Visite validée par la direction{v.validatedBy ? ` (${memberName(v.validatedBy)})` : ""}{v.validatedAt ? ` le ${fr(v.validatedAt, { day: "2-digit", month: "2-digit", year: "numeric" })}` : ""}.</p>}
+        <div className="kb-sign flex justify-between items-end pt-8 mt-2">
+          <div className="text-center" style={{ minWidth: 200 }}><p className="text-[11px] font-semibold pb-14">L'agent — {c.agentName}</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
+          <div className="text-center" style={{ minWidth: 200 }}><p className="text-[11px] font-semibold pb-14">La personne rencontrée</p><div className="border-t" style={{ borderColor: "var(--ink)" }} /></div>
+        </div>
+      </PrintPage>
+    </div>
+  );
+}
+
+/* ---------------- Historique des visites d'un bien (fiche du bien) ---------------- */
+function VisitHistory({ visits, members, onOpen, onNew }) {
+  const memberName = (id) => members.find((m) => m.id === id)?.name || "—";
+  return (
+    <SectionCard title={`Historique des visites (${visits.length})`} icon={ClipboardCheck} pad={false}
+      action={onNew && <button onClick={onNew} className="kb-btn kb-btn-ghost text-xs"><Plus size={12} /> Nouvelle visite</button>}>
+      {visits.length ? <div className="overflow-x-auto"><table className="w-full text-xs">
+        <thead><tr className="text-left" style={{ color: "var(--muted)" }}>
+          <th className="px-4 py-2 font-medium">Date</th><th className="px-3 py-2 font-medium">Agent</th><th className="px-3 py-2 font-medium">Motif</th>
+          <th className="px-3 py-2 font-medium">État général</th><th className="px-3 py-2 font-medium">Problèmes</th><th className="px-3 py-2 font-medium">Travaux</th><th className="px-3 py-2 font-medium">Statut</th>
+        </tr></thead>
+        <tbody>{visits.map((v) => { const g = visitGeneralState(v); return (
+          <tr key={v.id} onClick={() => onOpen(v.id)} className="border-t cursor-pointer hover:bg-slate-50" style={{ borderColor: "var(--line)" }}>
+            <td className="px-4 py-2">{fr(v.visitDate + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" })}</td>
+            <td className="px-3 py-2">{memberName(v.agentId)}</td>
+            <td className="px-3 py-2">{VISIT_TYPES[v.visitType]}{(v.reasons || []).length ? ` — ${v.reasons[0]}` : ""}</td>
+            <td className="px-3 py-2 font-semibold" style={{ color: g.color }}>{g.label}</td>
+            <td className="px-3 py-2">{(v.anomalies || []).length}</td>
+            <td className="px-3 py-2">{(v.works || []).length}</td>
+            <td className="px-3 py-2"><Chip color={VISIT_STATUS[v.status]?.color}>{VISIT_STATUS[v.status]?.label}</Chip></td>
+          </tr>); })}</tbody>
+      </table></div> : <p className="text-sm text-center py-6" style={{ color: "var(--muted)" }}>Aucune visite enregistrée pour ce bien.</p>}
+    </SectionCard>
+  );
+}
+
+/* ---------------- Onglet Visites ---------------- */
+function Visites({ store, me, focus, onFocusConsumed }) {
+  const { visits = [], properties, owners, units, members, actions } = store;
+  const sup = canSupervise(me.role);
+  const [openId, setOpenId] = useState(null);
+  const [newSeed, setNewSeed] = useState(null);
+  const [sheetId, setSheetId] = useState(null);
+  const [search, setSearch] = useState("");
+  const [fAgent, setFAgent] = useState(sup ? "all" : me.id);
+  const [fStatus, setFStatus] = useState("all");
+  const [fType, setFType] = useState("all");
+  const [fProp, setFProp] = useState("all");
+  const [fFrom, setFFrom] = useState(""); const [fTo, setFTo] = useState("");
+  const [showStale, setShowStale] = useState(false);
+
+  useEffect(() => {
+    if (!focus) return;
+    if (focus.openId) setOpenId(focus.openId);
+    if (focus.newForProperty) setNewSeed({ propertyId: focus.newForProperty });
+    onFocusConsumed?.();
+  }, [focus]);
+
+  const propById = useMemo(() => Object.fromEntries(properties.map((p) => [p.id, p])), [properties]);
+  const ownerById = useMemo(() => Object.fromEntries(owners.map((o) => [o.id, o])), [owners]);
+  const unitById = useMemo(() => Object.fromEntries(units.map((u) => [u.id, u])), [units]);
+  const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
+  const today = isoDate(new Date());
+
+  /* Biens non visités depuis plus de 90 jours (visites clôturées ou validées) */
+  const stale = useMemo(() => {
+    const limite = isoDate(addDays(new Date(), -VISIT_STALE_DAYS));
+    return properties.filter((p) => p.status !== "vendu" && p.status !== "inactif").map((p) => {
+      const faites = visits.filter((v) => v.propertyId === p.id && ["cloturee", "validee", "a_corriger"].includes(v.status)).map((v) => v.visitDate).sort();
+      return { p, last: faites.slice(-1)[0] || null };
+    }).filter((x) => !x.last || x.last < limite).sort((a, b) => (a.last || "") < (b.last || "") ? -1 : 1);
+  }, [properties, visits]);
+
+  const sheet = visits.find((v) => v.id === sheetId);
+  if (sheet) return <VisitSheet visit={sheet} store={store} onBack={() => setSheetId(null)} onInformed={() => actions.markOwnerInformed(sheet.id)} />;
+  const open = visits.find((v) => v.id === openId);
+  if (open || newSeed) {
+    return <VisitEditor key={open?.id || "nouvelle"} store={store} me={me} visit={open || newSeed}
+      onClose={() => { setOpenId(null); setNewSeed(null); }} onOpenSheet={(id) => { setOpenId(null); setNewSeed(null); setSheetId(id); }} />;
+  }
+
+  const monday = mondayIso(new Date());
+  const mois = today.slice(0, 7);
+  const faite = (v) => ["cloturee", "validee", "a_corriger"].includes(v.status);
+  const kpi = {
+    mois: visits.filter((v) => faite(v) && v.visitDate.startsWith(mois)).length,
+    semaine: visits.filter((v) => faite(v) && v.visitDate >= monday && v.visitDate <= today).length,
+    programmees: visits.filter((v) => v.status === "programmee" && v.visitDate >= today).length,
+    retard: visits.filter((v) => (v.status === "programmee" || v.status === "en_cours") && v.visitDate < today).length,
+    aValider: visits.filter((v) => v.status === "cloturee").length,
+    anomalies: visits.reduce((a, v) => a + (v.anomalies || []).filter((x) => !["termine", "sans_suite"].includes(x.status)).length, 0),
+    urgents: visits.reduce((a, v) => a + (v.works || []).filter((w) => w.priority === "urgente" && workLiveStatus(w, (store.quotesAll || []).find((q) => q.id === w.quoteId)).status !== "termine").length, 0),
+  };
+  const q = search.trim().toLowerCase();
+  const list = visits.filter((v) => {
+    if (fAgent !== "all" && v.agentId !== fAgent) return false;
+    if (fStatus !== "all" && v.status !== fStatus) return false;
+    if (fType !== "all" && v.visitType !== fType) return false;
+    if (fProp !== "all" && v.propertyId !== fProp) return false;
+    if (fFrom && v.visitDate < fFrom) return false;
+    if (fTo && v.visitDate > fTo) return false;
+    if (!q) return true;
+    const p = propById[v.propertyId]; const u = unitById[v.unitId];
+    return [v.ref, p?.ref, p?.name, p?.commune, p?.quartier, ownerById[p?.ownerId]?.name, u?.tenantName, v.snapshot?.tenantName, memberById[v.agentId]?.name,
+      VISIT_TYPES[v.visitType], v.findings, ...(v.anomalies || []).map((a) => a.description), ...(v.works || []).map((w) => w.label)]
+      .some((x) => (x || "").toLowerCase().includes(q));
+  }).sort((a, b) => (a.visitDate < b.visitDate ? 1 : -1));
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
+        <h1 className="text-xl font-bold">Visites des biens gérés</h1>
+        <button onClick={() => setNewSeed({})} className="kb-btn kb-btn-primary"><Plus size={16} /> Nouvelle visite</button>
+      </div>
+      <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>Contrôle, courtoisie et suivi des biens confiés à l'agence : chaque visite alimente l'historique du bien, les tâches et les devis.</p>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+        <StatCard icon={ClipboardCheck} label="Visites ce mois" value={kpi.mois} sub={`${kpi.semaine} cette semaine`} tint="#0D9488" />
+        <StatCard icon={CalendarClock} label="Visites programmées" value={kpi.programmees} tint="#7C3AED" onClick={() => setFStatus("programmee")} />
+        <StatCard icon={AlertTriangle} label="Visites en retard" value={kpi.retard} tint="#D81F26" />
+        <StatCard icon={Building2} label={`Biens non visités depuis ${VISIT_STALE_DAYS} jours`} value={stale.length} tint="#EA580C" onClick={() => setShowStale((x) => !x)} />
+      </div>
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        <StatCard icon={ThumbsUp} label="À valider (direction)" value={kpi.aValider} tint="#C58A1B" onClick={() => setFStatus("cloturee")} />
+        <StatCard icon={AlertTriangle} label="Anomalies ouvertes" value={kpi.anomalies} tint="#EA580C" />
+        <StatCard icon={Wrench} label="Travaux urgents" value={kpi.urgents} tint="#D81F26" />
+      </div>
+
+      {showStale && (
+        <SectionCard title={`Biens à visiter — pas de visite depuis ${VISIT_STALE_DAYS} jours`} icon={Building2} pad={false}>
+          <div className="divide-y" style={{ borderColor: "var(--line)" }}>
+            {stale.map(({ p, last }) => (
+              <div key={p.id} className="flex items-center justify-between px-4 py-2 gap-2 flex-wrap text-sm">
+                <span>{p.name}{p.commune ? ` · ${p.commune}` : ""} <span className="text-xs" style={{ color: "var(--muted)" }}>— {last ? `dernière visite le ${fr(last + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" })}` : "jamais visité"}</span></span>
+                <button onClick={() => setNewSeed({ propertyId: p.id })} className="kb-btn kb-btn-ghost text-xs"><Plus size={12} /> Visiter</button>
+              </div>
+            ))}
+            {!stale.length && <p className="text-sm text-center py-4" style={{ color: "var(--muted)" }}>Tous les biens ont été visités récemment.</p>}
+          </div>
+        </SectionCard>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="relative flex-1 min-w-[180px]">
+          <Search size={15} className="absolute left-2.5 top-2.5 text-slate-400" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Référence, bien, propriétaire, locataire, commune, anomalie, travaux…" className="w-full pl-8 pr-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle} />
+        </div>
+        <select value={fAgent} onChange={(e) => setFAgent(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+          <option value="all">Tous les agents</option>{members.filter((m) => m.active).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+        </select>
+        <select value={fProp} onChange={(e) => setFProp(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+          <option value="all">Toutes les résidences</option>{properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <select value={fType} onChange={(e) => setFType(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+          <option value="all">Tous les types</option>{Object.entries(VISIT_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+          <option value="all">Tous les statuts</option>{Object.entries(VISIT_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+        </select>
+        <input type="date" value={fFrom} onChange={(e) => setFFrom(e.target.value)} className="px-2 py-2 rounded-lg border text-sm bg-white" style={inputStyle} title="Du" />
+        <input type="date" value={fTo} onChange={(e) => setFTo(e.target.value)} className="px-2 py-2 rounded-lg border text-sm bg-white" style={inputStyle} title="Au" />
+      </div>
+
+      {list.length ? <div className="space-y-2">
+        {list.map((v) => {
+          const p = propById[v.propertyId]; const g = visitGeneralState(v); const st = VISIT_STATUS[v.status];
+          const retard = (v.status === "programmee" || v.status === "en_cours") && v.visitDate < today;
+          return (
+            <button key={v.id} onClick={() => setOpenId(v.id)} className="w-full text-left bg-white rounded-xl border p-3 hover:shadow-sm transition-shadow" style={{ borderColor: retard ? "#F5C6C7" : "var(--line)" }}>
+              <div className="flex items-start justify-between gap-2 flex-wrap">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ background: "#F1F3F5", color: "var(--muted)" }}>{v.ref}</span>
+                    <span className="font-medium text-sm">{p?.name || "—"}{unitById[v.unitId] ? ` — ${unitById[v.unitId].label}` : ""}</span>
+                    <Chip color={st.color}>{st.label}</Chip>
+                    {retard && <Chip color="#D81F26">En retard</Chip>}
+                  </div>
+                  <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>
+                    {fr(v.visitDate + "T00:00:00", { day: "2-digit", month: "short", year: "numeric" })} · {memberById[v.agentId]?.name || "—"} · {VISIT_TYPES[v.visitType]}
+                    {" · "}<span style={{ color: g.color, fontWeight: 600 }}>{g.label}</span>
+                    {(v.anomalies || []).length ? ` · ${v.anomalies.length} anomalie(s)` : ""}{(v.works || []).length ? ` · ${v.works.length} travail(aux)` : ""}
+                  </p>
+                </div>
+                {sup && v.status !== "validee" && <span onClick={async (e) => { e.stopPropagation(); if (confirm(`Supprimer la visite ${v.ref} ?`)) { const r = await actions.deleteVisit(v.id); if (r?.error) alert(r.error); } }}
+                  className="p-1.5 rounded-lg text-slate-300 hover:text-red-500" title="Supprimer"><Trash2 size={14} /></span>}
+              </div>
+            </button>
+          );
+        })}
+      </div> : <EmptyState icon={ClipboardCheck} title="Aucune visite" sub="Enregistrez les visites de contrôle, de courtoisie et de suivi des biens gérés."
+        action={<button onClick={() => setNewSeed({})} className="kb-btn kb-btn-primary"><Plus size={15} /> Nouvelle visite</button>} />}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   RÉPERTOIRE DES ARTISANS
+   ══════════════════════════════════════════════════════════════════════ */
+function ArtisanModal({ initial, onSave, onClose }) {
+  const [f, setF] = useState(() => ({ name: "", company: "", trade: "", phone: "", phone2: "", email: "", commune: "", notes: "", active: true, ...initial }));
+  const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  return (
+    <Modal title={f.id ? "Modifier l'artisan" : "Nouvel artisan"} onClose={onClose}>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Nom de l'artisan *"><input className={inputCls} style={inputStyle} value={f.name} autoFocus onChange={(e) => set("name", e.target.value)} /></Field>
+        <Field label="Entreprise"><input className={inputCls} style={inputStyle} value={f.company} onChange={(e) => set("company", e.target.value)} /></Field>
+        <Field label="Corps de métier">
+          <input list="trades-dir" className={inputCls} style={inputStyle} value={f.trade} onChange={(e) => set("trade", e.target.value)} />
+          <datalist id="trades-dir">{TRADES.map((t) => <option key={t} value={t} />)}</datalist>
+        </Field>
+        <Field label="Commune"><input className={inputCls} style={inputStyle} value={f.commune} onChange={(e) => set("commune", e.target.value)} /></Field>
+        <Field label="Téléphone"><input className={inputCls} style={inputStyle} value={f.phone} onChange={(e) => set("phone", e.target.value)} /></Field>
+        <Field label="Deuxième numéro"><input className={inputCls} style={inputStyle} value={f.phone2} onChange={(e) => set("phone2", e.target.value)} /></Field>
+      </div>
+      <Field label="E-mail"><input className={inputCls} style={inputStyle} value={f.email} onChange={(e) => set("email", e.target.value)} /></Field>
+      <Field label="Notes (fiabilité, tarifs, disponibilité…)"><textarea className={inputCls} style={inputStyle} rows={2} value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
+      <label className="flex items-center gap-2 text-sm mb-3"><input type="checkbox" checked={!!f.active} onChange={(e) => set("active", e.target.checked)} /> Artisan actif (proposé dans les listes)</label>
+      {err && <p className="text-xs text-red-600 mb-2">{err}</p>}
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} className="kb-btn kb-btn-ghost">Annuler</button>
+        <button disabled={busy} onClick={async () => { if (!f.name.trim()) { setErr("Le nom est obligatoire."); return; } setBusy(true); const r = await onSave(f); setBusy(false); if (r?.error) setErr(r.error); else onClose(); }} className="kb-btn kb-btn-primary"><Check size={15} /> Enregistrer</button>
+      </div>
+    </Modal>
+  );
+}
+
+function ArtisanDirectory({ store, me, onBack }) {
+  const { artisans = [], quotesAll = [], actions } = store;
+  const sup = canSupervise(me.role);
+  const [modal, setModal] = useState(null);
+  const [search, setSearch] = useState("");
+  const [msg, setMsg] = useState("");
+  const q = search.trim().toLowerCase();
+  const list = artisans.filter((a) => !q || [a.name, a.company, a.trade, a.phone, a.commune].some((x) => (x || "").toLowerCase().includes(q)))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const devisDe = (a) => quotesAll.filter((x) => x.artisanId === a.id || (normName(x.artisanName) === normName(a.name)));
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour aux devis</button>
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={async () => { const r = await actions.importArtisansFromQuotes(); setMsg(r?.error || r?.message); }} className="kb-btn kb-btn-ghost text-sm" title="Ajoute au répertoire les artisans cités dans les devis existants"><Download size={14} /> Importer depuis les devis</button>
+          <button onClick={() => setModal({})} className="kb-btn kb-btn-primary"><Plus size={16} /> Nouvel artisan</button>
+        </div>
+      </div>
+      <h1 className="text-xl font-bold mb-1">Répertoire des artisans</h1>
+      <p className="text-sm mb-3" style={{ color: "var(--muted)" }}>Un seul répertoire, proposé dans les devis et dans les travaux des visites.</p>
+      {msg && <p className="text-xs mb-3" style={{ color: "#3d7d20" }}>{msg}</p>}
+      <div className="relative mb-3"><Search size={15} className="absolute left-2.5 top-2.5 text-slate-400" />
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nom, entreprise, métier, téléphone…" className="w-full pl-8 pr-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle} /></div>
+      {list.length ? <div className="bg-white rounded-xl border divide-y" style={{ borderColor: "var(--line)" }}>
+        {list.map((a) => { const d = devisDe(a); return (
+          <div key={a.id} className="flex items-center justify-between px-4 py-2.5 gap-2 flex-wrap">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{a.name}{a.company ? <span className="font-normal" style={{ color: "var(--muted)" }}> — {a.company}</span> : ""} {!a.active && <Chip color="#94A3B8">inactif</Chip>}</p>
+              <p className="text-[11px]" style={{ color: "var(--muted)" }}>{[a.trade, a.phone, a.phone2, a.commune].filter(Boolean).join(" · ") || "—"} · {d.length} devis · {fcfa(d.reduce((s, x) => s + (Number(x.total) || 0), 0))}</p>
+            </div>
+            <div className="flex gap-1">
+              {a.phone && <a href={`tel:${a.phone}`} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Appeler"><Phone size={14} /></a>}
+              <button onClick={() => setModal(a)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><Pencil size={14} /></button>
+              {sup && <button onClick={async () => { if (confirm(`Retirer ${a.name} du répertoire ? Ses devis sont conservés.`)) { const r = await actions.deleteArtisan(a.id); setMsg(r?.error || r?.message); } }} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>}
+            </div>
+          </div>); })}
+      </div> : <EmptyState icon={Wrench} title="Répertoire vide" sub="Ajoutez vos artisans, ou importez ceux déjà cités dans vos devis." />}
+      {modal && <ArtisanModal initial={modal} onSave={actions.saveArtisan} onClose={() => setModal(null)} />}
+    </div>
+  );
+}
+
 function Plaintes({ store, me, userId }) {
   const { complaints, properties, units, members, quotes, actions } = store;
   const [search, setSearch] = useState("");
@@ -11109,17 +12213,6 @@ function DechargeSheet({ doc, author, onBack }) {
 }
 
 /* ---------------- Dossier numérique d'une personne ---------------- */
-const FOLDER_CATEGORY = {
-  contrat:          "Contrat / bail",
-  piece_identite:   "Pièce d'identité",
-  etat_des_lieux:   "État des lieux",
-  justificatif:     "Justificatif",
-  correspondance:   "Correspondance",
-  photo:            "Photo",
-  titre_propriete:  "Titre de propriété",
-  fiscal:           "Document fiscal",
-  autre:            "Autre",
-};
 
 function Dossier({ store, me, userId, scope, unit, owner, former, property, onBack, onOpenDoc }) {
   const { documents, folderFiles, members, actions } = store;
@@ -11902,7 +12995,7 @@ function Workspace({ userId }) {
   const store = useStore(userId);
   const { loading, departments, members, tasks, timeEntries, activeTimers, channels, channelMembers, messages,
     owners, properties, products, releases, releaseLines, quotes, units, requests, complaints, documents,
-    cashEntries, handovers, formerTenants, prospects, prospected, weeklyReports, folderFiles, rentPeriods, rentLines, actions } = store;
+    cashEntries, handovers, formerTenants, prospects, prospected, weeklyReports, visits, folderFiles, rentPeriods, rentLines, actions } = store;
 
   const [view, setView] = useState("dashboard");
   const [viewWeek, setViewWeek] = useState(mondayIso(new Date()));
@@ -11985,6 +13078,14 @@ function Workspace({ userId }) {
       && p.nextContact && p.nextContact < isoDate(new Date())).length,
     [prospects]);
   const [prospectSeed, setProspectSeed] = useState(null);
+  const [visitFocus, setVisitFocus] = useState(null);
+  /* Pastille : visites à valider (direction) ou visites en retard (agent) */
+  const visitesARegarder = useMemo(() => {
+    const auj = isoDate(new Date());
+    return canSupervise(me?.role)
+      ? visits.filter((v) => v.status === "cloturee").length
+      : visits.filter((v) => v.agentId === userId && ((["programmee", "en_cours"].includes(v.status) && v.visitDate < auj) || v.status === "a_corriger")).length;
+  }, [visits, me?.role, userId]);
   const relancesBiens = useMemo(() => prospected.filter((b) => b.agentId === userId
     && PP_OPEN.includes(b.status) && b.nextContact && b.nextContact <= isoDate(new Date())).length, [prospected, userId]);
   const rapportsAttente = useMemo(() => canSupervise(me?.role)
@@ -12056,6 +13157,7 @@ function Workspace({ userId }) {
     { id: "board", label: "Tâches", icon: ListChecks },
     { id: "planner", label: "Planning", icon: CalendarDays },
     { id: "patrimoine", label: "Patrimoine", icon: Building2 },
+    { id: "visites", label: "Visites", icon: ClipboardCheck, badge: visitesARegarder },
     { id: "locataires", label: "Locataires", icon: Users },
     { id: "prospects", label: "Prospects", icon: PhoneIncoming, badge: overdueProspects },
     { id: "nouveaux-biens", label: "Nouveaux biens", icon: Building2, badge: relancesBiens },
@@ -12132,7 +13234,10 @@ function Workspace({ userId }) {
             onNew={() => setTaskModal({ prefill: { assigneeId: userId, weekStart: viewWeek } })} />
         )}
         {view === "patrimoine" && <Patrimoine store={store} me={me}
-          onSignalProspect={(seed) => { setProspectSeed(seed); setView("prospects"); }} />}
+          onSignalProspect={(seed) => { setProspectSeed(seed); setView("prospects"); }}
+          onOpenVisit={(id) => { setVisitFocus({ openId: id }); setView("visites"); }}
+          onNewVisit={(propertyId) => { setVisitFocus({ newForProperty: propertyId }); setView("visites"); }} />}
+        {view === "visites" && <Visites store={store} me={me} focus={visitFocus} onFocusConsumed={() => setVisitFocus(null)} />}
         {view === "locataires" && <Locataires store={store} me={me} userId={userId} />}
         {view === "prospects" && <Prospects store={store} me={me} userId={userId}
           initialModal={prospectSeed} onModalConsumed={() => setProspectSeed(null)} />}
