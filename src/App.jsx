@@ -6,7 +6,7 @@
  * ==========================================================================*/
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
-  AlertTriangle, AlignCenter, AlignJustify, AlignLeft, AlignRight, Archive, ArchiveRestore, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, Banknote, BarChart3, Bell, BellOff, BellRing, Bold, Briefcase, Building2, CalendarClock, CalendarDays, CalendarOff, Camera, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList, Clock, DoorClosed, DoorOpen, Download, Eraser, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Highlighter, Home, Image, Inbox, IndentDecrease, IndentIncrease, Italic, KeyRound, Landmark, Layers, LayoutDashboard, Link2, List, ListChecks, ListOrdered, Lock, LogOut, Mail, MapPin, Maximize2, MessageCircle, MessageCircleWarning, MessageSquare, Minimize2, Minus, Package, Palette, Paperclip, Pause, Pencil, Percent, Phone, PhoneIncoming, Play, Plus, Printer, Receipt, Redo2, RefreshCw, RotateCcw, Scale, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, Strikethrough, Subscript, Superscript, Table2, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, Underline, Undo2, Unlock, Upload, UserPlus, UserRound, Users, Wallet, Wrench, X, Zap,
+  AlertTriangle, AlignCenter, AlignJustify, AlignLeft, AlignRight, Archive, ArchiveRestore, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, Banknote, BarChart3, Bell, BellOff, BellRing, Bold, Briefcase, Building2, CalendarClock, CalendarDays, CalendarOff, Camera, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardCheck, ClipboardList, Clock, DoorClosed, DoorOpen, Download, Eraser, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Highlighter, Home, Image, Inbox, IndentDecrease, IndentIncrease, Italic, KeyRound, Landmark, Layers, LayoutDashboard, Link2, List, ListChecks, ListOrdered, Lock, LogOut, Mail, MapPin, Maximize2, Menu, MessageCircle, MessageCircleWarning, MessageSquare, Minimize2, Minus, Package, Palette, Paperclip, Pause, Pencil, Percent, Phone, PhoneIncoming, Play, Plus, Printer, Receipt, Redo2, RefreshCw, RotateCcw, Scale, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, Strikethrough, Subscript, Superscript, Table2, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, Underline, Undo2, Unlock, Upload, UserPlus, UserRound, Users, Wallet, Wrench, X, Zap,
 } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { supabase, AUTH_DOMAIN } from "./supabaseClient";
@@ -158,6 +158,8 @@ const DOC_TYPES = {
     dept: "Gestion locative",
     layout: "facture",
     title: "DÉCOMPTE D'ENTRÉE",
+    proforma: true,
+    nonRefundable: "Les frais de prestations de services de l'agence (frais d'agence, frais de dossier), une fois payés, ne sont pas remboursables.",
     color: "#2E78A8",
     desc: "Somme à régler par le locataire à l'entrée dans les lieux (avance, caution, agence, frais).",
     clientLabel: "Locataire entrant",
@@ -176,10 +178,25 @@ const DOC_TYPES = {
     dept: "Direction & Gérance",
     layout: "facture",
     title: "FICHE DE PRESTATION DE SERVICES",
+    proforma: true,
+    nonRefundable: "Les frais de prestations de services, une fois payés, ne sont pas remboursables.",
     color: "#4F9E2A",
     desc: "Détail des prestations réalisées par l'agence pour un client ou un propriétaire.",
     clientLabel: "Client",
     preset: [{ label: "", qty: 1, unit: "u", price: 0 }],
+  },
+  facture: {
+    label: "Facture de loyers",
+    short: "Facture",
+    prefix: "FA",
+    dept: "Gestion locative",
+    layout: "facture",
+    title: "FACTURE",
+    color: "#0F766E",
+    desc: "Facture remise au client qui règle plusieurs mois de loyer (ou toute autre somme) et souhaite une facture.",
+    clientLabel: "Client facturé",
+    proforma: true,
+    preset: [{ label: "", qty: 1, unit: "mois", price: 0 }],
   },
   facture_impayes: {
     label: "Facture d'impayés",
@@ -269,7 +286,22 @@ const DOC_TYPES = {
     preset: [{ label: "Loyer impayé", qty: 1, unit: "mois", price: 0 }],
   },
 };
-const DOC_TYPE_ORDER = ["decompte_entree", "prestation", "facture_impayes", "quittance", "recu_charge", "solde_tout_compte", "decharge", "relance", "courrier"];
+const DOC_TYPE_ORDER = ["decompte_entree", "prestation", "facture", "facture_impayes", "quittance", "recu_charge", "solde_tout_compte", "decharge", "relance", "courrier"];
+
+/* ══ PROFORMA ══
+   Document estimatif remis au client avant paiement. Numérotation propre
+   (PF-…), date de validité, jamais « réglée », jamais comptée dans la caisse.
+   Une fois acceptée, elle se convertit en document définitif (nouveau numéro). */
+const isProforma = (d) => d?.fields?.proforma === true || d?.fields?.proforma === "true";
+function proformaState(d) {
+  if (!isProforma(d)) return null;
+  const today = new Date().toISOString().slice(0, 10);
+  if (d.fields?.convertedTo) return { key: "convertie", label: `Convertie en ${d.fields.convertedTo}`, color: "#4F9E2A" };
+  if (d.status === "annule") return { key: "annulee", label: "Proforma annulée", color: "#94A3B8" };
+  if (d.fields?.validUntil && d.fields.validUntil < today) return { key: "expiree", label: "Proforma expirée", color: "#D81F26" };
+  return { key: "valide", label: d.fields?.validUntil ? `Valable jusqu'au ${d.fields.validUntil.split("-").reverse().join("/")}` : "Proforma", color: "#7C3AED" };
+}
+const PROFORMA_DEFAULT_TERMS = "Paiement intégral à la signature du contrat, en espèces, par virement ou par mobile money.";
 
 const DOC_STATUS = {
   brouillon: { label: "Brouillon", color: "#94A3B8" },
@@ -989,7 +1021,7 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "30.0";
+const APP_VERSION = "31.0";
 const APP_BUILD = "2026-09-26";
 
 /* ---- Papier à en-tête de l'agence ---- */
@@ -1306,6 +1338,12 @@ function useStore(userId) {
   const membersRef = useRef([]);
   useEffect(() => { membersRef.current = members; }, [members]);
 
+  /* État de la synchronisation (voir « SYNCHRONISATION ÉCONOME » plus bas) */
+  const dernierChargement = useRef(Date.now());
+  const absentDepuis = useRef(null);
+  const tempsReelVivant = useRef(false);
+  const dejaConnecte = useRef(false);
+
   const load = useCallback(async () => {
     const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc, un, rp, rlin, rch, rq, tax, cp, ff, ce, ho, ft, prs, ppr, wrp, adv, vis, art] = await Promise.all([
       supabase.from("departments").select("*").order("created_at"),
@@ -1497,22 +1535,52 @@ function useStore(userId) {
           notify("Quittance refusée", `${p.new.ref} : ${p.new.approval_note || "voir le motif dans Documents"}`);
         }
       })
-      .subscribe();
+      .subscribe((statut) => {
+        const vivant = statut === "SUBSCRIBED";
+        /* Reconnexion après une coupure : des modifications ont pu être manquées */
+        if (vivant && dejaConnecte.current && !tempsReelVivant.current) { dernierChargement.current = Date.now(); load(); }
+        if (vivant) dejaConnecte.current = true;
+        tempsReelVivant.current = vivant;
+      });
 
     /* Filet de sécurité : si la connexion temps réel se coupe (veille du
        téléphone, perte de réseau, onglet en arrière-plan), on resynchronise
        au retour sur l'application et périodiquement. Plus besoin d'actualiser. */
-    const resync = () => { if (document.visibilityState === "visible") load(); };
-    document.addEventListener("visibilitychange", resync);
-    window.addEventListener("online", resync);
-    window.addEventListener("focus", resync);
-    const timer = setInterval(resync, 60000);
+    /* SYNCHRONISATION ÉCONOME.
+       Le temps réel pousse déjà chaque modification. Le rechargement complet
+       (35 tables) n'est donc qu'un filet de sécurité :
+         • rare (toutes les 10 minutes) tant que la connexion temps réel est vivante ;
+         • plus fréquent (2 minutes) si elle est coupée ;
+         • au retour sur l'application, seulement après 3 minutes d'absence ;
+         • jamais deux rechargements à moins de 30 secondes d'intervalle.
+       Avant : un rechargement complet par minute et par onglet ouvert, ce qui a
+       fait dépasser le quota gratuit de transfert de données (egress). */
+    const recharger = () => { dernierChargement.current = Date.now(); load(); };
+    const assezVieux = (ms) => Date.now() - dernierChargement.current >= ms;
+    const quitter = () => { if (absentDepuis.current === null) absentDepuis.current = Date.now(); };
+    const revenir = () => {
+      const absence = absentDepuis.current === null ? 0 : Date.now() - absentDepuis.current;
+      absentDepuis.current = null;
+      if (document.visibilityState === "visible" && absence >= 3 * 60000 && assezVieux(30000)) recharger();
+    };
+    const surVisibilite = () => (document.visibilityState === "hidden" ? quitter() : revenir());
+    const surReseau = () => { if (assezVieux(30000)) recharger(); };
+    const verifier = () => {
+      if (document.visibilityState !== "visible") return;
+      if (assezVieux(tempsReelVivant.current ? 10 * 60000 : 2 * 60000)) recharger();
+    };
+    document.addEventListener("visibilitychange", surVisibilite);
+    window.addEventListener("blur", quitter);
+    window.addEventListener("focus", revenir);
+    window.addEventListener("online", surReseau);
+    const timer = setInterval(verifier, 60000);
 
     return () => {
       supabase.removeChannel(ch);
-      document.removeEventListener("visibilitychange", resync);
-      window.removeEventListener("online", resync);
-      window.removeEventListener("focus", resync);
+      document.removeEventListener("visibilitychange", surVisibilite);
+      window.removeEventListener("blur", quitter);
+      window.removeEventListener("focus", revenir);
+      window.removeEventListener("online", surReseau);
       clearInterval(timer);
     };
   }, [load]);
@@ -2793,7 +2861,29 @@ function useStore(userId) {
     if (data) setDocuments((p) => p.some((x) => x.id === data.id) ? p : [mDoc(data), ...p]);
     return { error: error?.message, id: data?.id };
   };
+  /* Proforma acceptée → document définitif (nouveau numéro DE / PS / FA).
+     La proforma est conservée, marquée « convertie », pour la traçabilité. */
+  const convertProforma = async (pf) => {
+    if (!isProforma(pf)) return { error: "Ce document n'est pas une proforma." };
+    if (pf.fields?.convertedTo) return { error: `Cette proforma a déjà été convertie en ${pf.fields.convertedTo}.` };
+    const { proforma, validUntil, paymentTerms, proformaConditions, ...autres } = pf.fields || {};
+    const row = { doc_type: pf.docType, doc_date: isoDate(new Date()), property_id: pf.propertyId || null, owner_id: pf.ownerId || null,
+      client_name: pf.clientName || "", client_phone: pf.clientPhone || "", client_email: pf.clientEmail || "", client_addr: pf.clientAddr || "",
+      object: pf.object || "", body: pf.body || "", lines: pf.lines || [], total_amount: Number(pf.total) || 0, status: "emis", notes: pf.notes || "",
+      unit_id: pf.unitId || null, period: pf.period || "", period_iso: pf.periodIso || "",
+      fields: { ...autres, fromProforma: pf.ref }, approval: "non_requise", direction: "encaissement", created_by: userId };
+    const { data, error } = await supabase.from("documents").insert(row).select().single();
+    if (error) return { error: error.message };
+    const nd = mDoc(data);
+    const champs = { ...(pf.fields || {}), convertedTo: nd.ref, convertedAt: new Date().toISOString() };
+    const up = await supabase.from("documents").update({ fields: champs }).eq("id", pf.id);
+    setDocuments((p) => [nd, ...p.map((d) => (d.id === pf.id ? { ...d, fields: champs } : d))]);
+    if (up.error) return { error: `Document ${nd.ref} créé, mais la proforma n'a pas pu être marquée convertie : ${up.error.message}`, id: nd.id };
+    return { id: nd.id, ref: nd.ref, message: `Proforma ${pf.ref} convertie en ${nd.ref}` };
+  };
   const setDocumentStatus = async (id, status) => {
+    const dd = documents.find((x) => x.id === id);
+    if (status === "regle" && isProforma(dd)) return { error: "Une proforma ne peut pas être réglée : convertissez-la d'abord en document définitif." };
     setDocuments((p) => p.map((d) => (d.id === id ? { ...d, status } : d)));
     await supabase.from("documents").update({ status }).eq("id", id);
   };
@@ -2829,7 +2919,7 @@ function useStore(userId) {
       saveVisit, setVisitStatus, deleteVisit, markOwnerInformed, createVisitTask, scheduleNextVisit,
       saveArtisan, deleteArtisan, importArtisansFromQuotes,
       saveProspect, deleteProspect, saveProspected, deleteProspected, uploadProspectedPhoto, deleteProspectedPhoto,
-      saveWeeklyReport, deleteWeeklyReport, reload: load,
+      saveWeeklyReport, deleteWeeklyReport, reload: load, convertProforma,
     },
   };
 }
@@ -3003,6 +3093,21 @@ function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onC
   const ownerOptions = useMemo(() => owners.map((o) => ({ key: o.id, name: o.name, phone: o.phone,
     email: o.email, ownerId: o.id, detail: OWNER_KIND[o.kind] || "" })), [owners]);
 
+  const isPF = isProforma(f);
+  /* Facture de loyers : une ligne par mois, au loyer du lot */
+  const genererLoyers = () => {
+    const n = Math.max(1, Math.min(36, Number(f.monthsCount) || 1));
+    const debut = f.periodIso || isoDate(new Date()).slice(0, 7);
+    const lot = units.find((u) => u.id === f.unitId);
+    const loyer = Number(f.fields.rentAmount ?? lot?.rent) || 0;
+    const mois = Array.from({ length: n }, (_, i) => periodAdd(debut, i));
+    setLines(mois.map((m) => ({ label: `Loyer ${periodLabel(m)}${lot ? ` — ${lot.label}` : ""}`, qty: 1, unit: "mois", price: loyer })));
+    setF((p) => ({ ...p, periodIso: debut, monthsCount: n,
+      period: n > 1 ? `${periodLabel(mois[0])} à ${periodLabel(mois[n - 1])}` : periodLabel(mois[0]),
+      fields: { ...p.fields, periode: n > 1 ? `${periodLabel(mois[0])} à ${periodLabel(mois[n - 1])}` : periodLabel(mois[0]) },
+      object: p.object || `Loyers ${n > 1 ? `de ${periodLabel(mois[0])} à ${periodLabel(mois[n - 1])}` : periodLabel(mois[0])}` }));
+  };
+
   const total = linesTotal(lines);
   const isLetter = cfg.layout === "lettre";
   const isDecharge = cfg.layout === "decharge";
@@ -3012,7 +3117,13 @@ function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onC
     const approval = (f.docType === "recu_charge" && f.paidStamp)
       ? (isAdminUser ? "approuve" : "en_attente")
       : (f.approval || "non_requise");
-    const r = await onSave({ ...f, lines, approval });
+    /* Proforma : date de validité exigée ; jamais réglée, jamais comptée en caisse */
+    if (isPF) {
+      if (!f.fields.validUntil) { setBusy(false); setErr("Indiquez la date de validité de la proforma."); return; }
+      if (f.fields.validUntil < f.date) { setBusy(false); setErr("La date de validité doit être postérieure à la date du document."); return; }
+    }
+    const r = await onSave({ ...f, lines, approval,
+      ...(isPF ? { direction: "neutre", status: f.status === "regle" ? "emis" : f.status } : {}) });
     setBusy(false);
     if (r?.error) setErr(r.error); else onClose();
   };
@@ -3022,6 +3133,35 @@ function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onC
       <div className="rounded-lg p-3 mb-4 text-xs" style={{ background: cfg.color + "12", color: cfg.color }}>
         {cfg.desc} · Département : <strong>{cfg.dept}</strong>
       </div>
+
+      {/* Nature du document : définitif ou proforma */}
+      {cfg.proforma && (
+        <div className="rounded-xl border p-3 mb-4" style={{ borderColor: isPF ? "#C4B5FD" : "var(--line)", background: isPF ? "#F5F3FF" : "#FAFBFC" }}>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-semibold">Nature du document :</span>
+            {[["definitif", "Document définitif"], ["proforma", "Proforma — estimation avant paiement"]].map(([k, l]) => {
+              const on = (k === "proforma") === isPF;
+              return <button type="button" key={k} disabled={!!f.id}
+                onClick={() => setF((p) => ({ ...p, fields: { ...p.fields, proforma: k === "proforma",
+                  ...(k === "proforma" && !p.fields.validUntil ? { validUntil: isoDate(addDays(new Date(), 30)), paymentTerms: p.fields.paymentTerms || PROFORMA_DEFAULT_TERMS } : {}) } }))}
+                className="text-xs rounded-full px-3 py-1 border disabled:opacity-60"
+                style={{ background: on ? (k === "proforma" ? "#7C3AED" : "var(--ink)") : "#fff", color: on ? "#fff" : "var(--ink)", borderColor: on ? "transparent" : "var(--line)" }}>{l}</button>;
+            })}
+          </div>
+          {f.id && <p className="text-[11px] mt-1.5" style={{ color: "var(--muted)" }}>La nature d'un document déjà enregistré ne change plus. {isPF ? "Une fois acceptée, convertissez la proforma depuis la liste des documents." : ""}</p>}
+          {isPF && (<>
+            <p className="text-[11px] mt-2 mb-2" style={{ color: "#5B21B6" }}>Numérotation propre (PF-…), jamais comptée dans les encaissements. Acceptée par le client, elle se convertit en document définitif.</p>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Field label="Valable jusqu'au *">
+                <input type="date" className={inputCls} style={inputStyle} value={f.fields.validUntil || ""} onChange={(e) => setField("validUntil", e.target.value)} />
+                <div className="flex gap-1 mt-1">{[15, 30, 60].map((j) => <button type="button" key={j} onClick={() => setField("validUntil", isoDate(addDays(new Date(f.date + "T00:00:00"), j)))} className="text-[11px] underline" style={{ color: "#7C3AED" }}>{j} jours</button>)}</div>
+              </Field>
+              <Field label="Conditions de paiement"><textarea className={inputCls} style={inputStyle} rows={2} value={f.fields.paymentTerms || ""} onChange={(e) => setField("paymentTerms", e.target.value)} /></Field>
+            </div>
+            <Field label="Conditions particulières (facultatif)"><textarea className={inputCls} style={inputStyle} rows={2} value={f.fields.proformaConditions || ""} onChange={(e) => setField("proformaConditions", e.target.value)} placeholder="Ex. Sous réserve de la disponibilité du logement à la date d'entrée." /></Field>
+          </>)}
+        </div>
+      )}
 
       <div className="grid sm:grid-cols-2 gap-3">
         <PersonPicker label={cfg.clientLabel} hint="Choisissez un locataire connu ou saisissez un nom libre"
@@ -3043,6 +3183,28 @@ function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onC
       </div>
 
       <Field label="Objet"><input className={inputCls} style={inputStyle} value={f.object} onChange={(e) => set("object", e.target.value)} placeholder={f.docType === "decompte_entree" ? "Ex. DÉCOMPTE ENTRÉE APPARTEMENT DJOROGOBITÉ" : "Objet du document"} /></Field>
+
+      {/* Facture de loyers : mois facturés et règlement */}
+      {f.docType === "facture" && (
+        <div className="rounded-xl border p-3 mb-3" style={{ borderColor: "#99F6E4", background: "#F0FDFA" }}>
+          <p className="text-xs font-semibold mb-2" style={{ color: "#0F766E" }}>Mois facturés</p>
+          <div className="grid sm:grid-cols-4 gap-3">
+            <Field label="Premier mois"><input type="month" className={inputCls} style={inputStyle} value={f.periodIso || ""} onChange={(e) => set("periodIso", e.target.value)} /></Field>
+            <Field label="Nombre de mois"><input type="number" min={1} max={36} className={inputCls} style={inputStyle} value={f.monthsCount || 1} onChange={(e) => set("monthsCount", e.target.value)} /></Field>
+            <Field label="Loyer mensuel"><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.fields.rentAmount ?? (units.find((u) => u.id === f.unitId)?.rent || "")} onChange={(e) => setField("rentAmount", e.target.value)} /></Field>
+            <Field label=" "><button type="button" onClick={genererLoyers} className="kb-btn kb-btn-ghost text-sm w-full justify-center" style={{ color: "#0F766E" }}>Générer les lignes</button></Field>
+          </div>
+          {!isPF && <div className="grid sm:grid-cols-3 gap-3">
+            <Field label="Échéance de paiement"><input type="date" className={inputCls} style={inputStyle} value={f.fields.dueDate || ""} onChange={(e) => setField("dueDate", e.target.value)} /></Field>
+            <Field label="Payée le" hint="Vide si pas encore réglée"><input type="date" className={inputCls} style={inputStyle} value={f.fields.paidOn || ""} onChange={(e) => setField("paidOn", e.target.value)} /></Field>
+            <Field label="Mode de règlement">
+              <select className={inputCls} style={inputStyle} value={f.fields.mode || "Espèces"} onChange={(e) => setField("mode", e.target.value)}>
+                {["Espèces", "Virement", "Chèque", "Mobile Money"].map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </Field>
+          </div>}
+        </div>
+      )}
 
       {/* Champs spécifiques */}
       {f.docType === "quittance" && (
@@ -3169,7 +3331,7 @@ function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onC
             </Field>
             <Field label="Statut">
               <select className={inputCls} style={inputStyle} value={f.status} onChange={(e) => set("status", e.target.value)}>
-                {DOC_STATUS_ORDER.map((k) => <option key={k} value={k}>{DOC_STATUS[k].label}</option>)}
+                {DOC_STATUS_ORDER.filter((k) => !(isPF && k === "regle")).map((k) => <option key={k} value={k}>{DOC_STATUS[k].label}</option>)}
               </select>
             </Field>
           </div>
@@ -3562,6 +3724,10 @@ function DocSheet({ doc, property, owner, author, onBack }) {
   const isLetter = cfg.layout === "lettre";
   const brut = doc.body?.trim() || (doc.docType === "relance" ? relanceBody(doc, property) : "");
   const body = brut && !isHtml(brut) ? textToHtml(brut) : brut;
+  const pf = isProforma(doc);
+  const ps = proformaState(doc);
+  const d10 = (x) => (x ? fr(String(x).slice(0, 10) + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—");
+  const nomDoc = pf ? "facture proforma" : doc.docType === "quittance" ? "quittance" : "facture";
 
   return (
     <div>
@@ -3588,10 +3754,22 @@ function DocSheet({ doc, property, owner, author, onBack }) {
 
         {/* Titre */}
         <div className="text-center py-3">
-          <h2 className="text-lg font-bold tracking-wide" style={{ color: "var(--ink)" }}>{cfg.title || (doc.docType === "courrier" ? "" : cfg.label)}</h2>
+          <h2 className="text-lg font-bold tracking-wide" style={{ color: pf ? "#5B21B6" : "var(--ink)" }}>{pf ? "FACTURE PROFORMA" : (cfg.title || (doc.docType === "courrier" ? "" : cfg.label))}</h2>
+          {pf && <p className="text-xs font-semibold mt-0.5" style={{ color: "#5B21B6" }}>{cfg.label} — estimation préalable</p>}
+          {pf && <span className="inline-block mt-2 px-3 py-0.5 text-[10px] font-bold tracking-widest rounded border-2" style={{ color: "#5B21B6", borderColor: "#5B21B6" }}>PROFORMA — NE VAUT NI FACTURE NI QUITTANCE</span>}
           {doc.object && <p className="text-sm font-semibold mt-1 uppercase">{doc.object}</p>}
           {doc.fields?.periode && <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>Période : {doc.fields.periode}</p>}
         </div>
+
+        {/* Références de la proforma */}
+        {pf && (
+          <div className="grid grid-cols-3 gap-2 text-xs mb-3 p-2.5 rounded-lg" style={{ background: "#F5F3FF", border: "1px solid #DDD6FE" }}>
+            <p><span style={{ color: "var(--muted)" }}>Proforma n° </span><strong>{doc.ref}</strong></p>
+            <p><span style={{ color: "var(--muted)" }}>Émise le </span><strong>{d10(doc.date)}</strong></p>
+            <p><span style={{ color: "var(--muted)" }}>Valable jusqu'au </span><strong style={{ color: ps?.key === "expiree" ? "#D81F26" : "inherit" }}>{d10(doc.fields?.validUntil)}</strong></p>
+          </div>
+        )}
+        {doc.fields?.fromProforma && <p className="text-[11px] mb-2" style={{ color: "var(--muted)" }}>Établi{doc.docType === "facture" ? "e" : ""} sur la base de la proforma {doc.fields.fromProforma}.</p>}
 
         {/* Bien concerné */}
         {property && (
@@ -3630,7 +3808,7 @@ function DocSheet({ doc, property, owner, author, onBack }) {
               </tr>
             ))}</tbody>
             <tfoot><tr style={{ background: "#F1F3F5" }}>
-              <td colSpan={doc.docType !== "decompte_entree" ? 4 : 1} className="px-3 py-2.5 font-bold">TOTAL À PAYER</td>
+              <td colSpan={doc.docType !== "decompte_entree" ? 4 : 1} className="px-3 py-2.5 font-bold">{pf ? "TOTAL ESTIMÉ" : doc.docType === "facture" && doc.fields?.paidOn ? "TOTAL RÉGLÉ" : "TOTAL À PAYER"}</td>
               <td className="px-3 py-2.5 text-right text-base font-bold tabular-nums" style={{ color: cfg.color }}>{fcfa(doc.total)}</td>
             </tr></tfoot>
           </table>
@@ -3639,7 +3817,7 @@ function DocSheet({ doc, property, owner, author, onBack }) {
         {/* Arrêté en toutes lettres */}
         {doc.total > 0 && !isLetter && (
           <p className="text-sm italic mb-5">
-            Arrêté{doc.docType === "quittance" ? "e" : ""} la présente {doc.docType === "quittance" ? "quittance" : "facture"} à la somme de <strong>{amountInWords(doc.total)}</strong>.
+            Arrêtée la présente {nomDoc} à la somme de <strong>{amountInWords(doc.total)}</strong>.
           </p>
         )}
 
@@ -3648,6 +3826,34 @@ function DocSheet({ doc, property, owner, author, onBack }) {
             Le présent document vaut quittance pour la période indiquée et libère le locataire de toute obligation de paiement à ce titre
             {doc.fields?.paidOn ? `, le règlement étant intervenu le ${fr(doc.fields.paidOn + "T00:00:00", { day: "numeric", month: "long", year: "numeric" })}` : ""}.
           </p>
+        )}
+
+        {/* Facture de loyers : période, échéance, règlement */}
+        {doc.docType === "facture" && !pf && (
+          <div className="text-sm mb-5 space-y-1">
+            {doc.fields?.paidOn
+              ? <p className="font-semibold" style={{ color: "#3d7d20" }}>Facture acquittée le {d10(doc.fields.paidOn)}{doc.fields?.mode ? ` par ${doc.fields.mode.toLowerCase()}` : ""}.</p>
+              : doc.fields?.dueDate && <p><strong>Paiement attendu au plus tard le {fr(doc.fields.dueDate + "T00:00:00", { day: "numeric", month: "long", year: "numeric" })}</strong>{doc.fields?.mode ? ` — mode de règlement : ${doc.fields.mode.toLowerCase()}` : ""}.</p>}
+          </div>
+        )}
+
+        {/* Conditions de la proforma */}
+        {pf && (
+          <div className="rounded-lg p-3 mb-4 text-xs leading-relaxed" style={{ border: "1px solid #DDD6FE", background: "#FAF8FF" }}>
+            <p className="font-bold mb-1" style={{ color: "#5B21B6" }}>CONDITIONS DE LA PROFORMA</p>
+            <p>• <strong>Validité :</strong> montants garantis jusqu'au {d10(doc.fields?.validUntil)} ; au-delà, ils pourront être révisés.</p>
+            {doc.fields?.paymentTerms && <p>• <strong>Conditions de paiement :</strong> {doc.fields.paymentTerms}</p>}
+            {doc.fields?.proformaConditions && <p>• <strong>Conditions particulières :</strong> {doc.fields.proformaConditions}</p>}
+            <p>• Document établi à titre indicatif : il ne constitue ni une facture définitive ni une quittance et ne vaut pas reçu de paiement. Une {cfg.label.toLowerCase()} définitive sera établie à l'acceptation et au règlement.</p>
+          </div>
+        )}
+
+        {/* Frais de prestation non remboursables — bien visible */}
+        {cfg.nonRefundable && (
+          <div className="rounded-lg p-3 mb-4 flex items-start gap-2" style={{ border: "2px solid #B5171D", background: "#FFF5F5", breakInside: "avoid" }}>
+            <span className="text-base leading-none font-bold" style={{ color: "#B5171D" }}>!</span>
+            <p className="text-sm font-bold" style={{ color: "#B5171D" }}>IMPORTANT : {cfg.nonRefundable}</p>
+          </div>
         )}
 
         {doc.fields?.dueDate && doc.docType === "facture_impayes" && (
@@ -3659,7 +3865,8 @@ function DocSheet({ doc, property, owner, author, onBack }) {
         {/* Signatures */}
         <div className="flex justify-between items-end pt-8 mt-6">
           <div className="text-center" style={{ minWidth: 180 }}>
-            <p className="text-xs font-semibold pb-24">Visa Client</p>
+            <p className="text-xs font-semibold">{pf ? "Bon pour accord — Le client" : "Visa Client"}</p>
+            <p className="text-[9px] pb-20" style={{ color: "var(--muted)" }}>{pf ? "Date, signature et mention manuscrite « Bon pour accord »" : "\u00a0"}</p>
             <div className="border-t" style={{ borderColor: "var(--ink)" }} />
           </div>
           <div className="text-center" style={{ minWidth: 180 }}>
@@ -3710,10 +3917,11 @@ function Documents({ store, me }) {
       (d.ref || "").toLowerCase().includes(search.toLowerCase()) ||
       (d.object || "").toLowerCase().includes(search.toLowerCase())));
 
-  const regles = documents.filter((d) => d.status === "regle");
+  /* Les proformas n'entrent jamais dans les montants : ce ne sont que des estimations */
+  const regles = documents.filter((d) => d.status === "regle" && !isProforma(d));
   const encaisse = regles.filter((d) => d.direction === "encaissement").reduce((a, d) => a + d.total, 0);
   const decaisse = regles.filter((d) => d.direction === "decaissement").reduce((a, d) => a + d.total, 0);
-  const attente = documents.filter((d) => ["emis", "envoye"].includes(d.status));
+  const attente = documents.filter((d) => ["emis", "envoye"].includes(d.status) && !isProforma(d));
 
   return (
     <div>
@@ -3817,20 +4025,35 @@ function Documents({ store, me }) {
                 </div>
                 <div className="flex flex-col items-end gap-2 shrink-0">
                   <div className="flex items-center gap-1.5">
+                    {isProforma(d) && <Chip color={proformaState(d).color} bg={proformaState(d).color + "14"}>PROFORMA · {proformaState(d).label}</Chip>}
+                    {d.fields?.fromProforma && <Chip color="#7C3AED">issu de {d.fields.fromProforma}</Chip>}
                     {d.approval === "approuve" && d.paidStamp && <Chip color={STAMP_RED} bg="#FDEAEA">PAYÉ</Chip>}
                     {d.approval === "en_attente" && <Chip color="#C58A1B" dot>à valider</Chip>}
                     {d.approval === "refuse" && <Chip color="#D81F26">refusée</Chip>}
-                    {d.total > 0 && d.direction !== "neutre" && (
+                    {d.total > 0 && d.direction !== "neutre" && !isProforma(d) && (
                       <Chip color={d.direction === "encaissement" ? "#4F9E2A" : "#D81F26"}>
                         {d.direction === "encaissement" ? "encaissé" : "déboursé"}
                       </Chip>
                     )}
                     <span className="text-base font-bold tabular-nums" style={{ color: cfg.color }}>{fcfa(d.total)}</span>
                   </div>
-                  <select value={d.status} onChange={(e) => actions.setDocumentStatus(d.id, e.target.value)}
+                  <select value={d.status} onChange={async (e) => { const r = await actions.setDocumentStatus(d.id, e.target.value); if (r?.error) alert(r.error); }}
                     className="text-xs px-2 py-1 rounded-lg border bg-white" style={{ borderColor: st.color + "55", color: st.color }}>
-                    {DOC_STATUS_ORDER.map((k) => <option key={k} value={k}>{DOC_STATUS[k].label}</option>)}
+                    {DOC_STATUS_ORDER.filter((k) => !(isProforma(d) && k === "regle")).map((k) => <option key={k} value={k}>{DOC_STATUS[k].label}</option>)}
                   </select>
+                  {isProforma(d) && !d.fields?.convertedTo && d.status !== "annule" && (
+                    <button onClick={async () => {
+                      const ps = proformaState(d);
+                      const msg = ps.key === "expiree"
+                        ? `La proforma ${d.ref} a expiré : vérifiez que les montants sont toujours valables.\n\nLa convertir quand même en document définitif ?`
+                        : `Convertir la proforma ${d.ref} en ${DOC_TYPES[d.docType]?.label.toLowerCase()} définitif(ve) ?\n\nUn nouveau numéro sera attribué ; la proforma est conservée.`;
+                      if (!confirm(msg)) return;
+                      const r = await actions.convertProforma(d);
+                      if (r?.error) alert(r.error); else { alert(r.message); if (r.id) setSheetId(r.id); }
+                    }} className="kb-btn text-xs px-2 py-1" style={{ background: "#7C3AED", color: "#fff" }} title="Le client accepte : établir le document définitif">
+                      <CheckCircle2 size={12} /> Convertir en définitif
+                    </button>
+                  )}
                   <div className="flex gap-1">
                     <button onClick={() => setSheetId(d.id)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Imprimer / PDF"><Printer size={14} /></button>
                     <button onClick={() => setModal(d)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Modifier"><Pencil size={14} /></button>
@@ -13079,6 +13302,24 @@ function Workspace({ userId }) {
     [prospects]);
   const [prospectSeed, setProspectSeed] = useState(null);
   const [visitFocus, setVisitFocus] = useState(null);
+  /* Navigation latérale : réduite / dépliée sur ordinateur, tiroir sur téléphone */
+  const [isDesktop, setIsDesktop] = useState(() => (typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(min-width: 1024px)").matches : true));
+  const [navCollapsed, setNavCollapsed] = useState(() => { try { return localStorage.getItem("kb-nav-collapsed") === "1"; } catch { return false; } });
+  const [navOpen, setNavOpen] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return undefined;
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const h = (e) => { setIsDesktop(e.matches); if (e.matches) setNavOpen(false); };
+    if (mq.addEventListener) mq.addEventListener("change", h); else if (mq.addListener) mq.addListener(h);
+    return () => { if (mq.removeEventListener) mq.removeEventListener("change", h); else if (mq.removeListener) mq.removeListener(h); };
+  }, []);
+  useEffect(() => { try { localStorage.setItem("kb-nav-collapsed", navCollapsed ? "1" : "0"); } catch { /* stockage indisponible */ } }, [navCollapsed]);
+  useEffect(() => {
+    if (!navOpen) return undefined;
+    const esc = (e) => { if (e.key === "Escape") setNavOpen(false); };
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [navOpen]);
   /* Pastille : visites à valider (direction) ou visites en retard (agent) */
   const visitesARegarder = useMemo(() => {
     const auj = isoDate(new Date());
@@ -13177,6 +13418,67 @@ function Workspace({ userId }) {
     ...(isAdmin(me.role) ? [{ id: "settings", label: "Administration", icon: Settings }] : []),
   ];
 
+  /* Menu latéral regroupé par domaine */
+  const NAV_GROUPS = [
+    ["Pilotage", ["dashboard", "board", "planner", "messages", "time"]],
+    ["Gestion locative", ["patrimoine", "visites", "locataires", "plaintes", "devis"]],
+    ["Finances", ["recouvrement", "documents", "caisse", "impots"]],
+    ["Commercial", ["prospects", "nouveaux-biens", "rapport", "portefeuille"]],
+    ["Logistique", ["transport", "produits"]],
+    ["Administration", ["team", "settings"]],
+  ];
+  const SideNav = () => {
+    const reduit = isDesktop && navCollapsed;
+    const classes = NAV_GROUPS.map(([g, ids]) => [g, ids.map((id) => NAV.find((n) => n.id === id)).filter(Boolean)]);
+    const vus = new Set(NAV_GROUPS.flatMap(([, ids]) => ids));
+    const autres = NAV.filter((n) => !vus.has(n.id));
+    if (autres.length) classes.push(["Autres", autres]);
+    return (
+      <nav className="flex flex-col h-full py-2 text-white">
+        {!isDesktop && (
+          <div className="flex items-center justify-between px-4 pb-3 mb-1 border-b" style={{ borderColor: "rgba(255,255,255,.08)" }}>
+            <span className="bg-white rounded-md px-1.5 py-1 flex items-center"><img src={LOGO} alt="Entreprise Kibegnon" className="h-6 w-auto" /></span>
+            <button onClick={() => setNavOpen(false)} className="p-2 rounded-lg hover:bg-white/10" aria-label="Fermer le menu"><X size={18} /></button>
+          </div>
+        )}
+        <div className="flex-1">
+          {classes.filter(([, items]) => items.length).map(([g, items]) => (
+            <div key={g} className="mb-1.5">
+              {reduit
+                ? <div className="mx-4 my-2 border-t" style={{ borderColor: "rgba(255,255,255,.08)" }} />
+                : <p className="px-5 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "#7C8796" }}>{g}</p>}
+              {items.map((n) => {
+                const active = view === n.id;
+                return (
+                  <button key={n.id} onClick={() => { setView(n.id); if (!isDesktop) setNavOpen(false); }}
+                    title={reduit ? `${n.label}${n.badge > 0 ? ` (${n.badge})` : ""}` : undefined}
+                    className="relative flex items-center gap-3 rounded-lg text-sm transition-colors hover:bg-white/5"
+                    style={{ width: reduit ? 52 : "calc(100% - 16px)", margin: "1px 8px", padding: reduit ? "9px 0" : "8px 12px", justifyContent: reduit ? "center" : "flex-start",
+                      background: active ? "rgba(255,255,255,.10)" : undefined, color: active ? "#fff" : "#C3CAD4", fontWeight: active ? 600 : 400 }}>
+                    {active && <span style={{ position: "absolute", left: 0, top: 7, bottom: 7, width: 3, borderRadius: 3, background: "var(--brass)" }} />}
+                    <span className="relative shrink-0 flex">
+                      <n.icon size={18} />
+                      {reduit && n.badge > 0 && <span className="absolute text-[9px] font-bold text-white rounded-full leading-none flex items-center justify-center" style={{ top: -6, right: -8, minWidth: 15, height: 15, padding: "0 3px", background: "var(--brass)" }}>{n.badge > 9 ? "9+" : n.badge}</span>}
+                    </span>
+                    {!reduit && <span className="truncate flex-1 text-left">{n.label}</span>}
+                    {!reduit && n.badge > 0 && <span className="text-[10px] font-bold text-white rounded-full px-1.5 py-0.5 leading-none" style={{ background: "var(--brass)" }}>{n.badge}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+        {isDesktop && (
+          <button onClick={() => setNavCollapsed((c) => !c)} className="flex items-center gap-2 text-xs rounded-lg hover:bg-white/5 mt-2"
+            style={{ margin: "0 8px", padding: reduit ? "9px 0" : "8px 12px", justifyContent: reduit ? "center" : "flex-start", color: "#7C8796" }}
+            title={reduit ? "Déplier le menu" : "Réduire le menu"}>
+            {reduit ? <ChevronsRight size={16} /> : <><ChevronsLeft size={16} /> Réduire le menu</>}
+          </button>
+        )}
+      </nav>
+    );
+  };
+
   const FloatingAdd = ({ prefill } = {}) => <button onClick={() => setTaskModal({ prefill: { assigneeId: userId, weekStart: viewWeek, ...prefill } })} className="kb-btn kb-btn-primary"><Plus size={16} /> Nouvelle tâche</button>;
   const WeekNav = ({ extra }) => (
     <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
@@ -13192,13 +13494,19 @@ function Workspace({ userId }) {
 
   return (
     <div className="min-h-screen" style={{ background: "var(--bg)", color: "var(--ink)" }}>
-      <header style={{ background: "var(--ink)" }} className="text-white">
-        <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
+      <header style={{ background: "var(--ink)" }} className="text-white sticky top-0 z-30">
+        <div className="px-3 sm:px-4 h-14 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
+            <button onClick={() => (isDesktop ? setNavCollapsed((c) => !c) : setNavOpen((o) => !o))}
+              className="p-2 rounded-lg hover:bg-white/10 shrink-0" aria-label="Afficher ou masquer le menu" title={isDesktop ? (navCollapsed ? "Déplier le menu" : "Réduire le menu") : "Menu"}>
+              <Menu size={20} />
+            </button>
             <span className="bg-white rounded-md px-1.5 py-1 flex items-center shrink-0"><img src={LOGO} alt="Entreprise Kibegnon" className="h-6 w-auto" /></span>
             <div className="min-w-0 hidden xs:block"><p className="font-semibold leading-tight tracking-tight truncate">Suivi d'équipe</p><p className="text-[11px] leading-tight" style={{ color: "#9AA4B2" }}>Entreprise Kibegnon · <span title={`Version ${APP_VERSION} du ${APP_BUILD}`}>v{APP_VERSION}</span></p></div>
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={async (e) => { const b = e.currentTarget; b.disabled = true; await actions.reload(); b.disabled = false; }}
+              className="rounded-full p-2 hover:bg-white/10 disabled:opacity-40" title="Actualiser les données maintenant" aria-label="Actualiser les données"><RefreshCw size={16} /></button>
             {myTimer && <button onClick={actions.stopTimer} className="hidden sm:flex items-center gap-2 rounded-full pl-3 pr-2 py-1.5 text-sm font-medium" style={{ background: "var(--live)" }}><span className="w-2 h-2 rounded-full bg-white animate-pulse" />{fmtClock((now - myTimer.startedAt) / 1000)}<span className="bg-white/25 rounded-full p-0.5"><Square size={12} /></span></button>}
             <div className="flex items-center gap-2 pl-1">
               <Avatar member={me} size={30} />
@@ -13207,18 +13515,18 @@ function Workspace({ userId }) {
             </div>
           </div>
         </div>
-        <div className="max-w-6xl mx-auto px-2">
-          <nav className="flex gap-1 overflow-x-auto no-scrollbar">
-            {NAV.map((n) => { const active = view === n.id; return (
-              <button key={n.id} onClick={() => setView(n.id)} className="relative flex items-center gap-1.5 px-3 py-2.5 text-sm whitespace-nowrap border-b-2 transition-colors" style={{ borderColor: active ? "var(--brass)" : "transparent", color: active ? "#fff" : "#9AA4B2", fontWeight: active ? 600 : 400 }}>
-                <n.icon size={15} /> {n.label}
-                {n.badge > 0 && <span className="ml-0.5 text-[10px] font-bold text-white rounded-full px-1.5 py-0.5 leading-none" style={{ background: "var(--brass)" }}>{n.badge}</span>}
-              </button>
-            ); })}
-          </nav>
-        </div>
       </header>
 
+      <div className="flex">
+        {/* Voile derrière le tiroir (téléphone) */}
+        {!isDesktop && navOpen && <div onClick={() => setNavOpen(false)} className="print:hidden" style={{ position: "fixed", inset: 0, zIndex: 40, background: "rgba(15,17,20,.45)" }} />}
+        <aside className="print:hidden" aria-label="Menu principal"
+          style={isDesktop
+            ? { position: "sticky", top: 56, height: "calc(100vh - 56px)", width: navCollapsed ? 68 : 248, flexShrink: 0, transition: "width .22s ease", background: "var(--ink)", overflowY: "auto", overflowX: "hidden", borderTop: "1px solid rgba(255,255,255,.06)" }
+            : { position: "fixed", top: 0, left: 0, bottom: 0, width: 276, zIndex: 50, transform: navOpen ? "translateX(0)" : "translateX(-100%)", transition: "transform .25s ease", background: "var(--ink)", overflowY: "auto", boxShadow: navOpen ? "8px 0 30px rgba(0,0,0,.35)" : "none" }}>
+          {SideNav()}
+        </aside>
+        <div className="flex-1 min-w-0">
       {myTimer && <button onClick={actions.stopTimer} className="sm:hidden w-full flex items-center justify-center gap-2 py-2 text-white text-sm font-medium" style={{ background: "var(--live)" }}><span className="w-2 h-2 rounded-full bg-white animate-pulse" /> En cours · {fmtClock((now - myTimer.startedAt) / 1000)} — toucher pour arrêter</button>}
 
       <main className="max-w-6xl mx-auto px-4 py-5">
@@ -13257,6 +13565,8 @@ function Workspace({ userId }) {
         {view === "team" && canSupervise(me.role) && Team()}
         {view === "settings" && isAdmin(me.role) && SettingsView()}
       </main>
+        </div>
+      </div>
 
       {taskModal && <TaskModal initial={taskModal.id ? taskModal : taskModal.prefill || {}} departments={departments} members={members} properties={properties} owners={owners} onSave={saveTask} onClose={() => setTaskModal(null)} onDelete={removeTask} />}
       {shareTask && <ShareTaskModal task={shareTask} members={members} currentUserId={userId} onSend={doShare} onClose={() => setShareTask(null)} />}
