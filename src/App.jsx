@@ -4,12 +4,14 @@
  *            Documents · Recouvrement · Transport · Produits · Messages · Temps
  *  Dépendances externes uniquement : react, lucide-react, recharts, ./supabaseClient
  * ==========================================================================*/
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from "react";
 import {
   AlertTriangle, AlignCenter, AlignJustify, AlignLeft, AlignRight, Archive, ArchiveRestore, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, Banknote, BarChart3, Bell, BellOff, BellRing, Bold, Briefcase, Building2, CalendarClock, CalendarDays, CalendarOff, Camera, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardCheck, ClipboardList, Clock, DoorClosed, DoorOpen, Download, Eraser, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Highlighter, Home, Image, Inbox, IndentDecrease, IndentIncrease, Italic, KeyRound, Landmark, Layers, LayoutDashboard, Link2, List, ListChecks, ListOrdered, Lock, LogOut, Mail, MapPin, Maximize2, Menu, MessageCircle, MessageCircleWarning, MessageSquare, Minimize2, Minus, Package, Palette, Paperclip, Pause, Pencil, Percent, Phone, PhoneIncoming, Play, Plus, Printer, Receipt, Redo2, RefreshCw, RotateCcw, Scale, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, Strikethrough, Subscript, Superscript, Table2, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, Underline, Undo2, Unlock, Upload, UserPlus, UserRound, Users, Wallet, Wrench, X, Zap,
 } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { supabase, AUTH_DOMAIN } from "./supabaseClient";
+/* Module Ressources humaines : chargé seulement à l'ouverture de l'onglet (fichier RH.jsx) */
+const RH = lazy(() => import("./RH.jsx"));
 
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -1021,8 +1023,8 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "31.0";
-const APP_BUILD = "2026-09-26";
+const APP_VERSION = "32.0";
+const APP_BUILD = "2026-10-08";
 
 /* ---- Papier à en-tête de l'agence ---- */
 const AGENCY = {
@@ -13415,6 +13417,7 @@ function Workspace({ userId }) {
     { id: "messages", label: "Messages", icon: MessageSquare, badge: unreadTotal },
     { id: "time", label: "Suivi du temps", icon: Clock },
     ...(canSupervise(me.role) ? [{ id: "team", label: "Supervision", icon: Users }] : []),
+    ...(me.role === "admin" || me.role === "gerante" ? [{ id: "rh", label: "Ressources humaines", icon: Briefcase }] : []),
     ...(isAdmin(me.role) ? [{ id: "settings", label: "Administration", icon: Settings }] : []),
   ];
 
@@ -13425,6 +13428,7 @@ function Workspace({ userId }) {
     ["Finances", ["recouvrement", "documents", "caisse", "impots"]],
     ["Commercial", ["prospects", "nouveaux-biens", "rapport", "portefeuille"]],
     ["Logistique", ["transport", "produits"]],
+    ["Ressources humaines", ["rh"]],
     ["Administration", ["team", "settings"]],
   ];
   const SideNav = () => {
@@ -13564,6 +13568,11 @@ function Workspace({ userId }) {
         {view === "time" && TimeView()}
         {view === "team" && canSupervise(me.role) && Team()}
         {view === "settings" && isAdmin(me.role) && SettingsView()}
+        {view === "rh" && (me.role === "admin" || me.role === "gerante") && (
+          <Suspense fallback={<p className="text-sm py-10 text-center" style={{ color: "var(--muted)" }}>Chargement du module Ressources humaines…</p>}>
+            <RH store={store} me={me} />
+          </Suspense>
+        )}
       </main>
         </div>
       </div>
@@ -13820,3 +13829,6 @@ function Workspace({ userId }) {
     );
   }
 }
+
+/* Composants partagés avec le module Ressources humaines (RH.jsx) */
+export { Modal, Field, Chip, StatCard, SectionCard, EmptyState, PrintPage, PrintHead, printSheet, fr, fcfa, isoDate, addDays, inputCls, inputStyle, MONTHS_FR };
