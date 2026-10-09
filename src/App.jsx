@@ -1023,7 +1023,7 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "32.2";
+const APP_VERSION = "33.0";
 const APP_BUILD = "2026-10-09";
 
 /* ---- Papier à en-tête de l'agence ---- */
