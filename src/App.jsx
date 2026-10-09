@@ -1023,8 +1023,8 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "32.1";
-const APP_BUILD = "2026-10-08";
+const APP_VERSION = "32.2";
+const APP_BUILD = "2026-10-09";
 
 /* ---- Papier à en-tête de l'agence ---- */
 const AGENCY = {
@@ -13831,4 +13831,5 @@ function Workspace({ userId }) {
 }
 
 /* Composants partagés avec le module Ressources humaines (RH.jsx) */
-export { Modal, Field, Chip, StatCard, SectionCard, EmptyState, PrintPage, PrintHead, printSheet, fr, fcfa, isoDate, addDays, inputCls, inputStyle, MONTHS_FR };
+export { Modal, Field, Chip, StatCard, SectionCard, EmptyState, PrintPage, PrintHead, printSheet, fr, fcfa, isoDate, addDays, inputCls, inputStyle, MONTHS_FR,
+  AGENCY, amountInWords, LetterEditor };
