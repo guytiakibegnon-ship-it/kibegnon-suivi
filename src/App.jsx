@@ -1023,7 +1023,7 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "33.0";
+const APP_VERSION = "33.1";
 const APP_BUILD = "2026-10-09";
 
 /* ---- Papier à en-tête de l'agence ---- */
@@ -13244,6 +13244,19 @@ function Workspace({ userId }) {
   useEffect(() => { if (activeTimers.length === 0) return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, [activeTimers.length]);
   useEffect(() => { if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight; }, [activeChannel, messages]);
 
+  /* Accès au module RH : décidé par la base (propriétaire ou membre désigné), jamais par le rôle */
+  const [hrAcces, setHrAcces] = useState(null);
+  useEffect(() => {
+    let vivant = true;
+    (async () => {
+      const { data, error } = await supabase.rpc("hr_mon_acces");
+      if (!vivant) return;
+      if (error) setHrAcces(/hr_mon_acces|schema cache|does not exist/i.test(error.message || "") ? "a_installer" : null);
+      else setHrAcces(["proprietaire", "complet", "gestion"].includes(data) ? data : null);
+    })();
+    return () => { vivant = false; };
+  }, [userId]);
+
   const me = members.find((m) => m.id === userId);
   const deptById = useMemo(() => Object.fromEntries(departments.map((d) => [d.id, d])), [departments]);
   const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
@@ -13395,6 +13408,9 @@ function Workspace({ userId }) {
 
   if (loading || !me) return <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg)" }}><p style={{ color: "var(--muted)" }}>Chargement de votre espace…</p></div>;
 
+  /* Module RH visible pour le seul propriétaire et les membres qu'il désigne ; avant l'installation
+     du contrôle d'accès (migration-v33-1), seul un administrateur voit le message d'installation */
+  const rhVisible = hrAcces === "a_installer" ? me.role === "admin" : ["proprietaire", "complet", "gestion"].includes(hrAcces);
   const NAV = [
     { id: "dashboard", label: "Tableau de bord", icon: LayoutDashboard },
     { id: "board", label: "Tâches", icon: ListChecks },
@@ -13417,7 +13433,7 @@ function Workspace({ userId }) {
     { id: "messages", label: "Messages", icon: MessageSquare, badge: unreadTotal },
     { id: "time", label: "Suivi du temps", icon: Clock },
     ...(canSupervise(me.role) ? [{ id: "team", label: "Supervision", icon: Users }] : []),
-    ...(me.role === "admin" || me.role === "gerante" ? [{ id: "rh", label: "Ressources humaines", icon: Briefcase }] : []),
+    ...(rhVisible ? [{ id: "rh", label: "Ressources humaines", icon: Briefcase }] : []),
     ...(isAdmin(me.role) ? [{ id: "settings", label: "Administration", icon: Settings }] : []),
   ];
 
@@ -13568,9 +13584,9 @@ function Workspace({ userId }) {
         {view === "time" && TimeView()}
         {view === "team" && canSupervise(me.role) && Team()}
         {view === "settings" && isAdmin(me.role) && SettingsView()}
-        {view === "rh" && (me.role === "admin" || me.role === "gerante") && (
+        {view === "rh" && rhVisible && (
           <Suspense fallback={<p className="text-sm py-10 text-center" style={{ color: "var(--muted)" }}>Chargement du module Ressources humaines…</p>}>
-            <RH store={store} me={me} />
+            <RH store={store} me={me} acces={hrAcces} />
           </Suspense>
         )}
       </main>
