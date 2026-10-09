@@ -143,6 +143,16 @@ export function minimumCategoriel(scale, categorie, echelon, date) {
   const r = rows.find((x) => (x.echelon || "") === (echelon || "")) || rows.find((x) => !(x.echelon || ""));
   return r && r.salaireMinimum !== null && r.salaireMinimum !== undefined ? Number(r.salaireMinimum) : null;
 }
+/* Rémunération mensuelle convenue = rubrique 100 (salaire catégoriel) + rubrique 200 (sursalaire) */
+export const remunerationMensuelle = (c) => (Number(c?.salaireBase) || 0) + (Number(c?.sursalaire) || 0);
+/* Plancher du salaire catégoriel : le minimum de la catégorie, ou — pour un travailleur
+   physiquement diminué, avec accord écrit (CCI art. 50) — ce minimum réduit de l'écart maximal paramétré */
+export function plancherCategoriel(params, minCat, contract, date) {
+  if (minCat === null || minCat === undefined) return null;
+  if (!contract?.clauses?.salaire_diminue) return minCat;
+  const ecart = pval(params, "SALAIRE_DIMINUE", date)?.ecart_max_pct;
+  return ecart === null || ecart === undefined ? minCat : Math.round(minCat * (1 - ecart / 100));
+}
 /* Salaire minimum légal pour l'horaire du contrat (SMIG proratisé à l'horaire) */
 export function smigProrata(params, horaire, date) {
   const smig = pval(params, "SMIG_MENSUEL", date)?.montant; const legal = pval(params, "HORAIRE_LEGAL_HEBDO", date)?.heures;
@@ -182,14 +192,19 @@ export function computeAlerts({ employees, details, contracts, documents, params
       else if (j <= 30) push({ code: "cdd_fin", niveau: "orange", employeeId: e.id, titre: `${nom} : fin du CDD le ${fmt(c.dateFin)} (J-${j})`, detail: "Décider : renouvellement, CDI ou fin de contrat." });
     }
     const minCat = minimumCategoriel(scale, c.categorie, c.echelon, today);
+    const plancher = plancherCategoriel(params, minCat, c, today);
     if (minCat === null) push({ code: "cat_sans_minimum", niveau: "orange", employeeId: e.id, titre: `${nom} : catégorie ${c.categorie}${c.echelon ? ` (${c.echelon})` : ""} sans salaire minimum dans la grille`,
       detail: "Prime d'ancienneté, gratification et contrôle du salaire restent inactifs tant que la grille n'est pas renseignée." });
-    else if (c.type !== "stage" && Number(c.salaireBase) < minCat)
-      push({ code: "sous_minimum", niveau: "rouge", employeeId: e.id, titre: `${nom} : salaire inférieur au minimum de la catégorie`,
-        detail: `${fcfa(c.salaireBase)} pour un minimum de ${fcfa(minCat)} (CCI ; décret 2024-900, art. 7 pendant l'essai).` });
+    else if (c.type !== "stage" && Number(c.salaireBase) < plancher)
+      push({ code: "sous_minimum", niveau: "rouge", employeeId: e.id, titre: `${nom} : salaire catégoriel inférieur au minimum de la catégorie`,
+        detail: `Rubrique 100 : ${fcfa(c.salaireBase)} pour un minimum de ${fcfa(plancher)}${c.clauses?.salaire_diminue ? " (travailleur physiquement diminué, CCI art. 50)" : ""}. À porter au minimum par avenant ; le sursalaire n'est jamais réduit automatiquement.` });
+    else if (c.type !== "stage" && !Number(c.sursalaire) && Number(c.salaireBase) > minCat)
+      push({ code: "repartition", niveau: "info", employeeId: e.id, titre: `${nom} : répartition salaire catégoriel / sursalaire à vérifier`,
+        detail: `Salaire catégoriel saisi : ${fcfa(c.salaireBase)} pour un minimum de ${fcfa(minCat)}, sans sursalaire. Si le montant saisi est le salaire global, corrigez le contrat : rubrique 100 = minimum de la catégorie, le complément en sursalaire.` });
     const smig = smigProrata(params, c.horaireHebdo, today);
-    if (smig && c.type !== "stage" && Number(c.salaireBase) < smig)
-      push({ code: "sous_smig", niveau: "rouge", employeeId: e.id, titre: `${nom} : salaire inférieur au SMIG`, detail: `${fcfa(c.salaireBase)} pour ${c.horaireHebdo} h/semaine ; minimum légal : ${fcfa(smig)}.` });
+    const total = remunerationMensuelle(c);
+    if (smig && c.type !== "stage" && total < smig)
+      push({ code: "sous_smig", niveau: "rouge", employeeId: e.id, titre: `${nom} : rémunération inférieure au SMIG`, detail: `${fcfa(total)} pour ${c.horaireHebdo} h/semaine ; minimum légal : ${fcfa(smig)}.` });
   }
   if (!documents.some((d) => d.categorie === "reglement_interieur"))
     push({ code: "sans_reglement", niveau: "orange", titre: "Aucun règlement intérieur enregistré", detail: "La durée hebdomadaire et l'horaire journalier doivent y être inscrits et affichés (décret 2024-898, art. 7)." });
@@ -210,8 +225,8 @@ export function computeAlerts({ employees, details, contracts, documents, params
 
 /* Fascicule 2 : historique du contrat reconstitué à partir des avenants (avant / après) */
 export function contractHistory(contract, amendments) {
-  const champs = ["salaireBase", "horaireHebdo", "categorie", "echelon", "qualification", "lieuTravail", "dateFin"];
-  const snake = { salaireBase: "salaire_base", horaireHebdo: "horaire_hebdo", categorie: "categorie", echelon: "echelon", qualification: "qualification", lieuTravail: "lieu_travail", dateFin: "date_fin" };
+  const champs = ["salaireBase", "sursalaire", "horaireHebdo", "categorie", "echelon", "qualification", "lieuTravail", "dateFin"];
+  const snake = { salaireBase: "salaire_base", sursalaire: "sursalaire", horaireHebdo: "horaire_hebdo", categorie: "categorie", echelon: "echelon", qualification: "qualification", lieuTravail: "lieu_travail", dateFin: "date_fin" };
   const avs = (amendments || []).filter((a) => a.contractId === contract.id).sort((a, b) => (a.dateEffet === b.dateEffet ? a.createdAt - b.createdAt : a.dateEffet < b.dateEffet ? -1 : 1));
   let etat = Object.fromEntries(champs.map((k) => [k, contract[k]]));
   for (const a of [...avs].reverse()) for (const k of champs) if (a.avant && snake[k] in a.avant) etat = { ...etat, [k]: a.avant[snake[k]] };
@@ -248,13 +263,14 @@ export const mCtr = (r) => ({ id: r.id, employeeId: r.employee_id, type: r.type,
   categorie: Number(r.categorie) || 1, echelon: r.echelon || "", qualification: r.qualification || "employe_mensuel", modePaiement: r.mode_paiement || "mois",
   essaiDuree: r.essai_duree === null || r.essai_duree === undefined ? null : Number(r.essai_duree), essaiUnite: r.essai_unite || "mois", essaiRenouvele: !!r.essai_renouvele,
   essaiRenouvellementNotifieLe: r.essai_renouvellement_notifie_le || "", essaiConsentementSalarie: !!r.essai_consentement_salarie, salaireBase: Number(r.salaire_base) || 0,
+  sursalaire: Number(r.sursalaire) || 0,
   horaireHebdo: Number(r.horaire_hebdo) || 40, repartition: r.repartition || "8h_5j", lieuTravail: r.lieu_travail || "", clauses: r.clauses || {}, statut: r.statut || "actif",
   documentId: r.document_id || "", createdAt: Date.parse(r.created_at) || 0 });
 export const toCtr = (f) => ({ employee_id: f.employeeId, type: f.type, date_debut: f.dateDebut, date_fin: f.dateFin || null, motif_cdd: f.type === "CDD" ? (f.motifCdd || "").trim() : "",
   objet: f.objet || "", categorie: Number(f.categorie), echelon: f.echelon || "", qualification: f.qualification, mode_paiement: f.modePaiement || "mois",
   essai_duree: f.type === "stage" || !f.essaiDuree ? null : Number(f.essaiDuree), essai_unite: f.essaiUnite || "mois", essai_renouvele: !!f.essaiRenouvele,
   essai_renouvellement_notifie_le: f.essaiRenouvele ? (f.essaiRenouvellementNotifieLe || null) : null, essai_consentement_salarie: !!f.essaiRenouvele && !!f.essaiConsentementSalarie,
-  salaire_base: Number(f.salaireBase) || 0, horaire_hebdo: Number(f.horaireHebdo) || 40, repartition: f.repartition || "8h_5j", lieu_travail: (f.lieuTravail || "").trim(),
+  salaire_base: Number(f.salaireBase) || 0, sursalaire: Number(f.sursalaire) || 0, horaire_hebdo: Number(f.horaireHebdo) || 40, repartition: f.repartition || "8h_5j", lieu_travail: (f.lieuTravail || "").trim(),
   clauses: f.clauses || {}, statut: f.statut || "actif", document_id: f.documentId || null });
 
 export const mAmend = (r) => ({ id: r.id, contractId: r.contract_id, employeeId: r.employee_id, objet: r.objet || "", dateEffet: r.date_effet || "", avant: r.avant || {}, apres: r.apres || {},
@@ -674,15 +690,25 @@ function ContractModal({ initial, emp, params, scale, onSave, onClose }) {
   const [f, setF] = useState(() => {
     const base = { type: "CDI", dateDebut: emp.dateEmbauche || today, dateFin: "", motifCdd: "", objet: "", categorie: 1, echelon: "", qualification: "employe_mensuel",
       modePaiement: "mois", essaiDuree: "", essaiUnite: "mois", essaiRenouvele: false, essaiRenouvellementNotifieLe: "", essaiConsentementSalarie: false,
-      salaireBase: "", horaireHebdo: 40, repartition: "8h_5j", lieuTravail: "", clauses: {}, statut: "actif" };
+      salaireBase: "", sursalaire: "", horaireHebdo: 40, repartition: "8h_5j", lieuTravail: "", clauses: {}, statut: "actif" };
     const x = { ...base, ...initial, employeeId: emp.id };
     if (!x.id && !x.essaiDuree) { const m = essaiMax(params, x.qualification, x.dateDebut); if (m) { x.essaiDuree = m.duree; x.essaiUnite = m.unite; } }
+    if (!x.id && x.salaireBase === "") { const m = minimumCategoriel(scale, x.categorie, x.echelon, x.dateDebut); if (m !== null) x.salaireBase = m; }
     return x;
   });
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const setClause = (k, v) => setF((x) => ({ ...x, clauses: { ...x.clauses, [k]: v } }));
   const nc = f.clauses.non_concurrence || { actif: false, duree: "", contrepartie: "" };
+  /* Catégorie ou échelon modifié : le salaire catégoriel suit le minimum de la grille,
+     sauf s'il a été saisi à la main à un autre montant */
+  const changeCat = (k, v) => setF((x) => {
+    const avant = minimumCategoriel(scale, x.categorie, x.echelon, x.dateDebut);
+    const n = { ...x, [k]: v };
+    const apres = minimumCategoriel(scale, n.categorie, n.echelon, n.dateDebut);
+    if (apres !== null && (x.salaireBase === "" || Number(x.salaireBase) === avant)) n.salaireBase = apres;
+    return n;
+  });
   const changeQualif = (q) => setF((x) => {
     const m = essaiMax(params, q, x.dateDebut);
     return m && !x.id ? { ...x, qualification: q, essaiDuree: m.duree, essaiUnite: m.unite } : { ...x, qualification: q };
@@ -696,8 +722,10 @@ function ContractModal({ initial, emp, params, scale, onSave, onClose }) {
   const minCat = minimumCategoriel(scale, f.categorie, f.echelon, f.dateDebut);
   const smig = smigProrata(params, f.horaireHebdo, f.dateDebut);
   const salaire = Number(f.salaireBase);
-  const sousSmig = ["CDI", "CDD", "temporaire"].includes(f.type) && smig && f.salaireBase !== "" && salaire < smig;
-  const sousMin = f.type !== "stage" && minCat !== null && f.salaireBase !== "" && salaire < minCat;
+  const total = salaire + (Number(f.sursalaire) || 0);
+  const plancher = plancherCategoriel(params, minCat, f, f.dateDebut);
+  const sousSmig = ["CDI", "CDD", "temporaire"].includes(f.type) && smig && f.salaireBase !== "" && total < smig;
+  const sousMin = f.type !== "stage" && plancher !== null && f.salaireBase !== "" && salaire < plancher;
   const echelons = [...new Set(scale.filter((r) => Number(r.categorie) === Number(f.categorie)).map((r) => r.echelon).filter(Boolean))];
 
   const submit = async () => {
@@ -709,8 +737,10 @@ function ContractModal({ initial, emp, params, scale, onSave, onClose }) {
     if (tropLong) return setErr(`Durée d'essai supérieure au maximum réglementaire pour cette qualification (${libDuree(max.duree, max.unite)}).`);
     if (f.essaiRenouvele && !f.essaiRenouvellementNotifieLe && !f.essaiConsentementSalarie) return setErr("Indiquez la date de notification du renouvellement, ou cochez le consentement écrit du salarié.");
     if (!(Number(f.categorie) >= 1)) return setErr("Indiquez la catégorie professionnelle.");
-    if (f.salaireBase === "" || !(salaire >= 0)) return setErr("Indiquez le salaire de base.");
-    if (sousSmig) return setErr(`Salaire inférieur au SMIG pour ${f.horaireHebdo} h/semaine (${fcfa(smig)}).`);
+    if (f.salaireBase === "" || !(salaire >= 0)) return setErr("Indiquez le salaire catégoriel (rubrique 100).");
+    if (f.sursalaire !== "" && !(Number(f.sursalaire) >= 0)) return setErr("Le sursalaire ne peut pas être négatif.");
+    if (sousMin) return setErr(`Salaire catégoriel inférieur au minimum de la catégorie (${fcfa(plancher)}).`);
+    if (sousSmig) return setErr(`Rémunération inférieure au SMIG pour ${f.horaireHebdo} h/semaine (${fcfa(smig)}).`);
     if (!(Number(f.horaireHebdo) > 0)) return setErr("Indiquez l'horaire hebdomadaire.");
     if (!(f.lieuTravail || "").trim()) return setErr("Indiquez le lieu de travail.");
     setBusy(true);
@@ -731,20 +761,26 @@ function ContractModal({ initial, emp, params, scale, onSave, onClose }) {
       <div className="grid sm:grid-cols-3 gap-x-3">
         <Field label="Qualification professionnelle"><select className={inputCls} style={inputStyle} value={f.qualification} onChange={(e) => changeQualif(e.target.value)}>
           {Object.entries(QUALIFICATIONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
-        <Field label="Catégorie *"><input type="number" min="1" className={inputCls} style={inputStyle} value={f.categorie} onChange={(e) => set("categorie", e.target.value)} /></Field>
-        <Field label="Échelon"><input className={inputCls} style={inputStyle} list="rh-echelons" value={f.echelon} onChange={(e) => set("echelon", e.target.value)} />
+        <Field label="Catégorie *"><input type="number" min="1" className={inputCls} style={inputStyle} value={f.categorie} onChange={(e) => changeCat("categorie", e.target.value)} /></Field>
+        <Field label="Échelon"><input className={inputCls} style={inputStyle} list="rh-echelons" value={f.echelon} onChange={(e) => changeCat("echelon", e.target.value)} />
           <datalist id="rh-echelons">{echelons.map((x) => <option key={x} value={x} />)}</datalist></Field>
         <Field label="Mode de paiement"><select className={inputCls} style={inputStyle} value={f.modePaiement} onChange={(e) => set("modePaiement", e.target.value)}>
           {Object.entries(MODES_PAIEMENT).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
-        <Field label="Salaire de base mensuel (FCFA) *"><input type="number" min="0" className={inputCls} style={inputStyle} value={f.salaireBase} onChange={(e) => set("salaireBase", e.target.value)} /></Field>
+        <Field label="Salaire catégoriel — rubrique 100 (FCFA) *" hint={minCat !== null ? `Minimum de la catégorie : ${fcfa(minCat)}` : "Minimum de la catégorie inconnu"}>
+          <input type="number" min="0" className={inputCls} style={inputStyle} value={f.salaireBase} onChange={(e) => set("salaireBase", e.target.value)} /></Field>
+        <Field label="Sursalaire — rubrique 200 (FCFA)" hint="Complément convenu, hors minimum de la catégorie">
+          <input type="number" min="0" className={inputCls} style={inputStyle} value={f.sursalaire} onChange={(e) => set("sursalaire", e.target.value)} /></Field>
+        <Field label="Rémunération mensuelle convenue"><p className="px-3 py-2 rounded-lg text-sm font-semibold tabular-nums" style={{ background: "#F6F8FA" }}>{fcfa(total)}</p></Field>
         <Field label="Horaire hebdomadaire (h)"><input type="number" min="1" step="0.5" className={inputCls} style={inputStyle} value={f.horaireHebdo} onChange={(e) => set("horaireHebdo", e.target.value)} /></Field>
         <Field label="Répartition de l'horaire"><select className={inputCls} style={inputStyle} value={f.repartition} onChange={(e) => set("repartition", e.target.value)}>
           {Object.entries(REPARTITIONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
         <div className="sm:col-span-2"><Field label="Lieu de travail *"><input className={inputCls} style={inputStyle} value={f.lieuTravail} onChange={(e) => set("lieuTravail", e.target.value)} placeholder="Ex. : siège, Cocody — Abidjan" /></Field></div>
       </div>
       {minCat === null && f.type !== "stage" && <WarnBox>La grille ne donne pas de salaire minimum pour la catégorie {f.categorie}{f.echelon ? ` (${f.echelon})` : ""} : le contrôle du salaire est impossible. Complétez la grille catégorielle.</WarnBox>}
-      {sousMin && <WarnBox tone="rouge">Salaire inférieur au minimum de la catégorie ({fcfa(minCat)}).</WarnBox>}
-      {sousSmig && <WarnBox tone="rouge">Salaire inférieur au SMIG pour cet horaire ({fcfa(smig)}) : enregistrement impossible.</WarnBox>}
+      {f.type !== "stage" && minCat !== null && <label className="flex items-center gap-2 text-sm mb-3"><input type="checkbox" checked={!!f.clauses.salaire_diminue} onChange={(e) => setClause("salaire_diminue", e.target.checked)} />
+        Travailleur physiquement diminué : salaire catégoriel réduit convenu par écrit (CCI, art. 50)</label>}
+      {sousMin && <WarnBox tone="rouge">Salaire catégoriel inférieur au minimum de la catégorie ({fcfa(plancher)}) : enregistrement impossible.</WarnBox>}
+      {sousSmig && <WarnBox tone="rouge">Rémunération inférieure au SMIG pour cet horaire ({fcfa(smig)}) : enregistrement impossible.</WarnBox>}
       <Field label="Objet / fonctions"><textarea rows={2} className={inputCls} style={inputStyle} value={f.objet} onChange={(e) => set("objet", e.target.value)} /></Field>
 
       {essai && (
@@ -790,7 +826,8 @@ function ContractModal({ initial, emp, params, scale, onSave, onClose }) {
 
 /* Avenant : seuls les éléments cochés sont modifiés ; « avant » est relevé par la base */
 const AVENANT_CHAMPS = [
-  { k: "salaire_base", f: "salaireBase", label: "Salaire de base", type: "number", show: (v) => fcfa(v) },
+  { k: "salaire_base", f: "salaireBase", label: "Salaire catégoriel (100)", type: "number", show: (v) => fcfa(v) },
+  { k: "sursalaire", f: "sursalaire", label: "Sursalaire (200)", type: "number", show: (v) => fcfa(v) },
   { k: "horaire_hebdo", f: "horaireHebdo", label: "Horaire hebdomadaire", type: "number", show: (v) => `${v} h` },
   { k: "repartition", f: "repartition", label: "Répartition de l'horaire", options: REPARTITIONS },
   { k: "categorie", f: "categorie", label: "Catégorie", type: "number" },
@@ -987,14 +1024,14 @@ function Dashboard({ hr, alerts, today, onAlert }) {
   const actifs = hr.employees.filter((e) => e.statut === "actif");
   const ctrs = actifs.map((e) => contratActif(hr.contracts, e.id)).filter(Boolean);
   const essais = ctrs.filter((c) => ["en_cours", "renouvele", "limite_depassee"].includes(essaiStatus(c, hr.params, today).etat)).length;
-  const masse = ctrs.reduce((a, c) => a + Number(c.salaireBase || 0), 0);
+  const masse = ctrs.reduce((a, c) => a + remunerationMensuelle(c), 0);
   const rouges = alerts.filter((a) => a.niveau === "rouge").length;
   return (
     <div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <StatCard icon={Users} label="Effectif actif" value={actifs.length} sub={`${ctrs.filter((c) => c.type === "CDI").length} CDI · ${ctrs.filter((c) => c.type === "CDD").length} CDD · ${ctrs.filter((c) => !["CDI", "CDD"].includes(c.type)).length} autres`} />
         <StatCard icon={FileSignature} label="Périodes d'essai en cours" value={essais} tint="#2E78A8" />
-        <StatCard icon={Landmark} label="Salaires de base mensuels" value={fcfa(masse)} sub="Contrats en cours, hors primes et charges" tint="#4F9E2A" />
+        <StatCard icon={Landmark} label="Rémunérations mensuelles convenues" value={fcfa(masse)} sub="Salaire catégoriel + sursalaire, hors primes et charges" tint="#4F9E2A" />
         <StatCard icon={ShieldAlert} label="Alertes urgentes" value={rouges} sub={`${alerts.length} alerte(s) au total`} tint="#D81F26" />
       </div>
       <SectionCard title="Alertes et échéances" icon={AlertTriangle}>
@@ -1096,7 +1133,8 @@ function EmployeeDetail({ emp, hr, members, departments, admin, alerts, today, o
                 <Info label="Période">{fmt(c.dateDebut)}{c.dateFin ? ` → ${fmt(c.dateFin)}` : " — durée indéterminée"}</Info>
                 <Info label="Catégorie / échelon">{c.categorie}{c.echelon ? ` / ${c.echelon}` : ""}</Info>
                 <Info label="Qualification">{QUALIFICATIONS[c.qualification]}</Info>
-                <Info label="Salaire de base">{fcfa(c.salaireBase)} <span className="text-xs" style={{ color: "var(--muted)" }}>({MODES_PAIEMENT[c.modePaiement]?.toLowerCase()})</span></Info>
+                <Info label="Salaire catégoriel (100) + sursalaire (200)">{fcfa(c.salaireBase)} + {fcfa(c.sursalaire)}</Info>
+                <Info label="Rémunération mensuelle convenue"><b>{fcfa(remunerationMensuelle(c))}</b> <span className="text-xs" style={{ color: "var(--muted)" }}>({MODES_PAIEMENT[c.modePaiement]?.toLowerCase()})</span></Info>
                 <Info label="Minimum de la catégorie / SMIG">{minCat === null ? "Grille non renseignée" : fcfa(minCat)} / {smig ? fcfa(smig) : "—"}</Info>
                 <Info label="Horaire">{nf(c.horaireHebdo)} h/semaine — {REPARTITIONS[c.repartition]}</Info>
                 <Info label="Lieu de travail">{c.lieuTravail}</Info>
@@ -1146,7 +1184,7 @@ function EmployeeDetail({ emp, hr, members, departments, admin, alerts, today, o
           return (
             <div key={x.id} className="border-b last:border-0 py-2" style={{ borderColor: "var(--line)" }}>
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-sm font-medium flex-1">{CONTRACT_TYPES[x.type]} — du {fmt(x.dateDebut)}{x.dateFin ? ` au ${fmt(x.dateFin)}` : ""} · cat. {x.categorie} · {fcfa(x.salaireBase)}</p>
+                <p className="text-sm font-medium flex-1">{CONTRACT_TYPES[x.type]} — du {fmt(x.dateDebut)}{x.dateFin ? ` au ${fmt(x.dateFin)}` : ""} · cat. {x.categorie} · {fcfa(remunerationMensuelle(x))}</p>
                 <Chip color={st.color} dot>{st.label}</Chip>
                 {x.statut !== "actif" && <button onClick={() => on.contract(x)} className="p-1 rounded hover:bg-slate-100" aria-label="Corriger ce contrat"><Pencil size={13} /></button>}
               </div>
@@ -1254,18 +1292,20 @@ function RegistrePrint({ kind, hr, onBack }) {
         )}
         {kind === "f2" && (
           <table className="w-full text-[10px] mt-4 border-collapse">
-            <thead><tr style={{ background: "#F1F3F5" }}>{["Date", "Événement", "Catégorie", "Qualification", "Salaire de base", "Horaire", "Lieu de travail"].map((h) => <th key={h} className={th} style={bc}>{h}</th>)}</tr></thead>
+            <thead><tr style={{ background: "#F1F3F5" }}>{["Date", "Événement", "Catégorie", "Qualification", "Salaire catégoriel", "Sursalaire", "Total", "Horaire", "Lieu de travail"].map((h) => <th key={h} className={th} style={bc}>{h}</th>)}</tr></thead>
             {emps.map((e) => {
               const cs = hr.contracts.filter((c) => c.employeeId === e.id && c.statut !== "annule").sort((a, b) => (a.dateDebut < b.dateDebut ? -1 : 1));
               if (!cs.length) return null;
               return (
                 <tbody key={e.id}>
-                  <tr style={{ background: "#F8FAFC" }}><td colSpan={7} className={`${td} font-semibold`} style={bc}>{e.matricule} — {nomComplet(e)}</td></tr>
+                  <tr style={{ background: "#F8FAFC" }}><td colSpan={9} className={`${td} font-semibold`} style={bc}>{e.matricule} — {nomComplet(e)}</td></tr>
                   {cs.flatMap((c) => contractHistory(c, hr.amendments).map((l, i) => (
                     <tr key={`${c.id}-${i}`}>
                       <td className={td} style={bc}>{fmt(l.date)}</td><td className={td} style={bc}>{l.evenement}</td>
                       <td className={td} style={bc}>{l.categorie}{l.echelon ? `/${l.echelon}` : ""}</td><td className={td} style={bc}>{QUALIFICATIONS[l.qualification] || l.qualification}</td>
-                      <td className={`${td} text-right tabular-nums`} style={bc}>{fcfa(l.salaireBase)}</td><td className={td} style={bc}>{nf(l.horaireHebdo)} h</td><td className={td} style={bc}>{l.lieuTravail}</td>
+                      <td className={`${td} text-right tabular-nums`} style={bc}>{fcfa(l.salaireBase)}</td>
+                      <td className={`${td} text-right tabular-nums`} style={bc}>{fcfa(l.sursalaire)}</td>
+                      <td className={`${td} text-right tabular-nums`} style={bc}>{fcfa(remunerationMensuelle(l))}</td><td className={td} style={bc}>{nf(l.horaireHebdo)} h</td><td className={td} style={bc}>{l.lieuTravail}</td>
                     </tr>)))}
                 </tbody>
               );
