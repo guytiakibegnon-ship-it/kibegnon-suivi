@@ -13,14 +13,14 @@
  * ==========================================================================*/
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
-  AlertTriangle, ArrowLeft, Briefcase, Check, CheckCircle2, ChevronDown, ChevronRight, ClipboardList,
-  Eye, FileSignature, FolderOpen, History, Landmark, Layers, Pencil, Plus, Printer, Scale, Search,
+  AlertTriangle, ArrowLeft, Briefcase, Building2, Check, CheckCircle2, ChevronDown, ChevronRight, ClipboardList,
+  Eye, FileSignature, FileText, FolderOpen, History, Landmark, Layers, Pencil, Plus, Printer, Scale, Search,
   ShieldAlert, ShieldCheck, Trash2, Upload, UserPlus, UserRound, Users, X,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import {
   Modal, Field, Chip, StatCard, SectionCard, EmptyState, PrintPage, PrintHead, printSheet,
-  fcfa, inputCls, inputStyle,
+  fcfa, inputCls, inputStyle, AGENCY, amountInWords, LetterEditor,
 } from "./App.jsx";
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -42,7 +42,8 @@ export const HR_DOC_CATEGORIES = {
   contrat: "Contrat signé", avenant: "Avenant signé", piece_identite: "Pièce d'identité", diplome: "Diplôme / CV",
   cnps: "CNPS / CMU", visite_medicale: "Visite médicale", titre_sejour: "Titre de séjour / permis",
   reglement_interieur: "Règlement intérieur", declaration: "Déclaration (inspection, CNPS…)",
-  accuse_reception: "Accusé de réception", attestation: "Attestation", autre: "Autre",
+  accuse_reception: "Accusé de réception", attestation: "Attestation", certificat: "Certificat de travail",
+  courrier: "Courrier RH", stage: "Stage (convention, attestation)", autre: "Autre",
 };
 const PARAM_CATEGORIES = {
   general: "Général", its: "Impôt sur les traitements et salaires (ITS)", cnps: "Cotisations CNPS", cmu: "Couverture maladie universelle (CMU)",
@@ -163,6 +164,14 @@ export function smigProrata(params, horaire, date) {
 /* ══════════════════════════════════════════════════════════════════════
    4. ALERTES — calculées à partir des données, jamais saisies
    ══════════════════════════════════════════════════════════════════════ */
+/* Durée cumulée de contrats successifs (bornes incluses) comparée à un maximum en mois */
+export function dureeCumuleeDepasse(contrats, maxMois) {
+  const cs = contrats.filter((x) => x.dateDebut && x.dateFin && x.dateFin >= x.dateDebut);
+  if (!cs.length) return false;
+  const premier = cs.map((x) => x.dateDebut).sort()[0];
+  const jours = cs.reduce((t, x) => t + ecartJours(x.dateDebut, x.dateFin) + 1, 0);
+  return jours > ecartJours(premier, plusMois(premier, maxMois));
+}
 export function computeAlerts({ employees, details, contracts, documents, params, scale }, today) {
   const A = []; const push = (a) => A.push({ id: `${a.code}-${a.employeeId || "ent"}-${A.length}`, ...a });
   const detOf = (id) => details.find((d) => d.employeeId === id);
@@ -190,10 +199,29 @@ export function computeAlerts({ employees, details, contracts, documents, params
       const j = ecartJours(today, c.dateFin);
       if (j < 0) push({ code: "cdd_echu", niveau: "rouge", employeeId: e.id, titre: `${nom} : CDD échu le ${fmt(c.dateFin)} et toujours en cours`, detail: "Risque de requalification en contrat à durée indéterminée." });
       else if (j <= 30) push({ code: "cdd_fin", niveau: "orange", employeeId: e.id, titre: `${nom} : fin du CDD le ${fmt(c.dateFin)} (J-${j})`, detail: "Décider : renouvellement, CDI ou fin de contrat." });
+      const regles = pval(params, "CDD_REGLES", today);
+      if (regles && dureeCumuleeDepasse(contracts.filter((x) => x.employeeId === e.id && x.type === "CDD" && x.statut !== "annule"), regles.duree_max_mois))
+        push({ code: "cdd_duree_max", niveau: "rouge", employeeId: e.id, titre: `${nom} : CDD au-delà de ${regles.duree_max_mois} mois`,
+          detail: "La durée totale des CDD, renouvellements compris, dépasse le maximum légal : risque de requalification en CDI (Code du travail, art. 15.4 et 15.10)." });
+    }
+    if (c.type === "stage") {
+      const regles = pval(params, "STAGE_QUALIFICATION", today);
+      if (!c.dateFin) push({ code: "stage_sans_terme", niveau: "orange", employeeId: e.id, titre: `${nom} : stage sans date de fin`, detail: "La convention de stage doit fixer sa durée (Code du travail, art. 13.14 et 13.15)." });
+      else {
+        const j = ecartJours(today, c.dateFin);
+        if (j < 0) push({ code: "stage_echu", niveau: "rouge", employeeId: e.id, titre: `${nom} : stage terminé le ${fmt(c.dateFin)} et toujours en cours`,
+          detail: "Au-delà du terme, la relation risque d'être requalifiée en contrat de travail. Délivrez l'attestation de stage ou concluez un contrat." });
+        else if (j <= 30) push({ code: "stage_fin", niveau: "orange", employeeId: e.id, titre: `${nom} : fin du stage le ${fmt(c.dateFin)} (J-${j})`,
+          detail: "Préparer l'attestation de stage (qualification, objet, durée — art. 13.19) et décider de la suite." });
+        if (regles && dureeCumuleeDepasse(contracts.filter((x) => x.employeeId === e.id && x.type === "stage" && x.statut !== "annule"), regles.duree_max_mois))
+          push({ code: "stage_duree", niveau: "rouge", employeeId: e.id, titre: `${nom} : stage de plus de ${regles.duree_max_mois} mois`,
+            detail: "La durée du stage, renouvellements compris, dépasse le maximum légal (Code du travail, art. 13.14)." });
+      }
     }
     const minCat = minimumCategoriel(scale, c.categorie, c.echelon, today);
     const plancher = plancherCategoriel(params, minCat, c, today);
-    if (minCat === null) push({ code: "cat_sans_minimum", niveau: "orange", employeeId: e.id, titre: `${nom} : catégorie ${c.categorie}${c.echelon ? ` (${c.echelon})` : ""} sans salaire minimum dans la grille`,
+    if (c.type === "stage") { /* stagiaire : indemnité forfaitaire, pas de minimum catégoriel */ }
+    else if (minCat === null) push({ code: "cat_sans_minimum", niveau: "orange", employeeId: e.id, titre: `${nom} : catégorie ${c.categorie}${c.echelon ? ` (${c.echelon})` : ""} sans salaire minimum dans la grille`,
       detail: "Prime d'ancienneté, gratification et contrôle du salaire restent inactifs tant que la grille n'est pas renseignée." });
     else if (c.type !== "stage" && Number(c.salaireBase) < plancher)
       push({ code: "sous_minimum", niveau: "rouge", employeeId: e.id, titre: `${nom} : salaire catégoriel inférieur au minimum de la catégorie`,
@@ -206,6 +234,12 @@ export function computeAlerts({ employees, details, contracts, documents, params
     if (smig && c.type !== "stage" && total < smig)
       push({ code: "sous_smig", niveau: "rouge", employeeId: e.id, titre: `${nom} : rémunération inférieure au SMIG`, detail: `${fcfa(total)} pour ${c.horaireHebdo} h/semaine ; minimum légal : ${fcfa(smig)}.` });
   }
+  const regCdd = pval(params, "CDD_REGLES", today);
+  const salaries = employees.filter((e) => e.statut === "actif").map((e) => contracts.find((x) => x.employeeId === e.id && x.statut === "actif")).filter((x) => x && x.type !== "stage");
+  const nbCdd = salaries.filter((x) => x.type === "CDD").length;
+  if (regCdd && salaries.length && nbCdd > salaries.length * regCdd.proportion_max_effectif)
+    push({ code: "cdd_proportion", niveau: "orange", titre: `${nbCdd} CDD pour ${salaries.length} salariés`,
+      detail: "Les salariés en CDD occupant un emploi permanent ne peuvent dépasser le tiers de l'effectif (Code du travail, art. 15.1)." });
   if (!documents.some((d) => d.categorie === "reglement_interieur"))
     push({ code: "sans_reglement", niveau: "orange", titre: "Aucun règlement intérieur enregistré", detail: "La durée hebdomadaire et l'horaire journalier doivent y être inscrits et affichés (décret 2024-898, art. 7)." });
   for (const d of documents.filter((x) => x.datePeremption)) {
@@ -278,10 +312,22 @@ export const mAmend = (r) => ({ id: r.id, contractId: r.contract_id, employeeId:
 
 export const mHrDoc = (r) => ({ id: r.id, employeeId: r.employee_id || "", categorie: r.categorie || "autre", libelle: r.libelle || "", filePath: r.file_path || "", fileName: r.file_name || "",
   fileType: r.file_type || "", fileSize: Number(r.file_size) || 0, dateDocument: r.date_document || "", datePeremption: r.date_peremption || "", confidentiel: r.confidentiel !== false,
-  notes: r.notes || "", createdAt: Date.parse(r.created_at) || 0, createdBy: r.created_by });
+  notes: r.notes || "", genere: !!r.genere, modeleCode: r.modele_code || "", contenu: r.contenu || "", reference: r.reference || "", signe: !!r.signe,
+  contractId: r.contract_id || "", amendmentId: r.amendment_id || "", createdAt: Date.parse(r.created_at) || 0, createdBy: r.created_by });
+/* La référence (RH-AAAA-NNNN) est attribuée par la base : elle est lue, jamais écrite */
 export const toHrDoc = (f) => ({ employee_id: f.employeeId || null, categorie: f.categorie || "autre", libelle: f.libelle || "", file_path: f.filePath || "", file_name: f.fileName || "",
   file_type: f.fileType || "", file_size: Number(f.fileSize) || 0, date_document: f.dateDocument || null, date_peremption: f.datePeremption || null,
-  confidentiel: f.confidentiel !== false, notes: f.notes || "" });
+  confidentiel: f.confidentiel !== false, notes: f.notes || "", genere: !!f.genere, modele_code: f.modeleCode || "", contenu: f.contenu || "",
+  signe: !!f.signe, contract_id: f.contractId || null, amendment_id: f.amendmentId || null });
+
+export const mTpl = (r) => ({ id: r.id, code: r.code, titre: r.titre || r.code, categorie: r.categorie || "courrier", ordre: Number(r.ordre) || 0, confidentiel: !!r.confidentiel,
+  applicable: r.applicable || { besoin: "aucun" }, champs: r.champs || [], corps: r.corps || "", corpsOrigine: r.corps_origine || "", actif: r.actif !== false, updatedAt: r.updated_at });
+export const toTpl = (f) => ({ titre: (f.titre || "").trim(), corps: f.corps || "", actif: f.actif !== false });
+const REGLAGES_VIDES = { signataireNom: "", signataireQualite: "", signataireFeminin: false, ville: "Abidjan", adressePostale: "", cnpsEmployeur: "" };
+export const mSettings = (r) => (r ? { signataireNom: r.signataire_nom || "", signataireQualite: r.signataire_qualite || "", signataireFeminin: !!r.signataire_feminin,
+  ville: r.ville || "", adressePostale: r.adresse_postale || "", cnpsEmployeur: r.cnps_employeur || "" } : { ...REGLAGES_VIDES });
+export const toSettings = (f) => ({ signataire_nom: (f.signataireNom || "").trim(), signataire_qualite: (f.signataireQualite || "").trim(), signataire_feminin: !!f.signataireFeminin,
+  ville: (f.ville || "").trim(), adresse_postale: (f.adressePostale || "").trim(), cnps_employeur: (f.cnpsEmployeur || "").trim() });
 
 export const mParam = (r) => ({ id: r.id, code: r.code, libelle: r.libelle || r.code, categorie: r.categorie || "general", valeur: r.valeur ?? {}, dateEffet: r.date_effet || "",
   dateFin: r.date_fin || "", baseLegale: r.base_legale || "", note: r.note || "", actif: r.actif !== false, valide: !!r.valide, validePar: r.valide_par || "", valideLe: r.valide_le || "" });
@@ -310,7 +356,8 @@ export const isRH = (role) => role === "admin" || role === "gerante";
 export function useHR(me) {
   const admin = me?.role === "admin";
   const autorise = isRH(me?.role);
-  const [st, setSt] = useState({ loading: true, error: "", employees: [], details: [], contracts: [], amendments: [], documents: [], params: [], scale: [], visas: [], audit: [] });
+  const [st, setSt] = useState({ loading: true, error: "", employees: [], details: [], contracts: [], amendments: [], documents: [], params: [], scale: [], visas: [], audit: [],
+    templates: [], settings: { ...REGLAGES_VIDES } });
   const load = useCallback(async () => {
     /* Compte non autorisé : aucune requête RH n'est émise (aucun salaire ne transite, même vide) */
     if (!autorise) { setSt((s) => ({ ...s, loading: false })); return; }
@@ -320,12 +367,14 @@ export function useHR(me) {
       q("hr_contract_amendments", "date_effet"), q("hr_documents", "created_at", false), q("hr_legal_params", "code"),
       q("hr_salary_scale", "categorie"), q("hr_registry_visas", "date_visite", false),
       admin ? supabase.from("hr_audit_log").select("*").order("at", { ascending: false }).range(0, 299) : Promise.resolve({ data: [] }),
+      q("hr_doc_templates", "ordre"), supabase.from("hr_company_settings").select("*"),
     ]);
     const err = res.find((r) => r.error)?.error;
-    setSt({ loading: false, error: err ? (/relation .* does not exist|schema cache/.test(err.message) ? "Le module RH n'est pas encore installé dans la base : exécutez migration-v32.sql dans le SQL Editor de Supabase." : err.message) : "",
+    setSt({ loading: false, error: err ? (/relation .* does not exist|schema cache/.test(err.message) ? "Le module RH n'est pas entièrement installé dans la base : exécutez dans le SQL Editor de Supabase migration-v32.sql, puis migration-v32-1.sql et migration-v32-2.sql." : err.message) : "",
       employees: (res[0].data || []).map(mEmp), details: (res[1].data || []).map(mDet), contracts: (res[2].data || []).map(mCtr),
       amendments: (res[3].data || []).map(mAmend), documents: (res[4].data || []).map(mHrDoc), params: (res[5].data || []).map(mParam),
-      scale: (res[6].data || []).map(mScale), visas: (res[7].data || []).map(mVisa), audit: (res[8].data || []).map(mAudit) });
+      scale: (res[6].data || []).map(mScale), visas: (res[7].data || []).map(mVisa), audit: (res[8].data || []).map(mAudit),
+      templates: (res[9].data || []).map(mTpl), settings: mSettings((res[10].data || [])[0]) });
   }, [admin, autorise]);
   useEffect(() => { load(); }, [load]);
 
@@ -431,6 +480,42 @@ export function useHR(me) {
       if (!(f.contenu || "").trim()) return { error: "Recopiez le visa, la mise en demeure ou l'observation." };
       const r = f.id ? await one(supabase.from("hr_registry_visas").update(toVisa(f)).eq("id", f.id)) : await one(supabase.from("hr_registry_visas").insert(toVisa(f)));
       if (r.error) return r; await load(); return { message: "Inscription au fascicule 3 enregistrée" };
+    },
+    /* Documents édités depuis les modèles */
+    saveGeneratedDoc: async (f) => {
+      const row = toHrDoc({ ...f, genere: true });
+      const r = f.id ? await one(supabase.from("hr_documents").update(row).eq("id", f.id)) : await one(supabase.from("hr_documents").insert(row));
+      if (r.error) return r;
+      const ref = r.row.reference || "";
+      await load();
+      return { id: r.row.id, reference: ref, message: ref ? `Document ${ref} enregistré` : "Document enregistré" };
+    },
+    attachSigned: async (d, file) => {
+      if (!file) return { error: "Choisissez le fichier de l'exemplaire signé." };
+      if (!FILE_TYPES.includes(file.type)) return { error: "Format refusé : PDF, image (JPG, PNG, WEBP) ou Word uniquement." };
+      if (file.size > FILE_MAX) return { error: `Fichier trop lourd (${(file.size / 1048576).toFixed(1)} Mo) : 10 Mo maximum.` };
+      const path = `${d.employeeId ? `employes/${d.employeeId}` : "entreprise"}/signes/${Date.now()}-${file.name.replace(/[^\w.-]/g, "_")}`;
+      const up = await supabase.storage.from("rh").upload(path, file, { upsert: false, contentType: file.type });
+      if (up.error) return { error: "Le fichier n'a pas pu être envoyé : " + up.error.message };
+      const r = await one(supabase.from("hr_documents").update(toHrDoc({ ...d, filePath: path, fileName: file.name, fileType: file.type, fileSize: file.size, signe: true })).eq("id", d.id));
+      if (r.error) { await supabase.storage.from("rh").remove([path]); return r; }
+      if (d.filePath) await supabase.storage.from("rh").remove([d.filePath]);
+      await load();
+      return { message: "Exemplaire signé joint : le document est désormais verrouillé" };
+    },
+    saveTemplate: async (t, f) => {
+      if (!(f.titre || "").trim()) return { error: "Le titre du modèle est obligatoire." };
+      if (!(f.corps || "").trim()) return { error: "Le texte du modèle est vide." };
+      const r = await one(supabase.from("hr_doc_templates").update(toTpl(f)).eq("id", t.id));
+      if (r.error) return r; await load(); return { message: "Modèle enregistré" };
+    },
+    resetTemplate: async (t) => {
+      const r = await one(supabase.from("hr_doc_templates").update(toTpl({ ...t, corps: t.corpsOrigine })).eq("id", t.id));
+      if (r.error) return r; await load(); return { message: "Modèle d'origine rétabli" };
+    },
+    saveSettings: async (f) => {
+      const r = await one(supabase.from("hr_company_settings").update(toSettings(f)).eq("id", 1));
+      if (r.error) return r; await load(); return { message: "Réglages des documents enregistrés" };
     },
     deleteVisa: async (id) => {
       const { data, error } = await supabase.from("hr_registry_visas").delete().eq("id", id).select();
@@ -591,6 +676,269 @@ function JsonEditor({ value, onChange, depth = 0 }) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════
+   4 bis. DOCUMENTS RH — remplissage automatique des modèles
+   ══════════════════════════════════════════════════════════════════════ */
+const MOIS_LONG = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+/* « 1er octobre 2026 » */
+export function dateLongue(iso) {
+  if (!iso) return "";
+  const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number);
+  return `${d === 1 ? "1er" : d} ${MOIS_LONG[m - 1]} ${y}`;
+}
+/* Durée d'une période, bornes incluses : { mois, jours, libelle } */
+export function dureeEntre(debut, finIncluse) {
+  if (!debut || !finIncluse || finIncluse < debut) return { mois: 0, jours: 0, libelle: "" };
+  const lendemain = plusJours(finIncluse, 1);
+  let mois = 0;
+  while (plusMois(debut, mois + 1) <= lendemain) mois++;
+  const jours = ecartJours(plusMois(debut, mois), lendemain);
+  const lib = [mois ? `${mois} mois` : "", jours ? `${jours} jour${jours > 1 ? "s" : ""}` : ""].filter(Boolean).join(" et ");
+  return { mois, jours, libelle: lib };
+}
+function depasseMois(d, max) { return d.mois > max || (d.mois === max && d.jours > 0); }
+
+/* Libellés des variables : aide à la rédaction des modèles et liste des informations manquantes */
+export const VARIABLES = [
+  ["entreprise.raison_sociale", "Raison sociale"], ["entreprise.forme", "Forme juridique et capital"], ["entreprise.adresse", "Adresse du siège"],
+  ["entreprise.adresse_postale", "Adresse postale (réglages des documents)"], ["entreprise.rccm", "N° RCCM"], ["entreprise.cc", "N° de compte contribuable"],
+  ["entreprise.cnps", "N° d'employeur CNPS (réglages des documents)"], ["entreprise.telephone", "Téléphone de l'entreprise"],
+  ["signataire.nom", "Nom du signataire (réglages des documents)"], ["signataire.qualite", "Qualité du signataire (réglages des documents)"], ["signataire.e", "« e » si la signataire est une femme"],
+  ["doc.ville", "Ville (réglages des documents)"], ["doc.date", "Date du document"],
+  ["salarie.civilite", "Civilité — renseignez le sexe dans le dossier"], ["salarie.madame_monsieur", "Madame / Monsieur"], ["salarie.nom_complet", "Nom et prénoms"],
+  ["salarie.nom", "Nom"], ["salarie.prenoms", "Prénoms"], ["salarie.matricule", "Matricule"], ["salarie.e", "« e » si la salariée est une femme"], ["salarie.ne", "« né » ou « née »"],
+  ["salarie.date_naissance", "Date de naissance (dossier)"], ["salarie.lieu_naissance", "Lieu de naissance (dossier)"], ["salarie.nationalite", "Nationalité (dossier)"],
+  ["salarie.piece", "Pièce d'identité (dossier)"], ["salarie.adresse", "Adresse du salarié (dossier)"], ["salarie.telephone", "Téléphone du salarié"], ["salarie.cnps", "N° CNPS du salarié"],
+  ["salarie.emploi", "Emploi occupé (dossier)"], ["salarie.date_embauche", "Date d'embauche"], ["salarie.date_sortie", "Date de sortie"], ["salarie.anciennete", "Ancienneté"],
+  ["contrat.type_long", "Nature du contrat (« à durée indéterminée »…)"], ["contrat.date_debut", "Début du contrat"], ["contrat.date_fin", "Fin du contrat"], ["contrat.duree", "Durée du contrat"],
+  ["contrat.motif_cdd", "Motif du CDD"], ["contrat.emploi", "Emploi (dossier)"], ["contrat.objet", "Fonctions (contrat)"], ["contrat.categorie", "Catégorie"], ["contrat.echelon", "Échelon"],
+  ["contrat.qualification", "Qualification"], ["contrat.salaire_categoriel", "Salaire catégoriel"], ["contrat.sursalaire", "Sursalaire"], ["contrat.remuneration", "Rémunération mensuelle"],
+  ["contrat.remuneration_lettres", "Rémunération en lettres"], ["contrat.horaire", "Horaire hebdomadaire"], ["contrat.repartition", "Répartition de l'horaire"], ["contrat.lieu_travail", "Lieu de travail"],
+  ["contrat.mode_paiement", "Mode de paiement"], ["contrat.essai_duree", "Durée de l'essai"], ["contrat.essai_fin", "Fin de l'essai"], ["contrat.essai_limite", "Date limite de notification du renouvellement"],
+  ["contrat.essai_fin_renouvelee", "Fin de l'essai renouvelé"], ["contrat.essai_fin_effective", "Fin effective de l'essai"], ["contrat.date_definitif", "Date de l'engagement définitif"],
+  ["contrat.preavis", "Préavis applicable"], ["contrat.nc_duree", "Durée de la non-concurrence"], ["contrat.nc_contrepartie", "Contrepartie de la non-concurrence"],
+  ["contrat.a_sursalaire", "(condition) le contrat comporte un sursalaire"], ["contrat.mobilite", "(condition) clause de mobilité"], ["contrat.confidentialite", "(condition) clause de confidentialité"],
+  ["contrat.non_concurrence", "(condition) clause de non-concurrence"], ["contrat.cdd", "(condition) contrat à durée déterminée"], ["contrat.stage", "(condition) stage"],
+  ["conges.jours_par_mois", "Jours de congé acquis par mois (paramètres)"], ["cdd.duree_max", "Durée maximale d'un CDD (paramètres)"], ["cdd.indemnite_fin_taux", "Taux de l'indemnité de fin de CDD (paramètres)"],
+  ["stage.duree_max", "Durée maximale d'un stage (paramètres)"], ["stage.priorite_mois", "Priorité d'embauche après un stage, en mois (paramètres)"],
+  ["avenant.numero", "Numéro de l'avenant"], ["avenant.objet", "Objet de l'avenant"], ["avenant.date_effet", "Date d'effet de l'avenant"], ["avenant.modifications", "Liste des modifications"],
+  ["certificat.date_sortie", "Date de sortie (certificat)"], ["certificat.emplois", "Emplois successifs (certificat)"],
+];
+const LIBELLE_VARIABLE = Object.fromEntries(VARIABLES);
+export const libelleVariable = (k) => LIBELLE_VARIABLE[k] || (k.startsWith("extra.") ? "Champ du document" : k);
+
+/* Libellés des éléments modifiés, tels qu'ils apparaissent dans un avenant */
+const AVENANT_DOC = {
+  salaire_base: ["salaire catégoriel mensuel", (v) => fcfa(v)], sursalaire: ["sursalaire mensuel", (v) => fcfa(v)],
+  horaire_hebdo: ["durée hebdomadaire du travail", (v) => `${nf(v)} heures`], repartition: ["répartition de l'horaire", (v) => REPARTITIONS[v] || v],
+  categorie: ["catégorie professionnelle", (v) => `catégorie ${v}`], echelon: ["échelon", (v) => v || "sans échelon"],
+  qualification: ["qualification", (v) => QUALIFICATIONS[v] || v], mode_paiement: ["mode de paiement", (v) => (MODES_PAIEMENT[v] || v).toLowerCase()],
+  lieu_travail: ["lieu de travail", (v) => v], date_fin: ["terme du contrat", (v) => (v ? dateLongue(v) : "sans terme")],
+  objet: ["fonctions", (v) => v], clauses: ["clauses particulières", () => "modifiées"],
+};
+export function lignesAvenant(a) {
+  const keys = Object.keys(a?.apres || {});
+  return keys.map((k, i) => {
+    const [lib, show] = AVENANT_DOC[k] || [k, (v) => String(v ?? "")];
+    return `- ${lib} : ${show(a.apres[k])}, au lieu de ${show(a.avant?.[k])}${i === keys.length - 1 ? "." : " ;"}`;
+  }).join("\n");
+}
+/* Emplois successifs, pour le certificat de travail (CCI art. 41) */
+export function emploisSuccessifs(emp, contracts, amendments, dateSortie) {
+  const cs = contracts.filter((c) => c.employeeId === emp.id && c.statut !== "annule").sort((a, b) => (a.dateDebut < b.dateDebut ? -1 : 1));
+  const segs = [];
+  for (const c of cs) for (const l of contractHistory(c, amendments)) {
+    const cle = `${l.categorie}|${l.echelon}|${l.qualification}`;
+    if (segs.length && segs[segs.length - 1].cle === cle) continue;
+    segs.push({ cle, debut: l.date, categorie: l.categorie, echelon: l.echelon, qualification: l.qualification });
+  }
+  return segs.map((s, i) => {
+    const fin = i < segs.length - 1 ? plusJours(segs[i + 1].debut, -1) : dateSortie;
+    return `- ${emp.poste || "emploi non renseigné"}, catégorie ${s.categorie}${s.echelon ? `, échelon ${s.echelon}` : ""} (${(QUALIFICATIONS[s.qualification] || "").toLowerCase()}), du ${dateLongue(s.debut)} au ${fin ? dateLongue(fin) : "…"}${i === segs.length - 1 ? "." : " ;"}`;
+  }).join("\n");
+}
+
+const AGENCE_PROPRE = (s) => String(s || "").replace(/^(RC|CC)\s*:\s*/, "");
+/* Toutes les valeurs disponibles pour un document, à partir du dossier */
+export function buildDocContext({ emp, det, contract, amendment, contracts = [], amendments = [], params, settings, agency, extra = {}, champs = [], today }) {
+  const ctx = {};
+  const set = (k, v) => { ctx[k] = v; };
+  const g = emp?.sexe === "F" ? "F" : emp?.sexe === "M" ? "M" : "";
+  set("entreprise.raison_sociale", agency?.name || ""); set("entreprise.forme", agency?.form || ""); set("entreprise.adresse", agency?.address || "");
+  set("entreprise.adresse_postale", settings?.adressePostale || ""); set("entreprise.rccm", AGENCE_PROPRE(agency?.rc)); set("entreprise.cc", AGENCE_PROPRE(agency?.cc));
+  set("entreprise.cnps", settings?.cnpsEmployeur || ""); set("entreprise.telephone", agency?.tel || "");
+  set("signataire.nom", settings?.signataireNom || ""); set("signataire.qualite", settings?.signataireQualite || ""); set("signataire.e", settings?.signataireFeminin ? "e" : "");
+  set("doc.ville", settings?.ville || ""); set("doc.date", dateLongue(today));
+  if (emp) {
+    set("salarie.civilite", g === "F" ? "Madame" : g === "M" ? "Monsieur" : ""); set("salarie.madame_monsieur", g === "F" ? "Madame" : g === "M" ? "Monsieur" : "Madame, Monsieur");
+    set("salarie.nom_complet", nomComplet(emp)); set("salarie.nom", emp.nom); set("salarie.prenoms", emp.prenoms); set("salarie.matricule", emp.matricule);
+    set("salarie.e", g === "F" ? "e" : ""); set("salarie.ne", g === "F" ? "née" : "né");
+    set("salarie.emploi", emp.poste); set("salarie.date_embauche", dateLongue(emp.dateEmbauche)); set("salarie.date_sortie", dateLongue(emp.dateSortie));
+    set("salarie.date_sortie_iso", emp.dateSortie || ""); set("salarie.anciennete", libAnciennete(ancienneteMois(emp.dateEmbauche, emp.dateSortie || today)));
+  }
+  if (det) {
+    set("salarie.date_naissance", dateLongue(det.dateNaissance)); set("salarie.lieu_naissance", det.lieuNaissance); set("salarie.nationalite", det.nationalite);
+    set("salarie.piece", det.pieceType && det.pieceNumero ? `${det.pieceType} n° ${det.pieceNumero}` : ""); set("salarie.adresse", det.adresse);
+    set("salarie.telephone", det.telephone); set("salarie.cnps", det.cnpsNumero);
+  }
+  const conges = pval(params, "CONGES_ACQUISITION", today); set("conges.jours_par_mois", conges ? String(conges.jours_par_mois).replace(".", ",") : "");
+  const cdd = pval(params, "CDD_REGLES", today); set("cdd.duree_max", cdd ? `${cdd.duree_max_mois} mois` : ""); set("cdd.indemnite_fin_taux", cdd ? String(cdd.indemnite_fin_taux).replace(".", ",") : "");
+  const stg = pval(params, "STAGE_QUALIFICATION", today); set("stage.duree_max", stg ? `${stg.duree_max_mois} mois` : ""); set("stage.priorite_mois", stg ? String(stg.priorite_embauche_mois) : "");
+  const c = contract;
+  if (c) {
+    const total = remunerationMensuelle(c);
+    set("contrat.type_long", { CDI: "à durée indéterminée", CDD: "à durée déterminée", stage: "de stage", apprentissage: "d'apprentissage", temporaire: "de travail temporaire" }[c.type] || "");
+    set("contrat.date_debut", dateLongue(c.dateDebut)); set("contrat.date_fin", dateLongue(c.dateFin)); set("contrat.date_fin_iso", c.dateFin || "");
+    set("contrat.duree", c.dateFin ? dureeEntre(c.dateDebut, c.dateFin).libelle : ""); set("contrat.motif_cdd", c.motifCdd);
+    set("contrat.emploi", emp?.poste || ""); set("contrat.objet", c.objet); set("contrat.categorie", String(c.categorie)); set("contrat.echelon", c.echelon);
+    set("contrat.qualification", (QUALIFICATIONS[c.qualification] || "").toLowerCase());
+    set("contrat.salaire_categoriel", fcfa(c.salaireBase)); set("contrat.sursalaire", fcfa(c.sursalaire)); set("contrat.a_sursalaire", Number(c.sursalaire) > 0);
+    set("contrat.remuneration", fcfa(total)); set("contrat.remuneration_lettres", amountInWords(total));
+    set("contrat.horaire", nf(c.horaireHebdo)); set("contrat.repartition", { "8h_5j": "à raison de 8 heures par jour sur 5 jours ouvrables", "6h40_6j": "à raison de 6 heures 40 par jour ouvrable", inegale: "de manière inégale, dans la limite de 8 heures par jour" }[c.repartition] || "");
+    set("contrat.lieu_travail", c.lieuTravail); set("contrat.mode_paiement", (MODES_PAIEMENT[c.modePaiement] || "").toLowerCase());
+    set("contrat.cdd", c.type === "CDD"); set("contrat.stage", c.type === "stage");
+    set("contrat.mobilite", !!c.clauses?.mobilite); set("contrat.confidentialite", !!c.clauses?.confidentialite);
+    const nc = c.clauses?.non_concurrence || {}; set("contrat.non_concurrence", !!nc.actif); set("contrat.nc_duree", nc.duree || ""); set("contrat.nc_contrepartie", nc.contrepartie || "");
+    const es = essaiStatus(c, params, today);
+    if (es.applicable) {
+      set("contrat.essai", true); set("contrat.essai_duree", libDuree(c.essaiDuree, c.essaiUnite)); set("contrat.essai_fin", dateLongue(es.finInitiale));
+      set("contrat.essai_limite", dateLongue(es.limite)); set("contrat.essai_fin_renouvelee", dateLongue(es.finRenouvelee));
+      set("contrat.essai_fin_effective", dateLongue(es.finEffective)); set("contrat.date_definitif", dateLongue(plusJours(es.finEffective, 1)));
+    }
+    const pr = emp ? preavisPour(params, c, det, ancienneteMois(emp.dateEmbauche, today), today) : null; set("contrat.preavis", pr ? pr.libelle : "");
+  }
+  if (amendment) {
+    const avs = amendments.filter((a) => a.contractId === amendment.contractId).sort((a, b) => (a.dateEffet === b.dateEffet ? a.createdAt - b.createdAt : a.dateEffet < b.dateEffet ? -1 : 1));
+    set("avenant.numero", String(avs.findIndex((a) => a.id === amendment.id) + 1)); set("avenant.objet", amendment.objet);
+    set("avenant.date_effet", dateLongue(amendment.dateEffet)); set("avenant.modifications", lignesAvenant(amendment));
+  }
+  /* Champs propres au document (saisis dans l'éditeur) */
+  for (const ch of champs) {
+    const v = extra[ch.cle];
+    set(`extra.${ch.cle}`, ch.type === "case" ? !!v : ch.type === "date" ? dateLongue(v) : (v ?? ""));
+  }
+  if (emp) {
+    const sortie = extra.date_sortie || emp.dateSortie || "";
+    set("certificat.date_sortie", dateLongue(sortie)); set("certificat.emplois", emploisSuccessifs(emp, contracts, amendments, sortie));
+  }
+  return ctx;
+}
+/* Valeur initiale des champs propres à un document */
+export function champsInitiaux(champs, ctx, today) {
+  return Object.fromEntries((champs || []).map((ch) => {
+    let v = ch.defaut;
+    if (ch.depuis && ctx[ch.depuis]) v = ctx[ch.depuis];
+    if (v === "aujourdhui") v = today;
+    return [ch.cle, ch.type === "case" ? !!v : v ?? ""];
+  }));
+}
+
+/* ---- Rendu d'un modèle ---- */
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const estVrai = (v) => v === true || (typeof v === "number" && v !== 0) || (typeof v === "string" && v.trim() !== "");
+export function renderTemplate(corps, ctx) {
+  const manquants = [];
+  let t = esc(corps || "").replace(/\r\n/g, "\n");
+  /* Blocs conditionnels, du plus intérieur au plus extérieur */
+  const re = /\{\{#(si|non) ([\w.]+)\}\}((?:(?!\{\{#(?:si|non) )[\s\S])*?)\{\{\/\1\}\}/;
+  for (let m = re.exec(t), n = 0; m && n < 500; m = re.exec(t), n++) {
+    const vrai = estVrai(ctx[m[2]]);
+    const [oui, non = ""] = m[3].split("{{sinon}}");
+    t = t.slice(0, m.index) + (m[1] === "si" ? (vrai ? oui : non) : (vrai ? "" : oui)) + t.slice(m.index + m[0].length);
+  }
+  t = t.replace(/\{\{([\w.]+)\}\}/g, (_, k) => {
+    const v = ctx[k];
+    if (typeof v === "boolean") return "";
+    if (v === undefined || v === null || v === "") {
+      if (/\.e$/.test(k)) return "";                                   // accord féminin : vide au masculin
+      if (!manquants.includes(k)) manquants.push(k);
+      return `\u0001${k}\u0002`;
+    }
+    return esc(v);
+  });
+  t = t.replace(/\n{3,}/g, "\n\n");
+  const html = markupToHtml(t).replace(/\u0001([\w.]+)\u0002/g, (_, k) => `<span class="rh-manque" data-champ="${k}" title="${esc(libelleVariable(k))}">……………………</span>`);
+  return { html, manquants };
+}
+const inline = (s) => s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+export function markupToHtml(text) {
+  const out = []; let ul = null; let droite = null; let art = 0;
+  const flush = () => { if (ul) { out.push(`<ul>${ul.join("")}</ul>`); ul = null; } if (droite) { out.push(`<p class="rh-droite">${droite.join("<br>")}</p>`); droite = null; } };
+  for (const brut of text.split("\n")) {
+    const l = brut.trimEnd();
+    if (l.startsWith("- ")) { if (droite) flush(); (ul = ul || []).push(`<li>${inline(l.slice(2))}</li>`); continue; }
+    if (l.startsWith("&gt;&gt; ") || l === "&gt;&gt;") { if (ul) flush(); (droite = droite || []).push(inline(l.slice(9))); continue; }
+    flush();
+    if (!l.trim()) continue;
+    if (l.startsWith("# ")) out.push(`<h1 class="rh-titre">${inline(l.slice(2))}</h1>`);
+    else if (l.startsWith("### ")) out.push(`<p class="rh-centre"><strong>${inline(l.slice(4))}</strong></p>`);
+    else if (l.startsWith("## ")) { const h = l.slice(3).replace(/^Article —/, () => `Article ${++art} —`); out.push(`<h2 class="rh-art">${inline(h)}</h2>`); }
+    else if (/^\[\[signatures:/.test(l)) {
+      const corps = l.replace(/^\[\[signatures:\s*/, "").replace(/\]\]$/, "");
+      const cols = corps.split("|").map((c) => c.split("//").map((x) => inline(x.trim())).filter(Boolean).join("<br>"));
+      /* Le bloc de signatures reste sur la même page que les dernières lignes du texte */
+      const avant = [];
+      while (avant.length < 2 && out.length && /^<p[ >]/.test(out[out.length - 1])) avant.unshift(out.pop());
+      out.push(`<div class="rh-fin">${avant.join("\n")}<table class="rh-sign"><tbody><tr>${cols.map((c) => `<td>${c}</td>`).join("")}</tr></tbody></table></div>`);
+    } else out.push(`<p>${inline(l)}</p>`);
+  }
+  flush();
+  return out.join("\n");
+}
+/* Nettoyage du texte retouché avant enregistrement : aucun script ni attribut actif */
+export function sanitizeHtml(html) {
+  if (typeof DOMParser === "undefined") {
+    return String(html || "").replace(/<(script|style|iframe|object|embed)[\s\S]*?<\/\1>/gi, "").replace(/<\/?(script|style|iframe|object|embed)[^>]*>/gi, "")
+      .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "").replace(/(href|src)\s*=\s*(["']?)\s*javascript:[^"'\s>]*\2/gi, "");
+  }
+  const doc = new DOMParser().parseFromString(`<div>${html || ""}</div>`, "text/html");
+  doc.querySelectorAll("script,style,iframe,object,embed,link,meta,form,input,button").forEach((n) => n.remove());
+  doc.querySelectorAll("*").forEach((n) => {
+    for (const a of [...n.attributes]) {
+      if (/^on/i.test(a.name) || (/^(href|src|xlink:href)$/i.test(a.name) && /^\s*javascript:/i.test(a.value))) n.removeAttribute(a.name);
+    }
+  });
+  return doc.body.firstChild.innerHTML;
+}
+/* Modèles proposés pour un salarié (et éventuellement un contrat) */
+export function modelesDisponibles(templates, contract, params, today) {
+  return (templates || []).filter((t) => t.actif).filter((t) => {
+    const b = t.applicable?.besoin || "aucun";
+    if (b === "avenant") return false;                                  // proposé depuis la ligne de l'avenant
+    if (b === "contrat") return !!contract && (!t.applicable.types || t.applicable.types.includes(contract.type));
+    if (b === "essai") return !!contract && essaiStatus(contract, params, today).applicable;
+    return true;
+  });
+}
+/* Avertissements propres à un document — affichés à l'écran, jamais imprimés */
+export function avertissementsDocument(code, { contract, params, today, extra, emp }) {
+  const w = [];
+  const es = contract ? essaiStatus(contract, params, today) : null;
+  if (code === "ESSAI_RENOUVELLEMENT" && es?.applicable) {
+    if (contract.essaiRenouvele) w.push({ niveau: "rouge", texte: "L'essai a déjà été renouvelé : un second renouvellement n'est pas permis." });
+    else if (es.limite && today > es.limite && !extra.accord) w.push({ niveau: "rouge", texte: `Délai de notification dépassé (limite : ${fmt(es.limite)}). Sans l'accord écrit du salarié, le renouvellement est inopérant et l'engagement devient définitif au ${fmt(plusJours(es.finInitiale, 1))} (décret 2024-900, art. 6). Cochez « accord écrit » seulement si le salarié l'accepte.` });
+    else if (es.limite) w.push({ niveau: "info", texte: `À remettre au salarié au plus tard le ${fmt(es.limite)}, contre décharge.` });
+  }
+  if (code === "ESSAI_RUPTURE" && es?.applicable) {
+    if (extra.date_fin && extra.date_fin > es.finEffective) w.push({ niveau: "rouge", texte: `La période d'essai prend fin le ${fmt(es.finEffective)} : après cette date, la rupture n'est plus une rupture d'essai mais un licenciement (préavis, motif, procédure).` });
+    if (es.renouvellementValide && enJours(contract.essaiDuree, contract.essaiUnite) > 30) w.push({ niveau: "orange", texte: "Essai renouvelé pour plus d'un mois : la rupture ouvre droit à une indemnité de préavis (CCI, art. 14). Cochez la case correspondante." });
+  }
+  if (code === "CONTRAT_CDD" && contract?.dateFin) {
+    const cdd = pval(params, "CDD_REGLES", today);
+    if (cdd && depasseMois(dureeEntre(contract.dateDebut, contract.dateFin), cdd.duree_max_mois)) w.push({ niveau: "rouge", texte: `Durée supérieure à ${cdd.duree_max_mois} mois : un CDD à terme précis ne peut pas l'excéder (Code du travail, art. 15.4).` });
+  }
+  if (code === "CERTIFICAT_TRAVAIL") {
+    if (!extra.date_sortie) w.push({ niveau: "orange", texte: "Indiquez la date de sortie : elle est obligatoire sur le certificat." });
+    w.push({ niveau: "info", texte: "À remettre au moment du dernier paiement, accompagné du relevé nominatif de salaires de la CNPS (Code du travail, art. 18.18). Conservez la décharge de remise." });
+  }
+  if (code === "ATTESTATION_STAGE" || code === "CONVENTION_STAGE") {
+    const stg = pval(params, "STAGE_QUALIFICATION", today);
+    if (stg && contract?.dateFin && depasseMois(dureeEntre(contract.dateDebut, contract.dateFin), stg.duree_max_mois)) w.push({ niveau: "rouge", texte: `Stage de plus de ${stg.duree_max_mois} mois : durée maximale dépassée, renouvellements compris (Code du travail, art. 13.14).` });
+  }
+  if (emp && !emp.sexe) w.push({ niveau: "orange", texte: "Le sexe n'est pas renseigné dans le dossier : la civilité et les accords (né/née…) ne peuvent pas être écrits." });
+  return w;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
    8. FENÊTRES DE SAISIE
    ══════════════════════════════════════════════════════════════════════ */
 const EMP_VIDE = { nom: "", prenoms: "", sexe: "", poste: "", departmentId: "", managerId: "", dateEmbauche: "", statut: "actif", dateSortie: "", motifSortie: "", userId: "" };
@@ -685,7 +1033,7 @@ function EmployeeModal({ initial, initialDet, employees, members, departments, o
 }
 
 /* Contrat : création ou correction d'une erreur de saisie */
-function ContractModal({ initial, emp, params, scale, onSave, onClose }) {
+function ContractModal({ initial, emp, params, scale, autres = [], onSave, onClose }) {
   const today = todayIso();
   const [f, setF] = useState(() => {
     const base = { type: "CDI", dateDebut: emp.dateEmbauche || today, dateFin: "", motifCdd: "", objet: "", categorie: 1, echelon: "", qualification: "employe_mensuel",
@@ -726,6 +1074,12 @@ function ContractModal({ initial, emp, params, scale, onSave, onClose }) {
   const plancher = plancherCategoriel(params, minCat, f, f.dateDebut);
   const sousSmig = ["CDI", "CDD", "temporaire"].includes(f.type) && smig && f.salaireBase !== "" && total < smig;
   const sousMin = f.type !== "stage" && plancher !== null && f.salaireBase !== "" && salaire < plancher;
+  const stage = f.type === "stage";
+  const duree = f.dateDebut && f.dateFin && f.dateFin >= f.dateDebut ? dureeEntre(f.dateDebut, f.dateFin) : null;
+  const regCdd = pval(params, "CDD_REGLES", f.dateDebut); const regStage = pval(params, "STAGE_QUALIFICATION", f.dateDebut);
+  const cumul = (type) => [...autres.filter((x) => x.id !== f.id && x.type === type && x.statut !== "annule"), f];
+  const cddTropLong = f.type === "CDD" && regCdd && duree && dureeCumuleeDepasse(cumul("CDD"), regCdd.duree_max_mois);
+  const stageTropLong = stage && regStage && duree && dureeCumuleeDepasse(cumul("stage"), regStage.duree_max_mois);
   const echelons = [...new Set(scale.filter((r) => Number(r.categorie) === Number(f.categorie)).map((r) => r.echelon).filter(Boolean))];
 
   const submit = async () => {
@@ -733,11 +1087,14 @@ function ContractModal({ initial, emp, params, scale, onSave, onClose }) {
     if (!f.dateDebut) return setErr("Indiquez la date de début.");
     if (f.type === "CDD" && (!f.dateFin || !(f.motifCdd || "").trim())) return setErr("Un CDD exige un motif et une date de fin.");
     if (f.dateFin && f.dateFin < f.dateDebut) return setErr("La date de fin précède la date de début.");
+    if (stage && !f.dateFin) return setErr("Une convention de stage doit fixer sa date de fin (Code du travail, art. 13.14).");
+    if (!f.id && cddTropLong) return setErr(`Durée totale des CDD supérieure à ${regCdd.duree_max_mois} mois, renouvellements compris (Code du travail, art. 15.4) : concluez un CDI.`);
+    if (!f.id && stageTropLong) return setErr(`Durée totale du stage supérieure à ${regStage.duree_max_mois} mois, renouvellements compris (Code du travail, art. 13.14).`);
     if (essai && !(Number(f.essaiDuree) > 0)) return setErr("La clause de période d'essai est obligatoire (décret 2024-900, art. 3).");
     if (tropLong) return setErr(`Durée d'essai supérieure au maximum réglementaire pour cette qualification (${libDuree(max.duree, max.unite)}).`);
     if (f.essaiRenouvele && !f.essaiRenouvellementNotifieLe && !f.essaiConsentementSalarie) return setErr("Indiquez la date de notification du renouvellement, ou cochez le consentement écrit du salarié.");
     if (!(Number(f.categorie) >= 1)) return setErr("Indiquez la catégorie professionnelle.");
-    if (f.salaireBase === "" || !(salaire >= 0)) return setErr("Indiquez le salaire catégoriel (rubrique 100).");
+    if (f.salaireBase === "" || !(salaire >= 0)) return setErr(stage ? "Indiquez l'indemnité de stage." : "Indiquez le salaire catégoriel (rubrique 100).");
     if (f.sursalaire !== "" && !(Number(f.sursalaire) >= 0)) return setErr("Le sursalaire ne peut pas être négatif.");
     if (sousMin) return setErr(`Salaire catégoriel inférieur au minimum de la catégorie (${fcfa(plancher)}).`);
     if (sousSmig) return setErr(`Rémunération inférieure au SMIG pour ${f.horaireHebdo} h/semaine (${fcfa(smig)}).`);
@@ -755,7 +1112,8 @@ function ContractModal({ initial, emp, params, scale, onSave, onClose }) {
         <Field label="Type de contrat"><select className={inputCls} style={inputStyle} value={f.type} onChange={(e) => set("type", e.target.value)}>
           {Object.entries(CONTRACT_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
         <Field label="Date de début *"><input type="date" className={inputCls} style={inputStyle} value={f.dateDebut} onChange={(e) => set("dateDebut", e.target.value)} /></Field>
-        <Field label={f.type === "CDD" ? "Date de fin *" : "Date de fin (le cas échéant)"}><input type="date" className={inputCls} style={inputStyle} value={f.dateFin} onChange={(e) => set("dateFin", e.target.value)} /></Field>
+        <Field label={f.type === "CDD" || stage ? "Date de fin *" : "Date de fin (le cas échéant)"} hint={duree?.libelle ? `Durée : ${duree.libelle}` : undefined}>
+          <input type="date" className={inputCls} style={inputStyle} value={f.dateFin} onChange={(e) => set("dateFin", e.target.value)} /></Field>
       </div>
       {f.type === "CDD" && <Field label="Motif du recours au CDD *"><input className={inputCls} style={inputStyle} value={f.motifCdd} onChange={(e) => set("motifCdd", e.target.value)} placeholder="Ex. : surcroît temporaire d'activité" /></Field>}
       <div className="grid sm:grid-cols-3 gap-x-3">
@@ -766,16 +1124,22 @@ function ContractModal({ initial, emp, params, scale, onSave, onClose }) {
           <datalist id="rh-echelons">{echelons.map((x) => <option key={x} value={x} />)}</datalist></Field>
         <Field label="Mode de paiement"><select className={inputCls} style={inputStyle} value={f.modePaiement} onChange={(e) => set("modePaiement", e.target.value)}>
           {Object.entries(MODES_PAIEMENT).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
-        <Field label="Salaire catégoriel — rubrique 100 (FCFA) *" hint={minCat !== null ? `Minimum de la catégorie : ${fcfa(minCat)}` : "Minimum de la catégorie inconnu"}>
-          <input type="number" min="0" className={inputCls} style={inputStyle} value={f.salaireBase} onChange={(e) => set("salaireBase", e.target.value)} /></Field>
-        <Field label="Sursalaire — rubrique 200 (FCFA)" hint="Complément convenu, hors minimum de la catégorie">
-          <input type="number" min="0" className={inputCls} style={inputStyle} value={f.sursalaire} onChange={(e) => set("sursalaire", e.target.value)} /></Field>
-        <Field label="Rémunération mensuelle convenue"><p className="px-3 py-2 rounded-lg text-sm font-semibold tabular-nums" style={{ background: "#F6F8FA" }}>{fcfa(total)}</p></Field>
+        {stage ? <Field label="Indemnité forfaitaire mensuelle (FCFA) *" hint="Le stagiaire n'est pas salarié (Code du travail, art. 13.17)">
+            <input type="number" min="0" className={inputCls} style={inputStyle} value={f.salaireBase} onChange={(e) => set("salaireBase", e.target.value)} /></Field>
+          : <>
+          <Field label="Salaire catégoriel — rubrique 100 (FCFA) *" hint={minCat !== null ? `Minimum de la catégorie : ${fcfa(minCat)}` : "Minimum de la catégorie inconnu"}>
+            <input type="number" min="0" className={inputCls} style={inputStyle} value={f.salaireBase} onChange={(e) => set("salaireBase", e.target.value)} /></Field>
+          <Field label="Sursalaire — rubrique 200 (FCFA)" hint="Complément convenu, hors minimum de la catégorie">
+            <input type="number" min="0" className={inputCls} style={inputStyle} value={f.sursalaire} onChange={(e) => set("sursalaire", e.target.value)} /></Field>
+          <Field label="Rémunération mensuelle convenue"><p className="px-3 py-2 rounded-lg text-sm font-semibold tabular-nums" style={{ background: "#F6F8FA" }}>{fcfa(total)}</p></Field>
+          </>}
         <Field label="Horaire hebdomadaire (h)"><input type="number" min="1" step="0.5" className={inputCls} style={inputStyle} value={f.horaireHebdo} onChange={(e) => set("horaireHebdo", e.target.value)} /></Field>
         <Field label="Répartition de l'horaire"><select className={inputCls} style={inputStyle} value={f.repartition} onChange={(e) => set("repartition", e.target.value)}>
           {Object.entries(REPARTITIONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
         <div className="sm:col-span-2"><Field label="Lieu de travail *"><input className={inputCls} style={inputStyle} value={f.lieuTravail} onChange={(e) => set("lieuTravail", e.target.value)} placeholder="Ex. : siège, Cocody — Abidjan" /></Field></div>
       </div>
+      {cddTropLong && <WarnBox tone="rouge">Durée totale des CDD supérieure à {regCdd.duree_max_mois} mois, renouvellements compris : au-delà, le contrat est réputé à durée indéterminée (Code du travail, art. 15.4 et 15.10).</WarnBox>}
+      {stageTropLong && <WarnBox tone="rouge">Durée totale du stage supérieure à {regStage.duree_max_mois} mois, renouvellements compris (Code du travail, art. 13.14).</WarnBox>}
       {minCat === null && f.type !== "stage" && <WarnBox>La grille ne donne pas de salaire minimum pour la catégorie {f.categorie}{f.echelon ? ` (${f.echelon})` : ""} : le contrôle du salaire est impossible. Complétez la grille catégorielle.</WarnBox>}
       {f.type !== "stage" && minCat !== null && <label className="flex items-center gap-2 text-sm mb-3"><input type="checkbox" checked={!!f.clauses.salaire_diminue} onChange={(e) => setClause("salaire_diminue", e.target.checked)} />
         Travailleur physiquement diminué : salaire catégoriel réduit convenu par écrit (CCI, art. 50)</label>}
@@ -1110,6 +1474,8 @@ function EmployeeDetail({ emp, hr, members, departments, admin, alerts, today, o
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <button onClick={on.back} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour à la liste</button>
         <div className="flex-1" />
+        <button onClick={() => on.newDoc(emp)} className="kb-btn kb-btn-primary text-sm"><FileSignature size={14} /> Éditer un document</button>
+        <button onClick={() => on.fiche(emp)} className="kb-btn kb-btn-ghost text-sm"><Printer size={14} /> Fiche du salarié</button>
         <button onClick={() => on.edit(emp, det)} className="kb-btn kb-btn-ghost text-sm"><Pencil size={14} /> Modifier le dossier</button>
         {admin && <button onClick={() => on.remove(emp)} className="kb-btn kb-btn-ghost text-sm" style={{ color: "#D81F26" }}><Trash2 size={14} /> Supprimer</button>}
       </div>
@@ -1192,6 +1558,7 @@ function EmployeeDetail({ emp, hr, members, departments, admin, alerts, today, o
                 <div key={a.id} className="ml-4 mt-1 text-xs" style={{ color: "var(--ink)" }}>
                   <span className="font-medium">Avenant du {fmt(a.dateEffet)}</span> — {a.objet} :{" "}
                   {Object.keys(a.apres).map((k) => `${AVENANT_CHAMPS.find((ch) => ch.k === k)?.label || k} ${libChange(k, a.avant[k])} → ${libChange(k, a.apres[k])}`).join(" ; ")}
+                  {" "}<button onClick={() => on.docAvenant(a, x)} className="underline font-medium" style={{ color: "var(--brass)" }}>Éditer l'avenant</button>
                 </div>
               ))}
             </div>
@@ -1217,12 +1584,16 @@ function DocTable({ docs, employees, today, on, showEmployee }) {
         return (
           <tr key={d.id} className="border-t" style={{ borderColor: "var(--line)" }}>
             <td className="px-3 py-2 whitespace-nowrap">{HR_DOC_CATEGORIES[d.categorie] || d.categorie}{d.confidentiel && <span title="Confidentiel" className="ml-1 text-[10px]" style={{ color: "var(--muted)" }}>🔒</span>}</td>
-            <td className="px-3 py-2">{d.libelle || d.fileName}</td>
+            <td className="px-3 py-2">{d.libelle || d.fileName}
+              {d.genere && <span className="ml-1.5 inline-flex gap-1 align-middle">{d.reference && <Chip color="#2E78A8">{d.reference}</Chip>}
+                {d.signe ? <Chip color="#4F9E2A" dot>Signé</Chip> : <Chip color="#C58A1B" dot>À faire signer</Chip>}</span>}</td>
             {showEmployee && <td className="px-3 py-2">{e ? nomComplet(e) : "Entreprise"}</td>}
             <td className="px-3 py-2 whitespace-nowrap">{fmt(d.dateDocument)}</td>
             <td className="px-3 py-2 whitespace-nowrap" style={{ color: j === null ? undefined : j < 0 ? "#B5171D" : j <= 30 ? "#8A6212" : undefined }}>{fmt(d.datePeremption)}</td>
             <td className="px-3 py-2 text-right whitespace-nowrap">
-              <button onClick={() => on.openDoc(d)} className="p-1.5 rounded hover:bg-slate-100" aria-label="Ouvrir le document" title="Ouvrir (lien valable 5 minutes)"><Eye size={14} /></button>
+              {d.genere && <button onClick={() => on.openGenerated(d)} className="p-1.5 rounded hover:bg-slate-100" aria-label="Voir et imprimer le document édité" title="Voir et imprimer"><FileText size={14} /></button>}
+              {d.genere && !d.signe && <button onClick={() => on.sign(d)} className="p-1.5 rounded hover:bg-slate-100" aria-label="Joindre l'exemplaire signé" title="Joindre l'exemplaire signé"><Upload size={14} /></button>}
+              {d.filePath && <button onClick={() => on.openDoc(d)} className="p-1.5 rounded hover:bg-slate-100" aria-label="Ouvrir le document" title="Ouvrir le fichier (lien valable 5 minutes)"><Eye size={14} /></button>}
               <button onClick={() => on.editDoc(d)} className="p-1.5 rounded hover:bg-slate-100" aria-label="Modifier le document"><Pencil size={14} /></button>
               <button onClick={() => on.removeDoc(d)} className="p-1.5 rounded hover:bg-slate-100" aria-label="Supprimer le document" style={{ color: "#D81F26" }}><Trash2 size={14} /></button>
             </td>
@@ -1449,6 +1820,327 @@ function AuditTab({ hr, members }) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════
+   9 bis. DOCUMENTS RH — édition, impression, modèles, réglages
+   ══════════════════════════════════════════════════════════════════════ */
+const DOC_CSS = `
+.rh-doc{font-family:Calibri,'Segoe UI',Arial,sans-serif;font-size:13.5px;line-height:1.55;color:#111827}
+.rh-doc h1.rh-titre{text-align:center;font-size:17px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;margin:4px 0 14px}
+.rh-doc h2.rh-art{font-size:13.5px;font-weight:700;margin:13px 0 4px;page-break-after:avoid;break-after:avoid}
+.rh-doc p{margin:0 0 6px;text-align:justify}
+.rh-doc p.rh-centre{text-align:center;margin:10px 0}
+.rh-doc p.rh-droite{text-align:right;margin:6px 0 12px}
+.rh-doc ul{margin:2px 0 8px 22px;list-style:disc}
+.rh-doc li{margin:1px 0;text-align:justify}
+.rh-doc .rh-fin{page-break-inside:avoid;break-inside:avoid}
+.rh-doc table.rh-sign{width:100%;margin-top:20px;border-collapse:collapse;page-break-inside:avoid;break-inside:avoid}
+.rh-doc table.rh-sign td{width:50%;vertical-align:top;padding:4px 8px 72px;text-align:center;font-size:12.5px;border:none}
+.rh-doc .rh-manque{background:#FFF1B8;border-bottom:1px dashed #C58A1B;color:#8A6212}
+@media print{.rh-doc .rh-manque{background:none;border:none;color:inherit}}
+`;
+function DocStyles() { return <style>{DOC_CSS}</style>; }
+
+/* Choix du document à éditer pour un salarié */
+function DocChooserModal({ emp, contracts, templates, params, today, onPick, onClose }) {
+  const cs = contracts.filter((c) => c.employeeId === emp.id && c.statut !== "annule").sort((a, b) => (a.dateDebut < b.dateDebut ? 1 : -1));
+  const [cid, setCid] = useState(() => (cs.find((c) => c.statut === "actif") || cs[0])?.id || "");
+  const contract = cs.find((c) => c.id === cid) || null;
+  const liste = modelesDisponibles(templates, contract, params, today);
+  return (
+    <Modal title={`Éditer un document — ${nomComplet(emp)}`} onClose={onClose}>
+      {cs.length > 1 && <Field label="Contrat concerné"><select className={inputCls} style={inputStyle} value={cid} onChange={(e) => setCid(e.target.value)}>
+        {cs.map((c) => <option key={c.id} value={c.id}>{CONTRACT_TYPES[c.type]} du {fmt(c.dateDebut)}{c.dateFin ? ` au ${fmt(c.dateFin)}` : ""} — {CONTRACT_STATUS[c.statut].label}</option>)}</select></Field>}
+      {!cs.length && <WarnBox tone="info">Aucun contrat enregistré : seuls les documents qui n'en dépendent pas sont proposés.</WarnBox>}
+      {liste.length === 0 ? <EmptyState icon={FileText} title="Aucun modèle disponible" sub="Les modèles sont gérés dans Documents › Modèles." /> : (
+        <div className="space-y-1.5">{liste.map((t) => (
+          <button key={t.id} onClick={() => onPick(t, contract)} className="w-full text-left rounded-lg border px-3 py-2.5 flex items-center gap-2 hover:bg-slate-50" style={{ borderColor: "var(--line)" }}>
+            <FileText size={15} style={{ color: "var(--brass)" }} /><span className="flex-1 text-sm font-medium">{t.titre}</span><ChevronRight size={15} style={{ color: "var(--muted)" }} />
+          </button>))}</div>
+      )}
+      <p className="text-xs mt-3" style={{ color: "var(--muted)" }}>L'avenant s'édite depuis l'historique du contrat (lien « Éditer l'avenant »).</p>
+    </Modal>
+  );
+}
+
+/* Joindre l'exemplaire signé (scanné) d'un document édité : il est alors verrouillé */
+function SignModal({ doc, onAttach, onClose }) {
+  const [file, setFile] = useState(null); const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const go = async () => { setBusy(true); setErr(""); const r = await onAttach(doc, file); setBusy(false); if (r?.error) setErr(r.error); else onClose(r); };
+  return (
+    <Modal title={`Exemplaire signé — ${doc.reference || doc.libelle}`} onClose={() => onClose()}>
+      <p className="text-sm mb-3">Joignez le document signé par les deux parties (scan ou photo). Le texte du document sera ensuite verrouillé.</p>
+      <Field label="Fichier (PDF, image ou Word — 10 Mo maximum)"><input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" className="text-sm" onChange={(e) => setFile(e.target.files?.[0] || null)} /></Field>
+      <ErrLine err={err} />
+      <ModalFooter onClose={() => onClose()} onSubmit={go} busy={busy} disabled={!file} label="Joindre" />
+    </Modal>
+  );
+}
+
+/* Éditeur d'un document : remplissage automatique, retouche, enregistrement, impression */
+function DocumentEditor({ tpl, emp, contract, amendment, doc, hr, actions, today, onBack, say }) {
+  const det = hr.details.find((d) => d.employeeId === emp?.id) || null;
+  const champs = tpl?.champs || [];
+  const contexte = useCallback((extra) => buildDocContext({ emp, det, contract, amendment, contracts: hr.contracts, amendments: hr.amendments,
+    params: hr.params, settings: hr.settings, agency: AGENCY, extra, champs, today }), [emp, det, contract, amendment, hr.contracts, hr.amendments, hr.params, hr.settings, champs, today]);
+  const [extra, setExtra] = useState(() => champsInitiaux(champs, contexte({}), today));
+  const ctx = useMemo(() => contexte(extra), [contexte, extra]);
+  const rendu = useMemo(() => (tpl ? renderTemplate(tpl.corps, ctx) : { html: "", manquants: [] }), [tpl, ctx]);
+  const [html, setHtml] = useState(doc ? doc.contenu : null);          // null : texte généré depuis le dossier
+  const [edition, setEdition] = useState(false);
+  const [saved, setSaved] = useState(doc || null);
+  const [majContrat, setMajContrat] = useState(true);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const verrouille = !!saved?.signe;
+  const texte = html ?? rendu.html;
+  const restants = (texte.match(/class="rh-manque"/g) || []).length;
+  const avert = tpl ? avertissementsDocument(tpl.code, { contract, params: hr.params, today, extra, emp }) : [];
+  const setX = (k, v) => setExtra((x) => ({ ...x, [k]: v }));
+
+  const enregistrer = async () => {
+    setBusy(true); setErr("");
+    for (const ch of champs) if (ch.obligatoire && (extra[ch.cle] === "" || extra[ch.cle] === null || extra[ch.cle] === undefined) && html === null) {
+      setBusy(false); setErr(`Renseignez : ${ch.libelle}.`); return null;
+    }
+    const r = await actions.saveGeneratedDoc({ id: saved?.id, employeeId: emp?.id || "", categorie: tpl?.categorie || saved?.categorie || "courrier",
+      libelle: tpl?.titre || saved?.libelle || "Document", modeleCode: tpl?.code || saved?.modeleCode || "", contenu: sanitizeHtml(texte),
+      contractId: contract?.id || "", amendmentId: amendment?.id || "", dateDocument: saved?.dateDocument || today,
+      confidentiel: tpl ? tpl.confidentiel : saved?.confidentiel, notes: saved?.notes || "" });
+    if (r.error) { setBusy(false); setErr(r.error); return null; }
+    if (tpl?.code === "ESSAI_RENOUVELLEMENT" && majContrat && contract && !contract.essaiRenouvele) {
+      const r2 = await actions.saveContract({ ...contract, essaiRenouvele: true, essaiRenouvellementNotifieLe: today, essaiConsentementSalarie: !!extra.accord });
+      if (r2.error) setErr(`Document enregistré, mais le contrat n'a pas pu être mis à jour : ${r2.error}`);
+    }
+    setBusy(false);
+    const s = { ...(saved || {}), id: r.id, reference: r.reference || saved?.reference || "", signe: false, dateDocument: saved?.dateDocument || today };
+    setSaved(s); say(r);
+    return s;
+  };
+  const imprimer = async () => {
+    setEdition(false);
+    const s = verrouille ? saved : await enregistrer();
+    if (s) setTimeout(() => printSheet("portrait"), 60);
+  };
+
+  return (
+    <div>
+      <DocStyles />
+      <div className="flex flex-wrap items-center gap-2 mb-3 print:hidden">
+        <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
+        <p className="font-semibold flex-1 min-w-[12rem]">{tpl?.titre || saved?.libelle} — {nomComplet(emp)}</p>
+        {saved?.reference && <Chip color="#2E78A8">Réf. {saved.reference}</Chip>}
+        {verrouille && <Chip color="#4F9E2A" dot>Signé — verrouillé</Chip>}
+        {!verrouille && (edition
+          ? <button onClick={() => setEdition(false)} className="kb-btn kb-btn-ghost text-sm"><Check size={14} /> Terminer la modification</button>
+          : <button onClick={() => { setHtml(texte); setEdition(true); }} className="kb-btn kb-btn-ghost text-sm"><Pencil size={14} /> Modifier le texte</button>)}
+        {!verrouille && html !== null && tpl && <button onClick={() => { setHtml(null); setEdition(false); }} className="kb-btn kb-btn-ghost text-sm">Régénérer depuis le dossier</button>}
+        {!verrouille && <button disabled={busy} onClick={enregistrer} className="kb-btn kb-btn-ghost text-sm disabled:opacity-40"><Check size={14} /> {busy ? "…" : "Enregistrer"}</button>}
+        <button disabled={busy} onClick={imprimer} className="kb-btn kb-btn-primary text-sm disabled:opacity-40"><Printer size={15} /> Imprimer / PDF</button>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[18rem_1fr] print:block">
+        <aside className="print:hidden space-y-3">
+          {err && <WarnBox tone="rouge">{err}</WarnBox>}
+          {avert.map((w, i) => <WarnBox key={i} tone={w.niveau}>{w.texte}</WarnBox>)}
+          {!verrouille && champs.length > 0 && (
+            <div className="bg-white rounded-xl border p-3" style={{ borderColor: "var(--line)" }}>
+              <p className="text-sm font-semibold mb-2">Informations du document</p>
+              {html !== null && tpl && <p className="text-[11px] mb-2" style={{ color: "#8A6212" }}>Texte modifié à la main : ces informations ne s'appliquent qu'après « Régénérer depuis le dossier ».</p>}
+              {champs.map((ch) => (ch.type === "case"
+                ? <label key={ch.cle} className="flex items-start gap-2 text-sm mb-2"><input type="checkbox" className="mt-1" checked={!!extra[ch.cle]} onChange={(e) => setX(ch.cle, e.target.checked)} /> {ch.libelle}</label>
+                : <Field key={ch.cle} label={`${ch.libelle}${ch.obligatoire ? " *" : ""}`}>
+                    {ch.type === "zone" ? <textarea rows={3} className={inputCls} style={inputStyle} value={extra[ch.cle] || ""} onChange={(e) => setX(ch.cle, e.target.value)} />
+                      : <input type={ch.type === "date" ? "date" : "text"} className={inputCls} style={inputStyle} value={extra[ch.cle] || ""} onChange={(e) => setX(ch.cle, e.target.value)} />}
+                  </Field>))}
+            </div>
+          )}
+          {tpl?.code === "ESSAI_RENOUVELLEMENT" && !verrouille && contract && !contract.essaiRenouvele && (
+            <label className="flex items-start gap-2 text-sm bg-white rounded-xl border p-3" style={{ borderColor: "var(--line)" }}>
+              <input type="checkbox" className="mt-1" checked={majContrat} onChange={(e) => setMajContrat(e.target.checked)} />
+              Inscrire le renouvellement au contrat à l'enregistrement (notification datée d'aujourd'hui{extra.accord ? ", avec l'accord du salarié" : ""})</label>
+          )}
+          {restants > 0 && (
+            <div className="rounded-xl p-3 text-xs" style={{ background: "#FFF8EC", border: "1px solid #F3E2C6", color: "#8A6212" }}>
+              <p className="font-semibold mb-1">{restants} information(s) manquante(s) — imprimées en pointillés à compléter à la main :</p>
+              {html === null && <ul className="list-disc ml-4">{rendu.manquants.map((k) => <li key={k}>{libelleVariable(k)}</li>)}</ul>}
+              <p className="mt-1">Complétez le dossier du salarié, le contrat ou les réglages des documents (Documents › Réglages), puis revenez sur ce document.</p>
+            </div>
+          )}
+        </aside>
+        <div>
+          {edition
+            ? <div className="rh-doc"><LetterEditor value={html} onChange={setHtml} placeholder="Texte du document" /></div>
+            : (
+              <PrintPage className="bg-white rounded-xl border p-8 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
+                <PrintHead extra={<p className="text-[11px]" style={{ color: "var(--muted)" }}>Réf. {saved?.reference || "attribuée à l'enregistrement"}</p>} />
+                <div className="rh-doc mt-5" dangerouslySetInnerHTML={{ __html: sanitizeHtml(texte) }} />
+              </PrintPage>
+            )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* Fiche individuelle du salarié (impression) */
+function L({ k, v }) { return <tr><td className="py-1 pr-3 align-top w-56" style={{ color: "var(--muted)" }}>{k}</td><td className="py-1 align-top font-medium">{v || "—"}</td></tr>; }
+function Bloc({ titre, children }) {
+  return <div className="mt-4"><p className="text-xs font-bold uppercase tracking-wide pb-1 mb-1 border-b" style={{ color: "var(--brass)", borderColor: "var(--line)" }}>{titre}</p>
+    <table className="w-full text-[12px]"><tbody>{children}</tbody></table></div>;
+}
+function FicheSalarie({ emp, hr, members, departments, today, onBack }) {
+  const det = hr.details.find((d) => d.employeeId === emp.id) || {};
+  const cs = hr.contracts.filter((c) => c.employeeId === emp.id && c.statut !== "annule").sort((a, b) => (a.dateDebut < b.dateDebut ? -1 : 1));
+  const c = cs.find((x) => x.statut === "actif") || cs[cs.length - 1] || null;
+  const manager = hr.employees.find((e) => e.id === emp.managerId);
+  const cu = det.contactUrgence || {};
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
+        <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
+        <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+      </div>
+      <PrintPage className="bg-white rounded-xl border p-7 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
+        <PrintHead title="Fiche individuelle du salarié" subtitle={`${nomComplet(emp)} — ${emp.matricule}`} extra={<p className="text-[11px]" style={{ color: "var(--muted)" }}>Confidentiel — édité le {fmt(today)}</p>} />
+        <Bloc titre="Identité">
+          <L k="Nom et prénoms" v={nomComplet(emp)} /><L k="Matricule" v={emp.matricule} /><L k="Sexe" v={emp.sexe === "F" ? "Féminin" : emp.sexe === "M" ? "Masculin" : ""} />
+          <L k="Date et lieu de naissance" v={det.dateNaissance ? `${fmt(det.dateNaissance)}${det.lieuNaissance ? ` à ${det.lieuNaissance}` : ""}` : ""} />
+          <L k="Nationalité" v={det.nationalite} /><L k="Pièce d'identité" v={det.pieceType ? `${det.pieceType} n° ${det.pieceNumero}` : ""} />
+          <L k="Situation de famille" v={det.situationFamille ? `${SITUATIONS[det.situationFamille]} — ${det.nbEnfantsCharge || 0} enfant(s) à charge` : ""} />
+          <L k="Enfants" v={(det.enfants || []).map((x) => `${x.prenom || "?"}${x.date_naissance ? ` (${fmt(x.date_naissance)})` : ""}`).join(", ")} />
+        </Bloc>
+        <Bloc titre="Coordonnées">
+          <L k="Adresse" v={det.adresse} /><L k="Téléphone" v={det.telephone} /><L k="E-mail" v={det.email} />
+          <L k="Personne à prévenir" v={cu.nom ? `${cu.nom}${cu.lien ? ` (${cu.lien})` : ""} ${cu.telephone || ""}` : ""} />
+        </Bloc>
+        <Bloc titre="Emploi">
+          <L k="Emploi occupé" v={emp.poste} /><L k="Département" v={departments.find((d) => d.id === emp.departmentId)?.name} />
+          <L k="Responsable hiérarchique" v={manager ? nomComplet(manager) : ""} /><L k="Date d'embauche" v={fmt(emp.dateEmbauche)} />
+          <L k="Ancienneté" v={libAnciennete(ancienneteMois(emp.dateEmbauche, emp.dateSortie || today))} />
+          <L k="Situation" v={`${EMP_STATUS[emp.statut].label}${emp.dateSortie ? ` — sortie le ${fmt(emp.dateSortie)}${emp.motifSortie ? ` (${emp.motifSortie})` : ""}` : ""}`} />
+          <L k="Compte de l'application" v={members.find((m) => m.id === emp.userId)?.name} />
+        </Bloc>
+        {c && <Bloc titre="Contrat">
+          <L k="Nature" v={`${CONTRACT_TYPES[c.type]}${c.type === "CDD" ? ` — ${c.motifCdd}` : ""}`} /><L k="Période" v={`${fmt(c.dateDebut)}${c.dateFin ? ` → ${fmt(c.dateFin)}` : ""}`} />
+          <L k="Catégorie / qualification" v={`${c.categorie}${c.echelon ? ` / ${c.echelon}` : ""} — ${QUALIFICATIONS[c.qualification]}`} />
+          <L k={c.type === "stage" ? "Indemnité de stage" : "Salaire catégoriel + sursalaire"} v={c.type === "stage" ? fcfa(c.salaireBase) : `${fcfa(c.salaireBase)} + ${fcfa(c.sursalaire)} = ${fcfa(remunerationMensuelle(c))}`} />
+          <L k="Horaire" v={`${nf(c.horaireHebdo)} h/semaine — ${REPARTITIONS[c.repartition]}`} /><L k="Lieu de travail" v={c.lieuTravail} />
+        </Bloc>}
+        <Bloc titre="Protection sociale et paiement">
+          <L k="N° CNPS" v={det.cnpsNumero} /><L k="N° CMU" v={det.cmuNumero} /><L k="Banque et compte" v={det.banque ? `${det.banque} ${det.numeroCompte}` : ""} />
+        </Bloc>
+      </PrintPage>
+    </div>
+  );
+}
+
+/* Modèles de documents : consultation (gérante) et modification (administrateur) */
+const EXEMPLE = {
+  emp: { id: "exemple", nom: "KOUAMÉ", prenoms: "Aya Marie", sexe: "F", matricule: "EMP-2026-001", poste: "Agent commercial", dateEmbauche: "2026-10-01", dateSortie: "", statut: "actif" },
+  det: { employeeId: "exemple", dateNaissance: "1996-04-12", lieuNaissance: "Bouaké", nationalite: "ivoirienne", pieceType: "CNI", pieceNumero: "CI000123456", adresse: "Cocody Angré", cnpsNumero: "123456789" },
+  contract: { id: "exemple-c", employeeId: "exemple", type: "CDI", dateDebut: "2026-10-01", dateFin: "", categorie: 2, echelon: "", qualification: "employe_mensuel", modePaiement: "mois",
+    essaiDuree: 1, essaiUnite: "mois", salaireBase: 75000, sursalaire: 45000, horaireHebdo: 40, repartition: "8h_5j", lieuTravail: "Cocody, Abidjan", clauses: {}, statut: "actif", objet: "", motifCdd: "" },
+};
+function TemplatesPanel({ hr, admin, actions, today, say }) {
+  const [selId, setSelId] = useState("");
+  const [f, setF] = useState(null);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const t = hr.templates.find((x) => x.id === selId) || hr.templates[0] || null;
+  const reel = hr.employees.find((e) => e.statut === "actif" && hr.contracts.some((c) => c.employeeId === e.id && c.statut === "actif"));
+  const ex = reel ? { emp: reel, det: hr.details.find((d) => d.employeeId === reel.id), contract: hr.contracts.find((c) => c.employeeId === reel.id && c.statut === "actif") } : EXEMPLE;
+  const corps = f ? f.corps : t?.corps || "";
+  const apercu = useMemo(() => {
+    if (!t) return { html: "", manquants: [] };
+    const base = { ...ex, contracts: hr.contracts, amendments: hr.amendments, params: hr.params, settings: hr.settings, agency: AGENCY, today, champs: t.champs };
+    const c1 = buildDocContext(base);
+    return renderTemplate(corps, buildDocContext({ ...base, extra: champsInitiaux(t.champs, c1, today) }));
+  }, [t, corps, ex, hr.contracts, hr.amendments, hr.params, hr.settings, today]);
+  if (!t) return <EmptyState icon={FileText} title="Aucun modèle" sub="Exécutez migration-v32-2.sql pour installer les modèles." />;
+  const choisir = (id) => { setSelId(id); setF(null); setErr(""); };
+  const enregistrer = async () => { setBusy(true); setErr(""); const r = await actions.saveTemplate(t, f); setBusy(false); if (r.error) setErr(r.error); else { setF(null); say(r); } };
+  const retablir = async () => { setBusy(true); const r = await actions.resetTemplate(t); setBusy(false); if (r.error) setErr(r.error); else { setF(null); say(r); } };
+  return (
+    <div className="grid gap-4 lg:grid-cols-[16rem_1fr]">
+      <div className="bg-white rounded-xl border p-2 h-fit" style={{ borderColor: "var(--line)" }}>
+        {hr.templates.map((x) => (
+          <button key={x.id} onClick={() => choisir(x.id)} className="w-full text-left rounded-lg px-2.5 py-2 text-sm flex items-center gap-1.5"
+            style={{ background: x.id === t.id ? "#F1F5F9" : "transparent", opacity: x.actif ? 1 : 0.5 }}>
+            <span className="flex-1">{x.titre}</span>{x.corps !== x.corpsOrigine && <Chip color="#7C3AED">modifié</Chip>}
+          </button>))}
+      </div>
+      <div>
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          <p className="font-semibold flex-1">{t.titre}</p>
+          {admin && !f && <button onClick={() => setF({ titre: t.titre, corps: t.corps, actif: t.actif })} className="kb-btn kb-btn-ghost text-sm"><Pencil size={14} /> Modifier le modèle</button>}
+          {admin && !f && t.corps !== t.corpsOrigine && <button disabled={busy} onClick={retablir} className="kb-btn kb-btn-ghost text-sm">Rétablir le modèle d'origine</button>}
+        </div>
+        {!admin && <WarnBox tone="info">Consultation seule : les modèles sont modifiés par l'administrateur.</WarnBox>}
+        {f && (
+          <div className="bg-white rounded-xl border p-3 mb-3" style={{ borderColor: "var(--line)" }}>
+            <div className="grid sm:grid-cols-[1fr_auto] gap-x-3 items-end">
+              <Field label="Titre du modèle"><input className={inputCls} style={inputStyle} value={f.titre} onChange={(e) => setF({ ...f, titre: e.target.value })} /></Field>
+              <label className="flex items-center gap-2 text-sm mb-4"><input type="checkbox" checked={f.actif} onChange={(e) => setF({ ...f, actif: e.target.checked })} /> Proposé à l'édition</label>
+            </div>
+            <Field label="Texte du modèle" hint="# titre · ## Article — intertitre (numéroté automatiquement) · - puce · >> aligné à droite · **gras** · {{variable}} · {{#si variable}} … {{sinon}} … {{/si}}">
+              <textarea rows={18} className={`${inputCls} font-mono text-xs`} style={inputStyle} value={f.corps} onChange={(e) => setF({ ...f, corps: e.target.value })} /></Field>
+            <details className="mb-3"><summary className="text-xs cursor-pointer" style={{ color: "var(--brass)" }}>Variables disponibles</summary>
+              <div className="grid sm:grid-cols-2 gap-x-4 text-[11px] mt-2">{VARIABLES.map(([k, l]) => <p key={k}><code>{`{{${k}}}`}</code> — {l}</p>)}
+                {t.champs.map((ch) => <p key={ch.cle}><code>{`{{extra.${ch.cle}}}`}</code> — {ch.libelle}</p>)}</div></details>
+            <ErrLine err={err} />
+            <ModalFooter onClose={() => { setF(null); setErr(""); }} onSubmit={enregistrer} busy={busy} />
+          </div>
+        )}
+        <DocStyles />
+        <p className="text-xs mb-1" style={{ color: "var(--muted)" }}>Aperçu {reel ? `avec le dossier de ${nomComplet(reel)}` : "avec un salarié fictif"}</p>
+        <div className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}><div className="rh-doc" dangerouslySetInnerHTML={{ __html: apercu.html }} /></div>
+      </div>
+    </div>
+  );
+}
+
+function SettingsPanel({ hr, admin, actions, say }) {
+  const [f, setF] = useState(() => ({ ...hr.settings }));
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const go = async () => { setBusy(true); setErr(""); const r = await actions.saveSettings(f); setBusy(false); if (r.error) setErr(r.error); else say(r); };
+  return (
+    <SectionCard title="Réglages des documents" icon={Building2}>
+      {!admin && <WarnBox tone="info">Consultation seule : les réglages sont modifiés par l'administrateur.</WarnBox>}
+      <p className="text-xs mb-3" style={{ color: "var(--muted)" }}>Raison sociale, adresse, RCCM et compte contribuable sont repris de l'en-tête de l'agence. Complétez ici ce qui est propre aux documents RH.</p>
+      <fieldset disabled={!admin}>
+        <div className="grid sm:grid-cols-2 gap-x-3">
+          <Field label="Nom du signataire"><input className={inputCls} style={inputStyle} value={f.signataireNom} onChange={(e) => set("signataireNom", e.target.value)} placeholder="Ex. : Mme KOFFI Aya" /></Field>
+          <Field label="Qualité du signataire"><input className={inputCls} style={inputStyle} value={f.signataireQualite} onChange={(e) => set("signataireQualite", e.target.value)} placeholder="Ex. : Gérante" /></Field>
+          <Field label="Ville où les documents sont signés"><input className={inputCls} style={inputStyle} value={f.ville} onChange={(e) => set("ville", e.target.value)} /></Field>
+          <Field label="Adresse postale"><input className={inputCls} style={inputStyle} value={f.adressePostale} onChange={(e) => set("adressePostale", e.target.value)} /></Field>
+          <Field label="N° d'employeur CNPS"><input className={inputCls} style={inputStyle} value={f.cnpsEmployeur} onChange={(e) => set("cnpsEmployeur", e.target.value)} /></Field>
+        </div>
+        <label className="flex items-center gap-2 text-sm mb-3"><input type="checkbox" checked={f.signataireFeminin} onChange={(e) => set("signataireFeminin", e.target.checked)} /> La signataire est une femme (« Je soussignée »)</label>
+      </fieldset>
+      <ErrLine err={err} />
+      {admin && <div className="flex justify-end"><button disabled={busy} onClick={go} className="kb-btn kb-btn-primary disabled:opacity-40"><Check size={16} /> {busy ? "…" : "Enregistrer"}</button></div>}
+    </SectionCard>
+  );
+}
+
+function DocumentsTab({ hr, admin, actions, today, on, say }) {
+  const [vue, setVue] = useState("liste");
+  const onglets = [["liste", "Documents"], ["modeles", "Modèles"], ["reglages", "Réglages"]];
+  return (
+    <div>
+      <div className="flex gap-1 mb-3">{onglets.map(([k, l]) => (
+        <button key={k} onClick={() => setVue(k)} className="px-3 py-1.5 rounded-lg text-sm" style={{ background: vue === k ? "#1F2937" : "#fff", color: vue === k ? "#fff" : "var(--ink)", border: "1px solid var(--line)" }}>{l}</button>))}</div>
+      {vue === "liste" && (
+        <SectionCard title={`Documents RH (${hr.documents.length})`} icon={FolderOpen} pad={false}
+          action={<button onClick={() => on.addDoc({})} className="kb-btn kb-btn-primary text-xs"><Upload size={13} /> Ajouter</button>}>
+          <p className="text-xs px-4 pt-3" style={{ color: "var(--muted)" }}>Fichiers stockés dans un espace privé ; chaque ouverture crée un lien valable 5 minutes. Les documents édités depuis un dossier salarié portent une référence RH-AAAA-NNNN.</p>
+          <DocTable docs={hr.documents} employees={hr.employees} today={today} on={on} showEmployee />
+        </SectionCard>
+      )}
+      {vue === "modeles" && <TemplatesPanel hr={hr} admin={admin} actions={actions} today={today} say={say} />}
+      {vue === "reglages" && <SettingsPanel key={JSON.stringify(hr.settings)} hr={hr} admin={admin} actions={actions} say={say} />}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
    10. MODULE
    ══════════════════════════════════════════════════════════════════════ */
 const TABS = [
@@ -1471,6 +2163,8 @@ export default function RH({ store, me }) {
   const [modal, setModal] = useState(null);
   const [print, setPrint] = useState(null);
   const [toast, setToast] = useState(null);
+  const [editor, setEditor] = useState(null);       // document en cours d'édition
+  const [fiche, setFiche] = useState(null);         // fiche individuelle à imprimer
   const today = todayIso();
   const { employees, details, contracts, documents, params, scale } = hr;
   const alerts = useMemo(() => computeAlerts({ employees, details, contracts, documents, params, scale }, today), [employees, details, contracts, documents, params, scale, today]);
@@ -1507,17 +2201,36 @@ export default function RH({ store, me }) {
     param: (mode, p) => setModal({ kind: "param", mode, param: p }),
     validate: async (p) => say(await a.validateParam(p, me.id)),
     scale: (r) => setModal({ kind: "scale", initial: r }),
+    newDoc: (emp) => setModal({ kind: "choose-doc", emp }),
+    fiche: (emp) => setFiche(emp.id),
+    docAvenant: (amend, ctr) => {
+      const tpl = hr.templates.find((t) => t.code === "AVENANT" && t.actif);
+      if (!tpl) { setToast({ kind: "error", text: "Le modèle d'avenant est désactivé ou absent (Documents › Modèles)." }); return; }
+      setEditor({ tpl, emp: employees.find((e) => e.id === amend.employeeId), contract: ctr, amendment: amend });
+    },
+    openGenerated: (d) => setEditor({ doc: d, tpl: hr.templates.find((t) => t.code === d.modeleCode) || null, emp: employees.find((e) => e.id === d.employeeId) || null,
+      contract: contracts.find((c) => c.id === d.contractId) || null, amendment: hr.amendments.find((x) => x.id === d.amendmentId) || null }),
+    sign: (d) => setModal({ kind: "sign", doc: d }),
     removeScale: (r) => setModal({ kind: "confirm", title: "Supprimer la ligne", body: <>Supprimer la catégorie {r.categorie}{r.echelon ? ` / ${r.echelon}` : ""} de la grille ?</>,
       run: async () => { const r2 = await a.deleteScale(r.id); if (!r2.error) say(r2); return r2; } }),
   };
   const ouvrirAlerte = (al) => {
     if (al.employeeId) { setTab("salaries"); setEmpId(al.employeeId); return; }
-    setTab(al.code === "params_a_valider" ? "params" : al.code === "declaration_annuelle" ? "registre" : "documents");
+    setTab(al.code === "params_a_valider" ? "params" : al.code === "declaration_annuelle" ? "registre" : al.code === "cdd_proportion" ? "salaries" : "documents");
   };
   const emp = empId ? employees.find((e) => e.id === empId) : null;
   const modalEmp = modal?.kind === "ctr" || modal?.kind === "amend" ? emp : null;
 
   if (print) return <RegistrePrint kind={print} hr={hr} onBack={() => setPrint(null)} />;
+  if (editor) return (
+    <>
+      <DocumentEditor key={editor.doc?.id || `${editor.tpl?.code}-${editor.amendment?.id || editor.contract?.id || ""}`} {...editor} hr={hr} actions={a} today={today}
+        onBack={() => setEditor(null)} say={say} />
+      <RhToast toast={toast} onDone={closeToast} />
+    </>
+  );
+  const empFiche = fiche ? employees.find((e) => e.id === fiche) : null;
+  if (empFiche) return <FicheSalarie emp={empFiche} hr={hr} members={members} departments={departments} today={today} onBack={() => setFiche(null)} />;
 
   return (
     <div>
@@ -1541,13 +2254,7 @@ export default function RH({ store, me }) {
             ? <EmployeeDetail emp={emp} hr={hr} members={members} departments={departments} admin={admin} alerts={alerts} today={today} on={on} />
             : <EmployeeList hr={hr} members={members} alerts={alerts} onOpen={setEmpId} onNew={(init) => setModal({ kind: "emp", initial: init, det: null })} />)}
           {tab === "registre" && <RegistreTab hr={hr} admin={admin} on={on} />}
-          {tab === "documents" && (
-            <SectionCard title={`Documents RH (${documents.length})`} icon={FolderOpen} pad={false}
-              action={<button onClick={() => on.addDoc({})} className="kb-btn kb-btn-primary text-xs"><Upload size={13} /> Ajouter</button>}>
-              <p className="text-xs px-4 pt-3" style={{ color: "var(--muted)" }}>Fichiers stockés dans un espace privé ; chaque ouverture crée un lien valable 5 minutes.</p>
-              <DocTable docs={documents} employees={employees} today={today} on={on} showEmployee />
-            </SectionCard>
-          )}
+          {tab === "documents" && <DocumentsTab hr={hr} admin={admin} actions={a} today={today} on={on} say={say} />}
           {tab === "params" && <ParamsTab hr={hr} admin={admin} today={today} on={on} />}
           {tab === "grille" && <GrilleTab hr={hr} admin={admin} on={on} />}
           {tab === "audit" && admin && <AuditTab hr={hr} members={members} />}
@@ -1555,12 +2262,15 @@ export default function RH({ store, me }) {
 
       {modal?.kind === "emp" && <EmployeeModal initial={modal.initial} initialDet={modal.det} employees={employees} members={members} departments={departments}
         onSave={a.saveEmployee} onClose={(r) => { const nouveau = !modal.initial?.id; fermer(r); if (r?.id && nouveau) { setTab("salaries"); setEmpId(r.id); } }} />}
-      {modal?.kind === "ctr" && modalEmp && <ContractModal initial={modal.initial} emp={modalEmp} params={params} scale={scale} onSave={a.saveContract} onClose={fermer} />}
+      {modal?.kind === "ctr" && modalEmp && <ContractModal initial={modal.initial} emp={modalEmp} params={params} scale={scale} autres={contracts.filter((c) => c.employeeId === modalEmp.id)} onSave={a.saveContract} onClose={fermer} />}
       {modal?.kind === "amend" && modalEmp && <AmendmentModal contract={modal.contract} documents={documents.filter((d) => d.employeeId === modalEmp.id)} onApply={a.applyAmendment} onClose={fermer} />}
       {modal?.kind === "doc" && <DocModal initial={modal.initial} employees={employees} onUpload={a.uploadDocument} onUpdate={a.updateDocument} onClose={fermer} />}
       {modal?.kind === "param" && <ParamModal mode={modal.mode} param={modal.param} onNewVersion={a.newParamVersion} onFix={a.fixParam} onClose={fermer} />}
       {modal?.kind === "scale" && <ScaleModal initial={modal.initial} onSave={a.saveScale} onClose={fermer} />}
       {modal?.kind === "visa" && <VisaModal initial={modal.initial} onSave={a.saveVisa} onClose={fermer} />}
+      {modal?.kind === "choose-doc" && <DocChooserModal emp={modal.emp} contracts={contracts} templates={hr.templates} params={params} today={today}
+        onPick={(tpl, contract) => { setModal(null); setEditor({ tpl, emp: modal.emp, contract, amendment: null }); }} onClose={() => setModal(null)} />}
+      {modal?.kind === "sign" && <SignModal doc={modal.doc} onAttach={a.attachSigned} onClose={fermer} />}
       {modal?.kind === "confirm" && <ConfirmModal title={modal.title} confirmLabel={modal.label} onConfirm={modal.run} onClose={() => setModal(null)}>{modal.body}</ConfirmModal>}
       <RhToast toast={toast} onDone={closeToast} />
     </div>
