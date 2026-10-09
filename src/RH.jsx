@@ -54,7 +54,11 @@ const PARAM_CATEGORIES = {
 };
 const VISA_NATURE = { visa: "Visa", mise_en_demeure: "Mise en demeure", observation: "Observation" };
 const TABLE_LABELS = { hr_legal_params: "Paramètre légal", hr_salary_scale: "Grille catégorielle", hr_employees: "Salarié", hr_employee_details: "Données personnelles",
-  hr_contracts: "Contrat", hr_contract_amendments: "Avenant", hr_documents: "Document", hr_registry_visas: "Registre — fascicule 3" };
+  hr_contracts: "Contrat", hr_contract_amendments: "Avenant", hr_documents: "Document", hr_registry_visas: "Registre — fascicule 3",
+  hr_doc_templates: "Modèle de document", hr_company_settings: "Réglages des documents", hr_holidays: "Jour férié", hr_absences: "Absence", hr_leave_adjustments: "Ajustement de congés",
+  hr_pay_elements: "Élément de paie", hr_pay_periods: "Paie du mois", hr_payslips: "Bulletin de paie", hr_terminations: "Fin de contrat", hr_job_openings: "Poste à pourvoir",
+  hr_candidates: "Candidat", hr_disciplinary: "Procédure disciplinaire", hr_medical_visits: "Visite médicale", hr_work_accidents: "Accident du travail", hr_trainings: "Formation",
+  hr_company_events: "Déclaration d'événement", hr_access: "Accès au module RH" };
 
 /* ══════════════════════════════════════════════════════════════════════
    2. DATES (calculs en jours calendaires, sans dérive de fuseau horaire)
@@ -414,6 +418,8 @@ export const mTraining = (r) => ({ id: r.id, intitule: r.intitule || "", organis
 export const toTraining = (f) => ({ intitule: (f.intitule || "").trim(), organisme: f.organisme || "", date_debut: f.dateDebut, date_fin: f.dateFin || null, cout: Math.max(0, Number(f.cout) || 0),
   financement: f.financement || "entreprise", participants: f.participants || [], evaluation: f.evaluation || "" });
 export const mEvent = (r) => ({ id: r.id, type: r.type, dateEvenement: r.date_evenement, description: r.description || "", declareLe: r.declare_le || "", documentId: r.document_id || "" });
+export const mAccess = (r) => ({ id: r.id, userId: r.user_id, niveau: r.niveau || "complet", note: r.note || "", createdAt: r.created_at || "", createdBy: r.created_by || "" });
+export const toAccess = (f) => ({ user_id: f.userId, niveau: f.niveau === "gestion" ? "gestion" : "complet", note: (f.note || "").trim() });
 export const toEvent = (f) => ({ type: f.type, date_evenement: f.dateEvenement, description: f.description || "", declare_le: f.declareLe || null, document_id: f.documentId || null });
 
 const mAudit = (r) => ({ id: r.id, at: r.at, acteur: r.acteur, action: r.action, table: r.table_name, recordId: r.record_id, avant: r.avant, apres: r.apres });
@@ -424,14 +430,19 @@ const mAudit = (r) => ({ id: r.id, at: r.at, acteur: r.acteur, action: r.action,
 const FILE_MAX = 10 * 1024 * 1024;
 const FILE_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
 
-export const isRH = (role) => role === "admin" || role === "gerante";
+/* L'accès au module ne dépend plus du rôle dans l'application : il est accordé par la base
+   (propriétaire du module ou membre qu'il a désigné). Niveaux : proprietaire, complet, gestion. */
+export const NIVEAUX_ACCES = { complet: "Accès complet", gestion: "Gestion courante" };
+export const aAcces = (acces) => ["proprietaire", "complet", "gestion"].includes(acces);
+export const accesComplet = (acces) => acces === "proprietaire" || acces === "complet";
 
-export function useHR(me) {
-  const admin = me?.role === "admin";
-  const autorise = isRH(me?.role);
+export function useHR(acces) {
+  const admin = accesComplet(acces);
+  const autorise = aAcces(acces);
+  const proprietaire = acces === "proprietaire";
   const [st, setSt] = useState({ loading: true, error: "", employees: [], details: [], contracts: [], amendments: [], documents: [], params: [], scale: [], visas: [], audit: [],
     templates: [], settings: { ...REGLAGES_VIDES }, holidays: [], absences: [], adjustments: [], elements: [], periods: [], payslips: [], terminations: [],
-    openings: [], candidates: [], disciplinary: [], visits: [], accidents: [], trainings: [], events: [] });
+    openings: [], candidates: [], disciplinary: [], visits: [], accidents: [], trainings: [], events: [], acces: [] });
   const load = useCallback(async () => {
     /* Compte non autorisé : aucune requête RH n'est émise (aucun salaire ne transite, même vide) */
     if (!autorise) { setSt((s) => ({ ...s, loading: false })); return; }
@@ -446,6 +457,7 @@ export function useHR(me) {
       q("hr_pay_periods", "annee", false), q("hr_payslips", "created_at"), q("hr_terminations", "date_sortie", false), q("hr_job_openings", "date_ouverture", false),
       q("hr_candidates", "created_at", false), q("hr_disciplinary", "date_faits", false), q("hr_medical_visits", "date_visite", false),
       q("hr_work_accidents", "date_accident", false), q("hr_trainings", "date_debut", false), q("hr_company_events", "date_evenement", false),
+      proprietaire ? q("hr_access", "created_at") : Promise.resolve({ data: [] }),
     ]);
     const err = res.find((r) => r.error)?.error;
     setSt({ loading: false, error: err ? (/relation .* does not exist|schema cache/.test(err.message) ? "Le module RH n'est pas entièrement installé dans la base : exécutez dans le SQL Editor de Supabase, dans l'ordre, migration-v32.sql, migration-v32-1.sql, migration-v32-2.sql puis migration-v33.sql." : err.message) : "",
@@ -457,8 +469,8 @@ export function useHR(me) {
       periods: (res[15].data || []).map(mPeriod).sort((a, b) => b.annee - a.annee || b.mois - a.mois), payslips: (res[16].data || []).map(mSlip),
       terminations: (res[17].data || []).map(mTerm), openings: (res[18].data || []).map(mOpening), candidates: (res[19].data || []).map(mCand),
       disciplinary: (res[20].data || []).map(mDisc), visits: (res[21].data || []).map(mVisit), accidents: (res[22].data || []).map(mAcc),
-      trainings: (res[23].data || []).map(mTraining), events: (res[24].data || []).map(mEvent) });
-  }, [admin, autorise]);
+      trainings: (res[23].data || []).map(mTraining), events: (res[24].data || []).map(mEvent), acces: (res[25].data || []).map(mAccess) });
+  }, [admin, autorise, proprietaire]);
   useEffect(() => { load(); }, [load]);
 
   /* Une écriture n'est réussie que si la base renvoie la ligne : un refus
@@ -623,6 +635,18 @@ export function useHR(me) {
     saveSettings: async (f) => {
       const r = await one(supabase.from("hr_company_settings").update(toSettings(f)).eq("id", 1));
       if (r.error) return r; await load(); return { message: "Réglages des documents enregistrés" };
+    },
+    /* Désignation des membres ayant accès au module (propriétaire uniquement, contrôlé par la base) */
+    setAccess: async (userId, niveau, existant) => {
+      if (!niveau) {
+        if (!existant) return {};
+        const { data, error } = await supabase.from("hr_access").delete().eq("id", existant.id).select();
+        if (error) return { error: error.message }; if (!data?.length) return { error: refuse };
+        await load(); return { message: "Accès retiré" };
+      }
+      const row = toAccess({ ...(existant || {}), userId, niveau });
+      const r = existant ? await one(supabase.from("hr_access").update(row).eq("id", existant.id)) : await one(supabase.from("hr_access").insert(row));
+      if (r.error) return r; await load(); return { message: `${NIVEAUX_ACCES[niveau]} accordé` };
     },
     deleteVisa: async (id) => {
       const { data, error } = await supabase.from("hr_registry_visas").delete().eq("id", id).select();
@@ -4325,14 +4349,51 @@ const TABS = [
   { id: "params", label: "Paramètres légaux", icon: Scale },
   { id: "grille", label: "Grille catégorielle", icon: Layers },
   { id: "audit", label: "Journal d'audit", icon: History, admin: true },
+  { id: "acces", label: "Accès au module", icon: ShieldCheck, proprietaire: true },
 ];
+const ROLES_APP = { admin: "Administrateur", gerante: "Gérante", responsable_admin: "Responsable administratif", comptable: "Comptable", juriste: "Juriste", agent: "Agent" };
+
+/* Onglet du propriétaire : qui a accès au module RH, et à quel niveau */
+function AccesTab({ hr, members, me, actions, say }) {
+  const [busy, setBusy] = useState("");
+  const liste = members.filter((m) => m.id !== me.id && (m.active !== false || hr.acces.some((a) => a.userId === m.id)))
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  const changer = async (m, niveau) => {
+    setBusy(m.id); const r = await actions.setAccess(m.id, niveau, hr.acces.find((a) => a.userId === m.id)); setBusy(""); say(r);
+  };
+  return (
+    <div>
+      <WarnBox tone="info">Seuls les comptes désignés ci-dessous accèdent au module, quel que soit leur rôle dans l'application. Le contrôle est fait par la base de données : un compte non désigné ne reçoit aucune donnée RH. Le membre désigné doit actualiser l'application pour voir apparaître le module.</WarnBox>
+      <div className="grid sm:grid-cols-2 gap-3 mb-4 text-sm">
+        <div className="bg-white rounded-xl border p-3" style={{ borderColor: "var(--line)" }}><p className="font-semibold mb-1">Accès complet</p>
+          <p className="text-xs" style={{ color: "var(--muted)" }}>Tout le module : dossiers, paie, sorties, documents, et aussi les paramètres légaux, la grille, les modèles de documents, les suppressions, l'annulation d'un bulletin validé et le journal d'audit.</p></div>
+        <div className="bg-white rounded-xl border p-3" style={{ borderColor: "var(--line)" }}><p className="font-semibold mb-1">Gestion courante</p>
+          <p className="text-xs" style={{ color: "var(--muted)" }}>Dossiers, contrats, congés, préparation et validation de la paie, sorties, recrutement, discipline, santé et documents. Sans les actions réservées de l'accès complet.</p></div>
+      </div>
+      <SectionCard title="Membres de l'équipe" icon={ShieldCheck} pad={false}>
+        <div className="px-4 py-3 flex flex-wrap items-center gap-2 text-sm border-b" style={{ borderColor: "var(--line)" }}>
+          <span className="flex-1 font-medium">{me.name || "Vous"}</span><Chip color="#1F2937">Propriétaire du module — accès de droit</Chip></div>
+        {liste.length === 0 ? <EmptyState icon={Users} title="Aucun autre membre" /> : <div className="divide-y" style={{ borderColor: "var(--line)" }}>{liste.map((m) => {
+          const a = hr.acces.find((x) => x.userId === m.id);
+          return (
+            <div key={m.id} className="px-4 py-2.5 flex flex-wrap items-center gap-2 text-sm">
+              <span className="flex-1 min-w-[10rem]">{m.name}<span className="text-xs ml-1.5" style={{ color: "var(--muted)" }}>{ROLES_APP[m.role] || m.role}{m.active === false ? " · compte désactivé : accès suspendu" : ""}</span></span>
+              <select className="px-2 py-1.5 rounded-lg border text-sm" style={{ ...inputStyle, color: a ? "var(--ink)" : "var(--muted)" }} value={a?.niveau || ""} disabled={busy === m.id}
+                onChange={(e) => changer(m, e.target.value)} aria-label={`Accès de ${m.name}`}>
+                <option value="">Aucun accès</option><option value="gestion">Gestion courante</option><option value="complet">Accès complet</option></select>
+            </div>); })}</div>}
+      </SectionCard>
+    </div>
+  );
+}
 const TITRE_CHOIX = { absence: "Document de l'absence", discipline: "Courriers de la procédure", rupture: "Documents de sortie", candidat: "Courriers au candidat" };
 
-export default function RH({ store, me }) {
+export default function RH({ store, me, acces }) {
   /* Tous les hooks AVANT tout retour anticipé */
-  const hr = useHR(me);
-  const autorise = isRH(me?.role);
-  const admin = me?.role === "admin";
+  const hr = useHR(acces);
+  const autorise = aAcces(acces);
+  const admin = accesComplet(acces);
+  const proprietaire = acces === "proprietaire";
   const [tab, setTab] = useState("dashboard");
   const [empId, setEmpId] = useState(null);
   const [modal, setModal] = useState(null);
@@ -4349,7 +4410,8 @@ export default function RH({ store, me }) {
   }, [hr, employees, details, contracts, documents, params, scale, today]);
   const closeToast = useCallback(() => setToast(null), []);
 
-  if (!autorise) return <EmptyState icon={ShieldAlert} title="Accès réservé" sub="Le module Ressources humaines est réservé à l'administrateur et à la gérante." />;
+  if (acces === "a_installer") return <WarnBox tone="rouge">Le contrôle d'accès du module RH n'est pas installé : exécutez migration-v33-1.sql dans le SQL Editor de Supabase, puis actualisez l'application.</WarnBox>;
+  if (!autorise) return <EmptyState icon={ShieldAlert} title="Accès réservé" sub="Le module Ressources humaines est réservé aux membres désignés par son propriétaire." />;
 
   const members = store?.members || [];
   const departments = store?.departments || [];
@@ -4482,7 +4544,7 @@ export default function RH({ store, me }) {
         <button onClick={a.reload} className="kb-btn kb-btn-ghost text-sm">Actualiser</button>
       </div>
       <div className="flex gap-1 overflow-x-auto mb-4 pb-1 print:hidden" role="tablist">
-        {TABS.filter((t) => !t.admin || admin).map((t) => { const Icon = t.icon; const sel = tab === t.id;
+        {TABS.filter((t) => (!t.admin || admin) && (!t.proprietaire || proprietaire)).map((t) => { const Icon = t.icon; const sel = tab === t.id;
           const n = t.id === "dashboard" ? 0 : alerts.filter((x) => x.tab === t.id && x.niveau !== "info").length;
           return <button key={t.id} role="tab" aria-selected={sel} onClick={() => { setTab(t.id); if (t.id !== "salaries") setEmpId(null); if (t.id === "paie") setFocusPaie(null); }}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm whitespace-nowrap" style={{ background: sel ? "var(--brass)" : "#fff", color: sel ? "#fff" : "var(--ink)", border: "1px solid var(--line)" }}>
@@ -4508,6 +4570,7 @@ export default function RH({ store, me }) {
           {tab === "params" && <ParamsTab hr={hr} admin={admin} today={today} on={on} />}
           {tab === "grille" && <GrilleTab hr={hr} admin={admin} on={on} />}
           {tab === "audit" && admin && <AuditTab hr={hr} members={members} />}
+          {tab === "acces" && proprietaire && <AccesTab hr={hr} members={members} me={me} actions={a} say={say} />}
         </>}
 
       {modal?.kind === "emp" && <EmployeeModal initial={modal.initial} initialDet={modal.det} employees={employees} members={members} departments={departments}
