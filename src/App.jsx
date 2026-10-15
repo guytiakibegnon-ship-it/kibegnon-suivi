@@ -6,12 +6,13 @@
  * ==========================================================================*/
 import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from "react";
 import {
-  AlertTriangle, AlignCenter, AlignJustify, AlignLeft, AlignRight, Archive, ArchiveRestore, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, Banknote, BarChart3, Bell, BellOff, BellRing, Bold, Briefcase, Building2, CalendarClock, CalendarDays, CalendarOff, Camera, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardCheck, ClipboardList, Clock, DoorClosed, DoorOpen, Download, Eraser, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Highlighter, Home, Image, Inbox, IndentDecrease, IndentIncrease, Italic, KeyRound, Landmark, Layers, LayoutDashboard, Link2, List, ListChecks, ListOrdered, Lock, LogOut, Mail, MapPin, Maximize2, Menu, MessageCircle, MessageCircleWarning, MessageSquare, Minimize2, Minus, Package, Palette, Paperclip, Pause, Pencil, Percent, Phone, PhoneIncoming, Play, Plus, Printer, Receipt, Redo2, RefreshCw, RotateCcw, Scale, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, Strikethrough, Subscript, Superscript, Table2, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, Underline, Undo2, Unlock, Upload, UserPlus, UserRound, Users, Wallet, Wrench, X, Zap,
+  AlertTriangle, AlignCenter, AlignJustify, AlignLeft, AlignRight, Archive, ArchiveRestore, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, Banknote, BarChart3, Bell, BellOff, BellRing, Bold, Briefcase, Building2, CalendarClock, CalendarDays, CalendarOff, Camera, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardCheck, ClipboardList, Clock, DoorClosed, DoorOpen, Download, Eraser, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Highlighter, Home, Image, Inbox, IndentDecrease, IndentIncrease, Italic, KeyRound, Landmark, Layers, LayoutDashboard, Link2, List, ListChecks, ListOrdered, Lock, LogOut, Mail, MapPin, Maximize2, Megaphone, Menu, MessageCircle, MessageCircleWarning, MessageSquare, Minimize2, Minus, Package, Palette, Paperclip, Pause, Pencil, Percent, Phone, PhoneIncoming, Play, Plus, Printer, Receipt, Redo2, RefreshCw, RotateCcw, Scale, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, Strikethrough, Subscript, Superscript, Table2, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, Underline, Undo2, Unlock, Upload, UserPlus, UserRound, Users, Wallet, Wrench, X, Zap,
 } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { supabase, AUTH_DOMAIN } from "./supabaseClient";
 /* Module Ressources humaines : chargé seulement à l'ouverture de l'onglet (fichier RH.jsx) */
 const RH = lazy(() => import("./RH.jsx"));
+const MonDossier = lazy(() => import("./RH.jsx").then((m) => ({ default: m.MonDossier })));
 
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -1023,7 +1024,7 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "33.1";
+const APP_VERSION = "33.2";
 const APP_BUILD = "2026-10-09";
 
 /* ---- Papier à en-tête de l'agence ---- */
@@ -1151,6 +1152,120 @@ function NotifBanner() {
           <Bell size={14} /> Activer
         </button>
       </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   NOTES INTERNES — publiées depuis l'outil RH, alerte dans chaque compte
+   La base ne renvoie à chacun que les notes qui lui sont adressées.
+   ══════════════════════════════════════════════════════════════════════ */
+const NOTE_IMP = { info: { label: "Information", color: "#2E78A8", bg: "#EFF6FF", border: "#BFDBFE" },
+  importante: { label: "Importante", color: "#8A6212", bg: "#FFF8EC", border: "#F3E2C6" },
+  urgente: { label: "Urgente", color: "#B5171D", bg: "#FDF2F2", border: "#F5C6C7" } };
+const NOTE_ORDRE = { urgente: 0, importante: 1, info: 2 };
+function useNotesInternes(userId) {
+  const [notes, setNotes] = useState([]);
+  const [lues, setLues] = useState(() => new Set());
+  const deja = useRef(null);                                      // notes déjà signalées par une notification
+  const charger = useCallback(async () => {
+    if (!userId) return;
+    const [n, l] = await Promise.all([
+      supabase.from("hr_notes").select("*").order("publie_le", { ascending: false }),
+      supabase.from("hr_note_lectures").select("note_id, lu_le").eq("user_id", userId),
+    ]);
+    if (n.error) { setNotes([]); return; }                        // notes internes pas encore installées
+    const now = new Date().toISOString(); const today = now.slice(0, 10);
+    /* L'outil RH voit toutes les notes : on ne garde que celles adressées à ce compte */
+    const miennes = (n.data || []).filter((x) => (x.cible === "tous" || (x.destinataires || []).includes(userId))
+      && (!x.publie_le || x.publie_le <= now) && (!x.expire_le || x.expire_le >= today))
+      .map((x) => ({ id: x.id, titre: x.titre, contenu: x.contenu || "", importance: x.importance || "info", accuseRequis: x.accuse_requis !== false,
+        publieLe: x.publie_le, auteur: x.created_by }));
+    const lu = new Set((l.data || []).map((x) => x.note_id));
+    if (deja.current) miennes.filter((x) => !lu.has(x.id) && !deja.current.has(x.id)).forEach((x) => notify(`Note interne — ${x.titre}`, x.contenu.slice(0, 140)));
+    deja.current = new Set(miennes.map((x) => x.id));
+    setNotes(miennes); setLues(lu);
+  }, [userId]);
+  useEffect(() => {
+    charger();
+    const t = setInterval(charger, 5 * 60 * 1000);
+    const vis = () => { if (document.visibilityState === "visible") charger(); };
+    document.addEventListener("visibilitychange", vis);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", vis); };
+  }, [charger]);
+  const marquerLue = useCallback(async (id) => {
+    if (lues.has(id)) return {};
+    const { error } = await supabase.from("hr_note_lectures").insert({ note_id: id, user_id: userId });
+    if (error && !/duplicate/.test(error.message)) return { error: error.message };
+    setLues((s) => new Set([...s, id])); return {};
+  }, [lues, userId]);
+  const nonLues = notes.filter((x) => !lues.has(x.id)).sort((a, b) => NOTE_ORDRE[a.importance] - NOTE_ORDRE[b.importance]);
+  return { notes, lues, nonLues, marquerLue, recharger: charger };
+}
+
+function NoteLecture({ note, auteur, lue, onLue, onClose }) {
+  const imp = NOTE_IMP[note.importance] || NOTE_IMP.info;
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const confirmer = async () => { setBusy(true); const r = await onLue(note.id); setBusy(false); if (r?.error) setErr(r.error); else onClose(); };
+  const fermer = async () => { if (!note.accuseRequis && !lue) await onLue(note.id); onClose(); };
+  return (
+    <Modal title={note.titre} onClose={fermer}>
+      <span className="inline-block text-[11px] font-semibold rounded-full px-2.5 py-0.5 mb-3" style={{ background: imp.bg, color: imp.color, border: `1px solid ${imp.border}` }}>Note interne · {imp.label}</span>
+      <p className="text-sm whitespace-pre-line leading-relaxed mb-3">{note.contenu}</p>
+      <p className="text-xs mb-4" style={{ color: "var(--muted)" }}>Publiée le {note.publieLe ? new Date(note.publieLe).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : "—"}{auteur ? ` par ${auteur}` : ""}</p>
+      {err && <p className="text-xs text-red-600 mb-2">{err}</p>}
+      <div className="flex justify-end gap-2">
+        {lue || !note.accuseRequis
+          ? <button onClick={fermer} className="kb-btn kb-btn-primary"><Check size={16} /> Fermer</button>
+          : <button disabled={busy} onClick={confirmer} className="kb-btn kb-btn-primary disabled:opacity-40"><CheckCheck size={16} /> J'ai lu et pris connaissance</button>}
+      </div>
+    </Modal>
+  );
+}
+
+/* Bandeau en tête de chaque écran tant qu'une note n'est pas lue ; une note urgente s'ouvre d'elle-même */
+function BanniereNotes({ notes, onVoir }) {
+  const [ouverte, setOuverte] = useState(null);
+  const [vues, setVues] = useState(() => new Set());
+  const urgente = notes.nonLues.find((x) => x.importance === "urgente" && !vues.has(x.id));
+  useEffect(() => { if (urgente && !ouverte) { setOuverte(urgente); setVues((s) => new Set([...s, urgente.id])); } }, [urgente, ouverte]);
+  if (!notes.nonLues.length && !ouverte) return null;
+  const n = notes.nonLues[0];
+  return (
+    <>
+      {n && (() => { const imp = NOTE_IMP[n.importance] || NOTE_IMP.info; return (
+        <div className="rounded-xl border p-3 mb-4 flex items-center justify-between gap-3 flex-wrap" style={{ borderColor: imp.border, background: imp.bg }}>
+          <p className="text-sm" style={{ color: imp.color }}><Megaphone size={14} className="inline mb-0.5 mr-1" />
+            <strong>Note interne{n.importance !== "info" ? ` ${imp.label.toLowerCase()}` : ""} :</strong> {n.titre}
+            {notes.nonLues.length > 1 && <span className="text-xs"> · et {notes.nonLues.length - 1} autre(s) non lue(s)</span>}</p>
+          <div className="flex gap-2">
+            {notes.nonLues.length > 1 && <button onClick={onVoir} className="kb-btn kb-btn-ghost text-sm">Toutes les notes</button>}
+            <button onClick={() => setOuverte(n)} className="kb-btn kb-btn-primary text-sm">Lire</button>
+          </div>
+        </div>); })()}
+      {ouverte && <NoteLecture note={ouverte} lue={notes.lues.has(ouverte.id)} onLue={notes.marquerLue} onClose={() => setOuverte(null)} />}
+    </>
+  );
+}
+
+function NotesInternesView({ notes, members }) {
+  const [ouverte, setOuverte] = useState(null);
+  const auteur = (id) => members.find((m) => m.id === id)?.name || "";
+  return (
+    <div>
+      <h1 className="text-xl font-bold flex items-center gap-2 mb-1"><Megaphone size={20} style={{ color: "var(--brass)" }} /> Notes internes</h1>
+      <p className="text-xs mb-4" style={{ color: "var(--muted)" }}>Notes de service publiées par la direction. Ouvrez chaque note et confirmez sa lecture lorsque cela est demandé.</p>
+      {notes.notes.length === 0 ? <EmptyState icon={Megaphone} title="Aucune note interne" sub="Les notes de service qui vous sont adressées apparaîtront ici." /> : (
+        <div className="space-y-2">{notes.notes.map((n) => { const imp = NOTE_IMP[n.importance] || NOTE_IMP.info; const lue = notes.lues.has(n.id);
+          return (
+            <button key={n.id} onClick={() => setOuverte(n)} className="w-full text-left bg-white rounded-xl border p-3 flex items-start gap-3 hover:shadow-sm" style={{ borderColor: lue ? "var(--line)" : imp.border, background: lue ? "#fff" : imp.bg }}>
+              <span className="mt-1 w-2 h-2 rounded-full shrink-0" style={{ background: lue ? "#CBD5E1" : imp.color }} />
+              <span className="flex-1 min-w-0"><span className="block text-sm font-semibold">{n.titre}</span>
+                <span className="block text-xs truncate" style={{ color: "var(--muted)" }}>{n.contenu}</span></span>
+              <span className="text-[11px] whitespace-nowrap" style={{ color: lue ? "var(--muted)" : imp.color }}>{lue ? "Lue" : imp.label}<br />{n.publieLe ? new Date(n.publieLe).toLocaleDateString("fr-FR") : ""}</span>
+            </button>); })}</div>
+      )}
+      {ouverte && <NoteLecture note={ouverte} auteur={auteur(ouverte.auteur)} lue={notes.lues.has(ouverte.id)} onLue={notes.marquerLue} onClose={() => setOuverte(null)} />}
     </div>
   );
 }
@@ -3049,6 +3164,12 @@ function LineEditor({ lines, setLines, labelPlaceholder = "Désignation de la pr
 }
 
 /* ================= Modale de saisie ================= */
+/* Destinataire d'un courrier libre */
+const DEST_TYPES = { locataire: "Un locataire", proprietaire: "Un propriétaire", tiers: "Autre destinataire (administration, partenaire, fournisseur…)" };
+const premiereLigne = (t) => String(t || "").split("\n").map((x) => x.trim()).filter(Boolean).join(" — ").slice(0, 200);
+/* Lignes du destinataire telles qu'imprimées : présentation saisie, sinon le nom */
+const lignesDestinataire = (doc) => { const t = String(doc?.fields?.destinataire || "").trim(); return t ? t.split("\n").map((x) => x.trim()).filter(Boolean) : [doc?.clientName || ""]; };
+
 function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onClose }) {
   const cfg = DOC_TYPES[initial.docType];
   const defaultDirection = ["recu_charge"].includes(initial.docType) ? "decaissement"
@@ -3056,7 +3177,9 @@ function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onC
   const [f, setF] = useState(() => ({
     docType: initial.docType, date: isoDate(new Date()), direction: defaultDirection, propertyId: "", ownerId: "",
     clientName: "", clientPhone: "", clientEmail: "", clientAddr: "", object: "", body: "",
-    fields: {}, status: "brouillon", notes: "", ...initial,
+    status: "brouillon", notes: "", ...initial,
+    /* Courrier : mention « Visa client » décochée par défaut ; relance : conservée */
+    fields: { ...(!initial.id && initial.docType === "courrier" ? { visaClient: false, destType: "locataire" } : {}), ...(initial.fields || {}) },
   }));
   const [lines, setLines] = useState(() => initial.lines?.length ? initial.lines : cfg.preset.map((l) => ({ ...l })));
   const [more, setMore] = useState(false);
@@ -3112,6 +3235,8 @@ function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onC
 
   const total = linesTotal(lines);
   const isLetter = cfg.layout === "lettre";
+  const destType = f.docType === "courrier" ? (f.fields.destType || "locataire") : "locataire";
+  const tiers = destType === "tiers";
   const isDecharge = cfg.layout === "decharge";
   const valid = f.clientName.trim();
   const submit = async () => {
@@ -3124,7 +3249,7 @@ function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onC
       if (!f.fields.validUntil) { setBusy(false); setErr("Indiquez la date de validité de la proforma."); return; }
       if (f.fields.validUntil < f.date) { setBusy(false); setErr("La date de validité doit être postérieure à la date du document."); return; }
     }
-    const r = await onSave({ ...f, lines, approval,
+    const r = await onSave({ ...f, lines, approval, ...(tiers ? { propertyId: "", unitId: null } : {}),
       ...(isPF ? { direction: "neutre", status: f.status === "regle" ? "emis" : f.status } : {}) });
     setBusy(false);
     if (r?.error) setErr(r.error); else onClose();
@@ -3165,22 +3290,57 @@ function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onC
         </div>
       )}
 
+      {/* Courrier libre : locataire, propriétaire ou tout autre destinataire (administration, partenaire, fournisseur…) */}
+      {f.docType === "courrier" && (
+        <div className="flex items-center gap-2 flex-wrap mb-3">
+          <span className="text-xs font-semibold">Courrier adressé à :</span>
+          {Object.entries(DEST_TYPES).map(([k, l]) => {
+            const on = destType === k;
+            return <button type="button" key={k} onClick={() => setField("destType", k)} className="text-xs rounded-full px-3 py-1 border"
+              style={{ background: on ? "#0D9488" : "#fff", color: on ? "#fff" : "var(--ink)", borderColor: on ? "transparent" : "var(--line)" }}>{l}</button>;
+          })}
+        </div>
+      )}
+      {tiers ? (
+        <div className="grid sm:grid-cols-2 gap-3">
+          <Field label="Destinataire *" hint="Une ligne par retour à la ligne, telle qu'elle apparaîtra sur le courrier">
+            <textarea rows={3} className={inputCls} style={inputStyle} value={f.fields.destinataire || ""} aria-label="Destinataire du courrier"
+              placeholder={"Monsieur le Directeur Général\nde la Société ABC\nAbidjan-Plateau"}
+              onChange={(e) => { const v = e.target.value; setF((p) => ({ ...p, clientName: premiereLigne(v), fields: { ...p.fields, destinataire: v } })); }} />
+          </Field>
+          <div>
+            <Field label="Adresse" hint="Plusieurs lignes possibles"><textarea rows={2} className={inputCls} style={inputStyle} value={f.clientAddr} onChange={(e) => set("clientAddr", e.target.value)} placeholder="01 BP 0000 Abidjan 01" /></Field>
+            <Field label="Téléphone"><input className={inputCls} style={inputStyle} value={f.clientPhone} onChange={(e) => set("clientPhone", e.target.value)} placeholder="+225 07 ..." /></Field>
+          </div>
+        </div>
+      ) : (
       <div className="grid sm:grid-cols-2 gap-3">
-        <PersonPicker label={cfg.clientLabel} hint="Choisissez un locataire connu ou saisissez un nom libre"
-          value={f.clientName} options={tenantOptions} placeholder="Ex. Mme SAKOUA BADE"
+        <PersonPicker label={destType === "proprietaire" ? "Propriétaire" : cfg.clientLabel}
+          hint={destType === "proprietaire" ? "Choisissez un propriétaire connu ou saisissez un nom libre" : "Choisissez un locataire connu ou saisissez un nom libre"}
+          value={f.clientName} options={destType === "proprietaire" ? ownerOptions : tenantOptions} placeholder="Ex. Mme SAKOUA BADE"
           onPick={(v, hit) => setF((p) => ({ ...p, clientName: v,
             ...(hit ? { clientPhone: hit.phone || p.clientPhone, clientEmail: hit.email || p.clientEmail,
-              unitId: hit.unitId, propertyId: hit.propertyId || p.propertyId, ownerId: hit.ownerId || p.ownerId } : {}) }))} />
+              unitId: hit.unitId || p.unitId, propertyId: hit.propertyId || p.propertyId, ownerId: hit.ownerId || p.ownerId } : {}) }))} />
         <Field label="Téléphone"><input className={inputCls} style={inputStyle} value={f.clientPhone} onChange={(e) => set("clientPhone", e.target.value)} placeholder="+225 07 ..." /></Field>
       </div>
+      )}
+      {isLetter && !tiers && (
+        <div className="grid sm:grid-cols-2 gap-3">
+          <Field label="Présentation du destinataire sur le courrier" hint="Facultatif : une ligne par retour à la ligne. Vide : le nom ci-dessus.">
+            <textarea rows={2} className={inputCls} style={inputStyle} value={f.fields.destinataire || ""} aria-label="Présentation du destinataire"
+              placeholder={f.clientName || "Madame KOUASSI Aya\nLocataire de l'appartement A1"} onChange={(e) => setField("destinataire", e.target.value)} />
+          </Field>
+          <Field label="Adresse" hint="Plusieurs lignes possibles"><textarea rows={2} className={inputCls} style={inputStyle} value={f.clientAddr} onChange={(e) => set("clientAddr", e.target.value)} /></Field>
+        </div>
+      )}
 
       <div className="grid sm:grid-cols-2 gap-3">
-        <Field label="Bien concerné" hint="Le propriétaire et le loyer sont repris automatiquement">
+        {tiers ? <div /> : <Field label="Bien concerné" hint="Le propriétaire et le loyer sont repris automatiquement">
           <select className={inputCls} style={inputStyle} value={f.propertyId || ""} onChange={(e) => pickProperty(e.target.value)}>
             <option value="">— Aucun bien —</option>
             {properties.map((p) => <option key={p.id} value={p.id}>{p.name}{p.commune ? ` · ${p.commune}` : ""}</option>)}
           </select>
-        </Field>
+        </Field>}
         <Field label="Date du document"><input type="date" className={inputCls} style={inputStyle} value={f.date} onChange={(e) => set("date", e.target.value)} /></Field>
       </div>
 
@@ -3258,6 +3418,10 @@ function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onC
                 unitLabel: (units || []).find((u) => u.id === f.unitId)?.label, total }}
               placeholder={f.docType === "relance" ? "Laissez vide pour le texte type…" : "Rédigez votre courrier…"} />
           </Field>
+          <label className="flex items-center gap-2 text-sm mb-3 cursor-pointer">
+            <input type="checkbox" checked={f.fields.visaClient !== false} onChange={(e) => setField("visaClient", e.target.checked)} />
+            <span>Prévoir l'emplacement « Visa client » (signature du destinataire)</span>
+          </label>
         </>
       )}
 
@@ -3289,11 +3453,13 @@ function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onC
         </div>
       )}
 
+      {!(tiers && !lines.some((l) => (l.label || "").trim())) && <>
       <p className="text-xs font-semibold mb-2 mt-1" style={{ color: "var(--ink)" }}>
         {isDecharge ? "Montant de la décharge" : isLetter ? "Sommes réclamées" : "Détail du document"}
       </p>
       <LineEditor lines={lines} setLines={setLines} showUnit={f.docType !== "decompte_entree"}
         labelPlaceholder={f.docType === "decompte_entree" ? "Ex. 2 MOIS D'AVANCE" : "Désignation"} />
+      </>}
 
       {f.docType === "recu_charge" && (
         <div className="rounded-xl border p-3 mb-3" style={{ borderColor: "#BAE6FD", background: "#F0F9FF" }}>
@@ -3324,7 +3490,7 @@ function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onC
         <div className="rounded-lg border p-3 mb-3" style={{ borderColor: "var(--line)", background: "#FAFBFC" }}>
           <div className="grid sm:grid-cols-2 gap-3">
             <Field label="E-mail"><input className={inputCls} style={inputStyle} value={f.clientEmail} onChange={(e) => set("clientEmail", e.target.value)} /></Field>
-            <Field label="Adresse"><input className={inputCls} style={inputStyle} value={f.clientAddr} onChange={(e) => set("clientAddr", e.target.value)} /></Field>
+            {!isLetter && <Field label="Adresse"><input className={inputCls} style={inputStyle} value={f.clientAddr} onChange={(e) => set("clientAddr", e.target.value)} /></Field>}
             <Field label="Propriétaire (dossier)">
               <select className={inputCls} style={inputStyle} value={f.ownerId || ""} onChange={(e) => set("ownerId", e.target.value)}>
                 <option value="">— Aucun —</option>
@@ -3730,6 +3896,7 @@ function DocSheet({ doc, property, owner, author, onBack }) {
   const ps = proformaState(doc);
   const d10 = (x) => (x ? fr(String(x).slice(0, 10) + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—");
   const nomDoc = pf ? "facture proforma" : doc.docType === "quittance" ? "quittance" : "facture";
+  const visaClient = !isLetter || doc.fields?.visaClient !== false;
 
   return (
     <div>
@@ -3746,10 +3913,10 @@ function DocSheet({ doc, property, owner, author, onBack }) {
 
         {/* Destinataire */}
         <div className="flex justify-end py-4">
-          <div className="text-right">
+          <div className="text-right" style={{ maxWidth: "62%" }}>
             <p className="text-[11px]" style={{ color: "var(--muted)" }}>À l'attention de</p>
-            <p className="text-sm font-semibold">{doc.clientName}</p>
-            {doc.clientAddr && <p className="text-xs" style={{ color: "var(--muted)" }}>{doc.clientAddr}</p>}
+            {lignesDestinataire(doc).map((l, i) => <p key={i} className={i === 0 ? "text-sm font-semibold" : "text-sm"}>{l}</p>)}
+            {doc.clientAddr && <p className="text-xs whitespace-pre-line" style={{ color: "var(--muted)" }}>{doc.clientAddr}</p>}
             {doc.clientPhone && <p className="text-xs" style={{ color: "var(--muted)" }}>{doc.clientPhone}</p>}
           </div>
         </div>
@@ -3864,13 +4031,13 @@ function DocSheet({ doc, property, owner, author, onBack }) {
           </p>
         )}
 
-        {/* Signatures */}
-        <div className="flex justify-between items-end pt-8 mt-6">
-          <div className="text-center" style={{ minWidth: 180 }}>
+        {/* Signatures — sur un courrier, l'emplacement « Visa client » est facultatif */}
+        <div className={`flex ${visaClient ? "justify-between" : "justify-end"} items-end pt-8 mt-6`} style={{ breakInside: "avoid" }}>
+          {visaClient && <div className="text-center" style={{ minWidth: 180 }}>
             <p className="text-xs font-semibold">{pf ? "Bon pour accord — Le client" : "Visa Client"}</p>
             <p className="text-[9px] pb-20" style={{ color: "var(--muted)" }}>{pf ? "Date, signature et mention manuscrite « Bon pour accord »" : "\u00a0"}</p>
             <div className="border-t" style={{ borderColor: "var(--ink)" }} />
-          </div>
+          </div>}
           <div className="text-center" style={{ minWidth: 180 }}>
             <p className="text-xs font-semibold pb-24">Pour l'Agence</p>
             <div className="border-t" style={{ borderColor: "var(--ink)" }} />
@@ -13244,18 +13411,28 @@ function Workspace({ userId }) {
   useEffect(() => { if (activeTimers.length === 0) return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, [activeTimers.length]);
   useEffect(() => { if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight; }, [activeChannel, messages]);
 
-  /* Accès au module RH : décidé par la base (propriétaire ou membre désigné), jamais par le rôle */
+  /* Accès au module RH : décidé par la base (propriétaire ou membre désigné), jamais par le rôle.
+     Espace salarié : ouvert à tout compte relié à un dossier de salarié. */
   const [hrAcces, setHrAcces] = useState(null);
+  const [hrEmploye, setHrEmploye] = useState(false);
   useEffect(() => {
     let vivant = true;
     (async () => {
-      const { data, error } = await supabase.rpc("hr_mon_acces");
+      const esp = await supabase.rpc("hr_mon_espace");
+      if (!vivant) return;
+      if (!esp.error && esp.data) {
+        setHrAcces(["proprietaire", "complet", "gestion"].includes(esp.data.acces) ? esp.data.acces : null);
+        setHrEmploye(!!esp.data.employe);
+        return;
+      }
+      const { data, error } = await supabase.rpc("hr_mon_acces");        // base en v33.1 : pas encore d'espace salarié
       if (!vivant) return;
       if (error) setHrAcces(/hr_mon_acces|schema cache|does not exist/i.test(error.message || "") ? "a_installer" : null);
       else setHrAcces(["proprietaire", "complet", "gestion"].includes(data) ? data : null);
     })();
     return () => { vivant = false; };
   }, [userId]);
+  const notesInternes = useNotesInternes(userId);
 
   const me = members.find((m) => m.id === userId);
   const deptById = useMemo(() => Object.fromEntries(departments.map((d) => [d.id, d])), [departments]);
@@ -13433,18 +13610,20 @@ function Workspace({ userId }) {
     { id: "messages", label: "Messages", icon: MessageSquare, badge: unreadTotal },
     { id: "time", label: "Suivi du temps", icon: Clock },
     ...(canSupervise(me.role) ? [{ id: "team", label: "Supervision", icon: Users }] : []),
+    { id: "notes", label: "Notes internes", icon: Megaphone, badge: notesInternes.nonLues.length },
+    ...(hrEmploye ? [{ id: "mon-dossier", label: "Mon dossier", icon: UserRound }] : []),
     ...(rhVisible ? [{ id: "rh", label: "Ressources humaines", icon: Briefcase }] : []),
     ...(isAdmin(me.role) ? [{ id: "settings", label: "Administration", icon: Settings }] : []),
   ];
 
   /* Menu latéral regroupé par domaine */
   const NAV_GROUPS = [
-    ["Pilotage", ["dashboard", "board", "planner", "messages", "time"]],
+    ["Pilotage", ["dashboard", "board", "planner", "messages", "notes", "time"]],
     ["Gestion locative", ["patrimoine", "visites", "locataires", "plaintes", "devis"]],
     ["Finances", ["recouvrement", "documents", "caisse", "impots"]],
     ["Commercial", ["prospects", "nouveaux-biens", "rapport", "portefeuille"]],
     ["Logistique", ["transport", "produits"]],
-    ["Ressources humaines", ["rh"]],
+    ["Ressources humaines", ["mon-dossier", "rh"]],
     ["Administration", ["team", "settings"]],
   ];
   const SideNav = () => {
@@ -13551,6 +13730,13 @@ function Workspace({ userId }) {
 
       <main className="max-w-6xl mx-auto px-4 py-5">
         <NotifBanner />
+        {view !== "notes" && <BanniereNotes notes={notesInternes} onVoir={() => setView("notes")} />}
+        {view === "notes" && <NotesInternesView notes={notesInternes} members={members} />}
+        {view === "mon-dossier" && hrEmploye && (
+          <Suspense fallback={<p className="text-sm py-10 text-center" style={{ color: "var(--muted)" }}>Chargement de votre dossier…</p>}>
+            <MonDossier me={me} />
+          </Suspense>
+        )}
         {view === "dashboard" && Dashboard()}
         {view === "planner" && Planner()}
         {view === "board" && (
