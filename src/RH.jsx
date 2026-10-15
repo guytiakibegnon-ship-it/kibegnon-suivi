@@ -58,7 +58,7 @@ const TABLE_LABELS = { hr_legal_params: "Paramètre légal", hr_salary_scale: "G
   hr_doc_templates: "Modèle de document", hr_company_settings: "Réglages des documents", hr_holidays: "Jour férié", hr_absences: "Absence", hr_leave_adjustments: "Ajustement de congés",
   hr_pay_elements: "Élément de paie", hr_pay_periods: "Paie du mois", hr_payslips: "Bulletin de paie", hr_terminations: "Fin de contrat", hr_job_openings: "Poste à pourvoir",
   hr_candidates: "Candidat", hr_disciplinary: "Procédure disciplinaire", hr_medical_visits: "Visite médicale", hr_work_accidents: "Accident du travail", hr_trainings: "Formation",
-  hr_company_events: "Déclaration d'événement", hr_access: "Accès au module RH" };
+  hr_company_events: "Déclaration d'événement", hr_access: "Accès au module RH", hr_notes: "Note interne" };
 
 /* ══════════════════════════════════════════════════════════════════════
    2. DATES (calculs en jours calendaires, sans dérive de fuseau horaire)
@@ -420,6 +420,12 @@ export const toTraining = (f) => ({ intitule: (f.intitule || "").trim(), organis
 export const mEvent = (r) => ({ id: r.id, type: r.type, dateEvenement: r.date_evenement, description: r.description || "", declareLe: r.declare_le || "", documentId: r.document_id || "" });
 export const mAccess = (r) => ({ id: r.id, userId: r.user_id, niveau: r.niveau || "complet", note: r.note || "", createdAt: r.created_at || "", createdBy: r.created_by || "" });
 export const toAccess = (f) => ({ user_id: f.userId, niveau: f.niveau === "gestion" ? "gestion" : "complet", note: (f.note || "").trim() });
+export const NOTE_IMPORTANCE = { info: { label: "Information", color: "#2E78A8" }, importante: { label: "Importante", color: "#C58A1B" }, urgente: { label: "Urgente", color: "#D81F26" } };
+export const mNote = (r) => ({ id: r.id, titre: r.titre || "", contenu: r.contenu || "", importance: r.importance || "info", cible: r.cible || "tous", destinataires: r.destinataires || [],
+  accuseRequis: r.accuse_requis !== false, publieLe: r.publie_le || "", expireLe: r.expire_le || "", createdBy: r.created_by || "", createdAt: r.created_at || "" });
+export const toNote = (f) => ({ titre: (f.titre || "").trim(), contenu: f.contenu || "", importance: f.importance || "info", cible: f.cible === "selection" ? "selection" : "tous",
+  destinataires: f.cible === "selection" ? [...new Set(f.destinataires || [])] : [], accuse_requis: f.accuseRequis !== false, expire_le: f.expireLe || null });
+export const mLecture = (r) => ({ noteId: r.note_id, userId: r.user_id, luLe: r.lu_le || "" });
 export const toEvent = (f) => ({ type: f.type, date_evenement: f.dateEvenement, description: f.description || "", declare_le: f.declareLe || null, document_id: f.documentId || null });
 
 const mAudit = (r) => ({ id: r.id, at: r.at, acteur: r.acteur, action: r.action, table: r.table_name, recordId: r.record_id, avant: r.avant, apres: r.apres });
@@ -442,7 +448,7 @@ export function useHR(acces) {
   const proprietaire = acces === "proprietaire";
   const [st, setSt] = useState({ loading: true, error: "", employees: [], details: [], contracts: [], amendments: [], documents: [], params: [], scale: [], visas: [], audit: [],
     templates: [], settings: { ...REGLAGES_VIDES }, holidays: [], absences: [], adjustments: [], elements: [], periods: [], payslips: [], terminations: [],
-    openings: [], candidates: [], disciplinary: [], visits: [], accidents: [], trainings: [], events: [], acces: [] });
+    openings: [], candidates: [], disciplinary: [], visits: [], accidents: [], trainings: [], events: [], acces: [], notes: [], lectures: [] });
   const load = useCallback(async () => {
     /* Compte non autorisé : aucune requête RH n'est émise (aucun salaire ne transite, même vide) */
     if (!autorise) { setSt((s) => ({ ...s, loading: false })); return; }
@@ -458,9 +464,10 @@ export function useHR(acces) {
       q("hr_candidates", "created_at", false), q("hr_disciplinary", "date_faits", false), q("hr_medical_visits", "date_visite", false),
       q("hr_work_accidents", "date_accident", false), q("hr_trainings", "date_debut", false), q("hr_company_events", "date_evenement", false),
       proprietaire ? q("hr_access", "created_at") : Promise.resolve({ data: [] }),
+      q("hr_notes", "publie_le", false), q("hr_note_lectures", "lu_le"),
     ]);
     const err = res.find((r) => r.error)?.error;
-    setSt({ loading: false, error: err ? (/relation .* does not exist|schema cache/.test(err.message) ? "Le module RH n'est pas entièrement installé dans la base : exécutez dans le SQL Editor de Supabase, dans l'ordre, migration-v32.sql, migration-v32-1.sql, migration-v32-2.sql puis migration-v33.sql." : err.message) : "",
+    setSt({ loading: false, error: err ? (/relation .* does not exist|schema cache/.test(err.message) ? "Le module RH n'est pas entièrement installé dans la base : exécutez dans le SQL Editor de Supabase, dans l'ordre, migration-v32.sql, migration-v32-1.sql, migration-v32-2.sql, migration-v33.sql, migration-v33-1.sql puis migration-v33-2.sql." : err.message) : "",
       employees: (res[0].data || []).map(mEmp), details: (res[1].data || []).map(mDet), contracts: (res[2].data || []).map(mCtr),
       amendments: (res[3].data || []).map(mAmend), documents: (res[4].data || []).map(mHrDoc), params: (res[5].data || []).map(mParam),
       scale: (res[6].data || []).map(mScale), visas: (res[7].data || []).map(mVisa), audit: (res[8].data || []).map(mAudit),
@@ -469,7 +476,8 @@ export function useHR(acces) {
       periods: (res[15].data || []).map(mPeriod).sort((a, b) => b.annee - a.annee || b.mois - a.mois), payslips: (res[16].data || []).map(mSlip),
       terminations: (res[17].data || []).map(mTerm), openings: (res[18].data || []).map(mOpening), candidates: (res[19].data || []).map(mCand),
       disciplinary: (res[20].data || []).map(mDisc), visits: (res[21].data || []).map(mVisit), accidents: (res[22].data || []).map(mAcc),
-      trainings: (res[23].data || []).map(mTraining), events: (res[24].data || []).map(mEvent), acces: (res[25].data || []).map(mAccess) });
+      trainings: (res[23].data || []).map(mTraining), events: (res[24].data || []).map(mEvent), acces: (res[25].data || []).map(mAccess),
+      notes: (res[26].data || []).map(mNote), lectures: (res[27].data || []).map(mLecture) });
   }, [admin, autorise, proprietaire]);
   useEffect(() => { load(); }, [load]);
 
@@ -1831,7 +1839,7 @@ function EmployeeModal({ initial, initialDet, employees, members, departments, o
           <select className={inputCls} style={inputStyle} value={f.managerId} onChange={(e) => set("managerId", e.target.value)}>
             <option value="">—</option>{employees.filter((e) => e.id !== f.id && e.statut !== "sorti").map((e) => <option key={e.id} value={e.id}>{nomComplet(e)}</option>)}</select></Field>
         <Field label="Date d'embauche *" hint="Point de départ de l'ancienneté (période d'essai comprise)."><input type="date" className={inputCls} style={inputStyle} value={f.dateEmbauche} onChange={(e) => set("dateEmbauche", e.target.value)} /></Field>
-        <Field label="Compte de l'application" hint="Permettra au salarié de consulter son propre dossier (lots suivants).">
+        <Field label="Compte de l'application" hint="Le salarié consulte alors son dossier, ses bulletins et dépose ses demandes de congé ou de permission (menu « Mon dossier »).">
           <select className={inputCls} style={inputStyle} value={f.userId} onChange={(e) => set("userId", e.target.value)}>
             <option value="">— Aucun —</option>{comptes.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></Field>
         <Field label="Situation"><select className={inputCls} style={inputStyle} value={f.statut} onChange={(e) => set("statut", e.target.value)}>
@@ -4333,6 +4341,300 @@ function ElementModal({ initial, emp, actions, onClose }) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════
+   18. NOTES INTERNES — publiées depuis l'outil RH, alertes dans chaque compte
+   ══════════════════════════════════════════════════════════════════════ */
+const destinatairesDe = (n, members) => (n.cible === "tous" ? members.filter((m) => m.active !== false).map((m) => m.id) : n.destinataires);
+
+function NoteModal({ initial, members, actions, onClose }) {
+  const [f, setF] = useState(() => ({ titre: "", contenu: "", importance: "info", cible: "tous", destinataires: [], accuseRequis: true, expireLe: "", ...initial }));
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const actifs = members.filter((m) => m.active !== false);
+  const tog = (id) => set("destinataires", f.destinataires.includes(id) ? f.destinataires.filter((x) => x !== id) : [...f.destinataires, id]);
+  const go = async () => {
+    setErr("");
+    if (!f.titre.trim()) return setErr("Indiquez le titre de la note.");
+    if (!f.contenu.trim()) return setErr("Rédigez le contenu de la note.");
+    if (f.cible === "selection" && !f.destinataires.length) return setErr("Choisissez au moins un destinataire.");
+    setBusy(true); const r = await actions.saveRow("hr_notes", toNote(f), f.id, f.id ? "Note mise à jour" : "Note publiée : elle apparaît dans les comptes concernés"); setBusy(false);
+    if (r.error) setErr(r.error); else onClose(r);
+  };
+  return (
+    <Modal title={f.id ? "Modifier la note interne" : "Nouvelle note interne"} onClose={() => onClose()} wide>
+      <Field label="Titre *"><input className={inputCls} style={inputStyle} value={f.titre} onChange={(e) => set("titre", e.target.value)} placeholder="Ex. : Fermeture des bureaux le 1er novembre" /></Field>
+      <Field label="Contenu *"><textarea rows={6} className={inputCls} style={inputStyle} value={f.contenu} onChange={(e) => set("contenu", e.target.value)} /></Field>
+      <div className="grid sm:grid-cols-3 gap-x-3">
+        <Field label="Importance"><select className={inputCls} style={inputStyle} value={f.importance} onChange={(e) => set("importance", e.target.value)}>
+          {Object.entries(NOTE_IMPORTANCE).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></Field>
+        <Field label="Destinataires"><select className={inputCls} style={inputStyle} value={f.cible} onChange={(e) => set("cible", e.target.value)}>
+          <option value="tous">Toute l'équipe</option><option value="selection">Membres choisis</option></select></Field>
+        <Field label="Retirer l'alerte après le" hint="Vide : la note reste affichée"><input type="date" className={inputCls} style={inputStyle} value={f.expireLe} onChange={(e) => set("expireLe", e.target.value)} /></Field>
+      </div>
+      {f.cible === "selection" && <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3 p-3 rounded-lg border" style={{ borderColor: "var(--line)" }}>
+        {actifs.map((m) => <label key={m.id} className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={f.destinataires.includes(m.id)} onChange={() => tog(m.id)} />{m.name}</label>)}</div>}
+      <label className="flex items-center gap-2 text-sm mb-3"><input type="checkbox" checked={f.accuseRequis} onChange={(e) => set("accuseRequis", e.target.checked)} /> Demander une confirmation de lecture (« J'ai lu et pris connaissance »)</label>
+      {f.importance === "urgente" && <WarnBox tone="info">Une note urgente s'ouvre d'elle-même à la connexion de chaque destinataire, tant qu'il ne l'a pas lue.</WarnBox>}
+      <ErrLine err={err} />
+      <ModalFooter onClose={() => onClose()} onSubmit={go} busy={busy} label={f.id ? "Enregistrer" : "Publier"} />
+    </Modal>
+  );
+}
+
+function NotesTab({ hr, members, actions, on, say }) {
+  const [modal, setModal] = useState(null);
+  const [detail, setDetail] = useState("");
+  const nom = (id) => members.find((m) => m.id === id)?.name || "Compte supprimé";
+  const today = todayIso();
+  return (
+    <div>
+      <div className="flex justify-end mb-3"><button onClick={() => setModal({})} className="kb-btn kb-btn-primary text-sm"><Plus size={15} /> Nouvelle note interne</button></div>
+      <SectionCard title="Notes internes" icon={ClipboardList} pad={false}>
+        {hr.notes.length === 0 ? <EmptyState icon={ClipboardList} title="Aucune note interne" sub="Une note publiée apparaît en alerte dans le compte de chaque destinataire." /> : (
+          <div className="divide-y" style={{ borderColor: "var(--line)" }}>{hr.notes.map((n) => {
+            const dest = destinatairesDe(n, members); const lus = hr.lectures.filter((l) => l.noteId === n.id && dest.includes(l.userId));
+            const imp = NOTE_IMPORTANCE[n.importance]; const expiree = n.expireLe && n.expireLe < today; const ouvert = detail === n.id;
+            return (
+              <div key={n.id} className="px-4 py-3" style={{ opacity: expiree ? 0.6 : 1 }}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Chip color={imp.color} dot>{imp.label}</Chip>
+                  <button onClick={() => setDetail(ouvert ? "" : n.id)} className="font-medium text-left flex-1 min-w-[12rem]">{n.titre}</button>
+                  <span className="text-xs" style={{ color: "var(--muted)" }}>{n.publieLe ? new Date(n.publieLe).toLocaleDateString("fr-FR") : ""} · {n.cible === "tous" ? "toute l'équipe" : `${n.destinataires.length} destinataire(s)`}{expiree ? " · alerte retirée" : ""}</span>
+                  <Chip color={lus.length === dest.length ? "#4F9E2A" : "#C58A1B"}>{lus.length}/{dest.length} lu(s)</Chip>
+                  <button onClick={() => setModal(n)} className="p-1.5 rounded hover:bg-slate-100" aria-label={`Modifier la note ${n.titre}`}><Pencil size={14} /></button>
+                  <button onClick={() => on.removeRow("hr_notes", n.id, `la note « ${n.titre} »`)} className="p-1.5 rounded hover:bg-slate-100" style={{ color: "#D81F26" }} aria-label={`Supprimer la note ${n.titre}`}><Trash2 size={14} /></button>
+                </div>
+                {ouvert && <div className="mt-2 grid md:grid-cols-2 gap-3 text-sm">
+                  <p className="whitespace-pre-line rounded-lg p-3" style={{ background: "#F8FAFC" }}>{n.contenu}</p>
+                  <div className="text-xs space-y-1">
+                    <p className="font-semibold">Lu par</p>
+                    {lus.length ? lus.map((l) => <p key={l.userId}>{nom(l.userId)} — {new Date(l.luLe).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}</p>) : <p style={{ color: "var(--muted)" }}>Personne pour l'instant.</p>}
+                    {dest.filter((id) => !lus.some((l) => l.userId === id)).length > 0 && <>
+                      <p className="font-semibold mt-2">Pas encore lu</p>
+                      <p>{dest.filter((id) => !lus.some((l) => l.userId === id)).map(nom).join(", ")}</p></>}
+                  </div>
+                </div>}
+              </div>); })}</div>
+        )}
+      </SectionCard>
+      {modal && <NoteModal initial={modal} members={members} actions={actions} onClose={(r) => { setModal(null); if (r) say(r); }} />}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   19. ESPACE SALARIÉ — « Mon dossier »
+   Le salarié ne lit que SON dossier : la base ne lui renvoie rien d'autre.
+   ══════════════════════════════════════════════════════════════════════ */
+export const TYPES_DEMANDE = ["conge_paye", "permission", "absence_autorisee", "maladie", "formation", "autre"];
+
+function useMonDossier(me) {
+  const [st, setSt] = useState({ loading: true, error: "", emp: null, det: null, contracts: [], absences: [], adjustments: [], holidays: [], params: [],
+    payslips: [], periods: [], settings: { ...REGLAGES_VIDES }, documents: [] });
+  const load = useCallback(async () => {
+    if (!me?.id) return;
+    const e = await supabase.from("hr_employees").select("*").eq("user_id", me.id);
+    if (e.error) { setSt((s) => ({ ...s, loading: false, error: e.error.message })); return; }
+    const row = (e.data || [])[0];
+    if (!row) { setSt((s) => ({ ...s, loading: false, emp: null })); return; }
+    const id = row.id;
+    const q = (t) => supabase.from(t).select("*").eq("employee_id", id);
+    const res = await Promise.all([q("hr_employee_details"), q("hr_contracts"), q("hr_absences"), q("hr_leave_adjustments"),
+      supabase.from("hr_holidays").select("*").order("date"), supabase.from("hr_legal_params").select("*").order("code"),
+      supabase.from("hr_payslips").select("*").eq("employee_id", id).eq("statut", "valide"), supabase.from("hr_pay_periods").select("*"),
+      supabase.from("hr_company_settings").select("*"), supabase.from("hr_documents").select("*").eq("employee_id", id)]);
+    const err = res.find((r) => r.error)?.error;
+    setSt({ loading: false, error: err ? (/does not exist|schema cache/.test(err.message) ? "L'espace salarié n'est pas encore installé : le service du personnel doit exécuter migration-v33-2.sql." : err.message) : "",
+      emp: mEmp(row), det: res[0].data?.[0] ? mDet(res[0].data[0]) : null, contracts: (res[1].data || []).map(mCtr),
+      absences: (res[2].data || []).map(mAbs).sort((a, b) => (a.dateDebut < b.dateDebut ? 1 : -1)), adjustments: (res[3].data || []).map(mAdj),
+      holidays: (res[4].data || []).map(mHoliday), params: (res[5].data || []).map(mParam), payslips: (res[6].data || []).map(mSlip),
+      periods: (res[7].data || []).map(mPeriod), settings: mSettings((res[8].data || [])[0]), documents: (res[9].data || []).map(mHrDoc) });
+  }, [me?.id]);
+  useEffect(() => { load(); }, [load]);
+  const actions = {
+    reload: load,
+    demander: async (f) => {
+      const row = toAbs({ ...f, statut: "demande", justificatifId: "", notes: "" });
+      const r = f.id ? await supabase.from("hr_absences").update(row).eq("id", f.id).select() : await supabase.from("hr_absences").insert(row).select();
+      if (r.error) return { error: r.error.message };
+      if (!r.data?.length) return { error: "Demande refusée : elle a peut-être déjà été traitée." };
+      await load(); return { message: "Demande envoyée au service du personnel" };
+    },
+    annuler: async (a) => {
+      const r = await supabase.from("hr_absences").update({ statut: "annule" }).eq("id", a.id).select();
+      if (r.error) return { error: r.error.message }; if (!r.data?.length) return { error: "Cette demande a déjà été traitée." };
+      await load(); return { message: "Demande annulée" };
+    },
+    ouvrirFichier: async (d, w) => {
+      const { data, error } = await supabase.storage.from("rh").createSignedUrl(d.filePath, 300);
+      if (error || !data?.signedUrl) { if (w) w.close(); return { error: "Le document n'a pas pu être ouvert." }; }
+      if (w) { w.opener = null; w.location.href = data.signedUrl; } else window.open(data.signedUrl, "_blank", "noopener");
+      return {};
+    },
+  };
+  return { ...st, actions };
+}
+
+function DemandeModal({ initial, d, today, onClose }) {
+  const [f, setF] = useState(() => ({ type: "conge_paye", evenement: "", dateDebut: today, dateFin: today, motif: "", employeeId: d.emp.id, ...initial }));
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const perm = pval(d.params, "PERMISSIONS_EXCEPTIONNELLES", f.dateDebut || today);
+  const jo = joursOuvrables(f.dateDebut, f.dateFin, d.holidays);
+  const reprise = f.dateFin ? prochainJourOuvrable(f.dateFin, d.holidays) : "";
+  const solde = soldeConges({ emp: d.emp, det: d.det, contracts: d.contracts, absences: d.absences, adjustments: d.adjustments, params: d.params, today: f.dateDebut || today });
+  const msgs = controleAbsence({ absence: { ...f, statut: "demande", remuneree: ABSENCE_TYPES[f.type]?.remuneree }, emp: d.emp, absences: d.absences, params: d.params, holidays: d.holidays, solde, today })
+    .filter((m) => !m.texte.includes("communiquée au salarié"))
+    .map((m) => ({ ...m, texte: m.texte.replace("Un congé anticipé suppose l'accord écrit du salarié.", "Un congé anticipé suppose l'accord de l'employeur.") }));
+  const bloquant = msgs.some((m) => m.niveau === "bloquant");
+  const choisirEvenement = (code) => { const ev = (perm?.evenements || []).find((x) => x.code === code); setF((x) => ({ ...x, evenement: code, dateFin: ev && x.dateDebut ? finApresOuvrables(x.dateDebut, ev.jours, d.holidays) : x.dateFin })); };
+  /* Le dernier jour suit le premier : durée de l'événement familial, ou au moins le même jour */
+  const changerDebut = (v) => setF((x) => { const ev = x.type === "permission" ? (perm?.evenements || []).find((y) => y.code === x.evenement) : null;
+    return { ...x, dateDebut: v, dateFin: v && ev ? finApresOuvrables(v, ev.jours, d.holidays) : v && (!x.dateFin || x.dateFin < v) ? v : x.dateFin }; });
+  const go = async () => {
+    setErr(""); if (bloquant) return setErr("Corrigez d'abord les points signalés.");
+    setBusy(true); const r = await d.actions.demander({ ...f, joursOuvrables: jo, joursCalendaires: joursCalendaires(f.dateDebut, f.dateFin), dateReprise: reprise, remuneree: ABSENCE_TYPES[f.type]?.remuneree !== false });
+    setBusy(false); if (r.error) setErr(r.error); else onClose(r);
+  };
+  const LIB = { conge_paye: "Congé payé", permission: "Permission exceptionnelle (événement familial)", absence_autorisee: "Absence non payée (convenance personnelle)", maladie: "Maladie (certificat médical à remettre)", formation: "Formation", autre: "Autre motif" };
+  return (
+    <Modal title={f.id ? "Modifier ma demande" : "Nouvelle demande d'absence"} onClose={() => onClose()}>
+      <Field label="Je demande"><select className={inputCls} style={inputStyle} value={f.type} onChange={(e) => set("type", e.target.value)}>
+        {TYPES_DEMANDE.map((k) => <option key={k} value={k}>{LIB[k]}</option>)}</select></Field>
+      {f.type === "permission" && <Field label="Événement *"><select className={inputCls} style={inputStyle} value={f.evenement} onChange={(e) => choisirEvenement(e.target.value)}>
+        <option value="">— Choisir —</option>{(perm?.evenements || []).map((x) => <option key={x.code} value={x.code}>{x.libelle} ({x.jours} jour{x.jours > 1 ? "s" : ""})</option>)}</select></Field>}
+      <div className="grid sm:grid-cols-2 gap-x-3">
+        <Field label="Premier jour d'absence"><input type="date" className={inputCls} style={inputStyle} value={f.dateDebut} onChange={(e) => changerDebut(e.target.value)} /></Field>
+        <Field label="Dernier jour d'absence"><input type="date" className={inputCls} style={inputStyle} value={f.dateFin} onChange={(e) => set("dateFin", e.target.value)} /></Field>
+      </div>
+      <p className="text-sm mb-3"><b>{jo}</b> jour(s) ouvrable(s){reprise && <> · reprise le <b>{fmt(reprise)}</b></>}</p>
+      {f.type === "conge_paye" && solde && <p className="text-xs mb-3" style={{ color: "var(--muted)" }}>Votre solde à cette date : <b>{fmt2(solde.solde)}</b> jours ouvrables.</p>}
+      <Msgs msgs={msgs} />
+      <Field label="Motif ou précisions"><textarea rows={2} className={inputCls} style={inputStyle} value={f.motif} onChange={(e) => set("motif", e.target.value)} /></Field>
+      <p className="text-xs mb-3" style={{ color: "var(--muted)" }}>Votre demande est transmise au service du personnel, qui la valide ou la refuse. Remettez-lui les justificatifs éventuels.</p>
+      <ErrLine err={err} />
+      <ModalFooter onClose={() => onClose()} onSubmit={go} busy={busy} disabled={bloquant} label="Envoyer la demande" />
+    </Modal>
+  );
+}
+
+export function MonDossier({ me }) {
+  const d = useMonDossier(me);
+  const [vue, setVue] = useState("conges");
+  const [modal, setModal] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [bulletin, setBulletin] = useState("");
+  const [docVu, setDocVu] = useState("");
+  const closeToast = useCallback(() => setToast(null), []);
+  const today = todayIso();
+  const say = (r) => { if (r?.error) setToast({ kind: "error", text: r.error }); else if (r?.message) setToast({ kind: "ok", text: r.message }); };
+  if (d.loading) return <p className="text-sm py-10 text-center" style={{ color: "var(--muted)" }}>Chargement de votre dossier…</p>;
+  if (d.error) return <WarnBox tone="rouge">{d.error}</WarnBox>;
+  if (!d.emp) return <EmptyState icon={UserRound} title="Aucun dossier relié à votre compte" sub="Le service du personnel relie votre compte à votre dossier de salarié." />;
+  const { emp } = d;
+  const c = d.contracts.find((x) => x.statut === "actif") || [...d.contracts].sort((a, b) => (a.dateDebut < b.dateDebut ? 1 : -1))[0] || null;
+  const solde = soldeConges({ emp, det: d.det, contracts: d.contracts, absences: d.absences, adjustments: d.adjustments, params: d.params, today });
+  const slip = d.payslips.find((b) => b.id === bulletin);
+  const per = slip ? d.periods.find((p) => p.id === slip.periodId) : null;
+  if (slip && per) return (
+    <div>
+      <div className="flex items-center justify-between mb-3 print:hidden"><button onClick={() => setBulletin("")} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour à mon dossier</button>
+        <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button></div>
+      <PrintPage className="bg-white rounded-xl border p-5 max-w-4xl mx-auto" style={{ borderColor: "var(--line)" }}>
+        <BulletinSheet slip={{ ...slip, datePaiement: per.datePaiement, modePaiement: per.modePaiement }} period={per} settings={d.settings} />
+      </PrintPage>
+    </div>);
+  const doc = d.documents.find((x) => x.id === docVu);
+  if (doc) return (
+    <div>
+      <DocStyles />
+      <div className="flex items-center justify-between mb-3 print:hidden"><button onClick={() => setDocVu("")} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour à mon dossier</button>
+        <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button></div>
+      <PrintPage className="bg-white rounded-xl border p-8 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
+        <PrintHead extra={doc.reference ? <p className="text-[11px]" style={{ color: "var(--muted)" }}>Réf. {doc.reference}</p> : null} />
+        <div className="rh-doc mt-5" dangerouslySetInnerHTML={{ __html: sanitizeHtml(doc.contenu) }} />
+      </PrintPage>
+    </div>);
+  const onglets = [["conges", "Congés et demandes"], ["bulletins", `Bulletins (${d.payslips.length})`], ["documents", `Documents (${d.documents.length})`], ["infos", "Mes informations"]];
+  const ouvrir = async (x) => { const w = window.open("about:blank", "_blank"); say(await d.actions.ouvrirFichier(x, w)); };
+  return (
+    <div>
+      <div className="mb-3"><h1 className="text-xl font-bold flex items-center gap-2"><UserRound size={20} style={{ color: "var(--brass)" }} /> Mon dossier</h1>
+        <p className="text-xs" style={{ color: "var(--muted)" }}>Vos informations sont visibles par vous seul et par le service du personnel.</p></div>
+      <div className="bg-white rounded-xl border p-4 mb-4 grid sm:grid-cols-4 gap-3 text-sm" style={{ borderColor: "var(--line)" }}>
+        <div><p className="text-xs" style={{ color: "var(--muted)" }}>Nom</p><p className="font-semibold">{nomComplet(emp)}</p><p className="text-xs">{emp.matricule}</p></div>
+        <div><p className="text-xs" style={{ color: "var(--muted)" }}>Emploi</p><p className="font-medium">{emp.poste || "—"}</p></div>
+        <div><p className="text-xs" style={{ color: "var(--muted)" }}>Embauche</p><p className="font-medium">{fmt(emp.dateEmbauche)}</p><p className="text-xs">{libAnciennete(ancienneteMois(emp.dateEmbauche, emp.dateSortie || today))} d'ancienneté</p></div>
+        <div><p className="text-xs" style={{ color: "var(--muted)" }}>Contrat</p><p className="font-medium">{c ? CONTRACT_TYPES[c.type] : "—"}</p>{c && <p className="text-xs">depuis le {fmt(c.dateDebut)}{c.dateFin ? ` jusqu'au ${fmt(c.dateFin)}` : ""}</p>}</div>
+      </div>
+      <div className="flex flex-wrap gap-1 mb-3">{onglets.map(([k, l]) => (
+        <button key={k} onClick={() => setVue(k)} className="px-3 py-1.5 rounded-lg text-sm" style={{ background: vue === k ? "#1F2937" : "#fff", color: vue === k ? "#fff" : "var(--ink)", border: "1px solid var(--line)" }}>{l}</button>))}</div>
+      {vue === "conges" && (
+        <div>
+          <div className="grid sm:grid-cols-3 gap-3 mb-4">
+            <StatCard icon={CalendarDays} label="Solde de congés" value={solde ? `${fmt2(solde.solde)} j` : "—"} sub={solde ? (solde.droitOuvert ? `À prendre avant le ${fmt(solde.echeance)}` : `Droit ouvert le ${fmt(solde.ouverture)}`) : "Pas de congé payé de salarié"} />
+            <StatCard icon={ClipboardList} label="Demandes en attente" value={d.absences.filter((a) => a.statut === "demande").length} tint="#C58A1B" />
+            <div className="flex items-center"><button onClick={() => setModal({})} className="kb-btn kb-btn-primary w-full justify-center"><Plus size={16} /> Faire une demande</button></div>
+          </div>
+          <SectionCard title="Mes absences et demandes" icon={CalendarDays} pad={false}>
+            {d.absences.length === 0 ? <EmptyState icon={CalendarDays} title="Aucune absence" sub="Vos demandes de congé et de permission apparaîtront ici." /> : (
+              <div className="divide-y" style={{ borderColor: "var(--line)" }}>{d.absences.map((a) => { const st = ABS_STATUT[a.statut];
+                const ev = a.type === "permission" ? (pval(d.params, "PERMISSIONS_EXCEPTIONNELLES", a.dateDebut)?.evenements || []).find((x) => x.code === a.evenement) : null;
+                return (
+                  <div key={a.id} className="px-4 py-2.5 flex flex-wrap items-center gap-2 text-sm">
+                    <span className="flex-1 min-w-[12rem]">{ABSENCE_TYPES[a.type]?.label}{ev ? ` — ${ev.libelle}` : ""}<span className="block text-xs" style={{ color: "var(--muted)" }}>du {fmt(a.dateDebut)} au {fmt(a.dateFin)} · {fmt2(a.joursOuvrables)} j ouvrable(s){a.dateReprise ? ` · reprise le ${fmt(a.dateReprise)}` : ""}</span></span>
+                    <Chip color={st.color} dot>{a.statut === "demande" ? "En attente" : st.label}</Chip>
+                    {a.statut === "demande" && <><button onClick={() => setModal(a)} className="kb-btn kb-btn-ghost text-xs">Modifier</button>
+                      <button onClick={async () => say(await d.actions.annuler(a))} className="kb-btn kb-btn-ghost text-xs" style={{ color: "#D81F26" }}>Annuler la demande</button></>}
+                  </div>); })}</div>
+            )}
+          </SectionCard>
+        </div>
+      )}
+      {vue === "bulletins" && (
+        <SectionCard title="Mes bulletins de paie" icon={FileText} pad={false}>
+          {d.payslips.length === 0 ? <EmptyState icon={FileText} title="Aucun bulletin" sub="Vos bulletins apparaissent ici une fois la paie du mois validée." /> : (
+            <div className="divide-y" style={{ borderColor: "var(--line)" }}>{d.payslips.map((b) => ({ b, p: d.periods.find((x) => x.id === b.periodId) })).filter((x) => x.p)
+              .sort((x, y) => y.p.annee - x.p.annee || y.p.mois - x.p.mois).map(({ b, p }) => (
+                <button key={b.id} onClick={() => setBulletin(b.id)} className="w-full text-left px-4 py-2.5 flex flex-wrap items-center gap-2 text-sm hover:bg-slate-50">
+                  <span className="flex-1 capitalize">{libPeriode(p)}</span><span className="text-xs" style={{ color: "var(--muted)" }}>{b.numero}</span>
+                  <span className="tabular-nums font-medium">net {fcfa(b.netAPayer)}</span><ChevronRight size={15} /></button>))}</div>
+          )}
+        </SectionCard>
+      )}
+      {vue === "documents" && (
+        <SectionCard title="Mes documents" icon={FolderOpen} pad={false}>
+          {d.documents.length === 0 ? <EmptyState icon={FolderOpen} title="Aucun document partagé" sub="Le service du personnel partage ici vos attestations, certificats et contrats." /> : (
+            <div className="divide-y" style={{ borderColor: "var(--line)" }}>{d.documents.map((x) => (
+              <div key={x.id} className="px-4 py-2.5 flex flex-wrap items-center gap-2 text-sm">
+                <span className="flex-1">{x.libelle || x.fileName}<span className="block text-xs" style={{ color: "var(--muted)" }}>{HR_DOC_CATEGORIES[x.categorie] || ""}{x.dateDocument ? ` · ${fmt(x.dateDocument)}` : ""}{x.reference ? ` · ${x.reference}` : ""}</span></span>
+                {x.genere && x.contenu && <button onClick={() => setDocVu(x.id)} className="kb-btn kb-btn-ghost text-xs"><Eye size={13} /> Voir</button>}
+                {x.filePath && <button onClick={() => ouvrir(x)} className="kb-btn kb-btn-ghost text-xs"><Eye size={13} /> Ouvrir le fichier</button>}
+              </div>))}</div>
+          )}
+        </SectionCard>
+      )}
+      {vue === "infos" && (
+        <SectionCard title="Mes informations" icon={UserRound}>
+          <div className="grid sm:grid-cols-2 gap-x-4">
+            <Info label="Date et lieu de naissance">{d.det?.dateNaissance ? `${fmt(d.det.dateNaissance)}${d.det.lieuNaissance ? ` à ${d.det.lieuNaissance}` : ""}` : ""}</Info>
+            <Info label="Nationalité">{d.det?.nationalite}</Info>
+            <Info label="Situation de famille">{d.det ? `${SITUATIONS[d.det.situationFamille]} · ${d.det.nbEnfantsCharge} enfant(s) à charge` : ""}</Info>
+            <Info label="N° CNPS">{d.det?.cnpsNumero}</Info>
+            <Info label="Adresse">{d.det?.adresse}</Info>
+            <Info label="Téléphone">{d.det?.telephone}</Info>
+            <Info label="Personne à prévenir">{d.det?.contactUrgence?.nom ? `${d.det.contactUrgence.nom} ${d.det.contactUrgence.telephone || ""}` : ""}</Info>
+            {c && <Info label="Catégorie">{c.categorie}{c.echelon ? ` / ${c.echelon}` : ""} — {QUALIFICATIONS[c.qualification]}</Info>}
+          </div>
+          <p className="text-xs mt-2" style={{ color: "var(--muted)" }}>Une information est inexacte ou a changé (adresse, situation de famille, enfants) ? Signalez-le au service du personnel avec le justificatif.</p>
+        </SectionCard>
+      )}
+      {modal && <DemandeModal initial={modal} d={d} today={today} onClose={(r) => { setModal(null); say(r); }} />}
+      <RhToast toast={toast} onDone={closeToast} />
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
    10. MODULE
    ══════════════════════════════════════════════════════════════════════ */
 const TABS = [
@@ -4348,6 +4650,7 @@ const TABS = [
   { id: "documents", label: "Documents", icon: FolderOpen },
   { id: "params", label: "Paramètres légaux", icon: Scale },
   { id: "grille", label: "Grille catégorielle", icon: Layers },
+  { id: "notes", label: "Notes internes", icon: ClipboardList },
   { id: "audit", label: "Journal d'audit", icon: History, admin: true },
   { id: "acces", label: "Accès au module", icon: ShieldCheck, proprietaire: true },
 ];
@@ -4571,6 +4874,7 @@ export default function RH({ store, me, acces }) {
           {tab === "grille" && <GrilleTab hr={hr} admin={admin} on={on} />}
           {tab === "audit" && admin && <AuditTab hr={hr} members={members} />}
           {tab === "acces" && proprietaire && <AccesTab hr={hr} members={members} me={me} actions={a} say={say} />}
+          {tab === "notes" && <NotesTab hr={hr} members={members} actions={a} on={on} say={say} />}
         </>}
 
       {modal?.kind === "emp" && <EmployeeModal initial={modal.initial} initialDet={modal.det} employees={employees} members={members} departments={departments}
