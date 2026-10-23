@@ -289,13 +289,13 @@ export const toEmp = (f) => ({ user_id: f.userId || null, nom: (f.nom || "").tri
   date_sortie: f.dateSortie || null, motif_sortie: f.motifSortie || "" });
 
 export const mDet = (r) => ({ employeeId: r.employee_id, dateNaissance: r.date_naissance || "", lieuNaissance: r.lieu_naissance || "", nationalite: r.nationalite || "",
-  pieceType: r.piece_type || "", pieceNumero: r.piece_numero || "", situationFamille: r.situation_famille || "celibataire", nbEnfantsCharge: Number(r.nb_enfants_charge) || 0,
+  pieceType: r.piece_type || "", pieceNumero: r.piece_numero || "", pieceValidite: r.piece_validite || "", situationFamille: r.situation_famille || "celibataire", nbEnfantsCharge: Number(r.nb_enfants_charge) || 0,
   enfants: r.enfants || [], cnpsNumero: r.cnps_numero || "", cmuNumero: r.cmu_numero || "", adresse: r.adresse || "", telephone: r.telephone || "", email: r.email || "",
   contactUrgence: r.contact_urgence || {}, banque: r.banque || "", numeroCompte: r.numero_compte || "", expatrie: !!r.expatrie, medailleTravail: !!r.medaille_travail, ippPlus40: !!r.ipp_plus_40,
   partsItsForce: r.parts_its_force === null || r.parts_its_force === undefined ? "" : Number(r.parts_its_force),
   cmuPersonnes: r.cmu_personnes === null || r.cmu_personnes === undefined ? "" : Number(r.cmu_personnes), conjointCmu: !!r.conjoint_cmu });
 export const toDet = (f, employeeId) => ({ employee_id: employeeId, date_naissance: f.dateNaissance || null, lieu_naissance: f.lieuNaissance || "", nationalite: f.nationalite || "",
-  piece_type: f.pieceType || "", piece_numero: f.pieceNumero || "", situation_famille: f.situationFamille || "celibataire", nb_enfants_charge: Math.max(0, Number(f.nbEnfantsCharge) || 0),
+  piece_type: f.pieceType || "", piece_numero: f.pieceNumero || "", piece_validite: f.pieceValidite || null, situation_famille: f.situationFamille || "celibataire", nb_enfants_charge: Math.max(0, Number(f.nbEnfantsCharge) || 0),
   enfants: (f.enfants || []).filter((x) => (x.prenom || "").trim() || x.date_naissance), cnps_numero: f.cnpsNumero || "", cmu_numero: f.cmuNumero || "", adresse: f.adresse || "",
   telephone: f.telephone || "", email: f.email || "", contact_urgence: f.contactUrgence || {}, banque: f.banque || "", numero_compte: f.numeroCompte || "",
   expatrie: !!f.expatrie, medaille_travail: !!f.medailleTravail, ipp_plus_40: !!f.ippPlus40,
@@ -332,13 +332,16 @@ export const toHrDoc = (f) => ({ employee_id: f.employeeId || null, categorie: f
 export const mTpl = (r) => ({ id: r.id, code: r.code, titre: r.titre || r.code, categorie: r.categorie || "courrier", ordre: Number(r.ordre) || 0, confidentiel: !!r.confidentiel,
   applicable: r.applicable || { besoin: "aucun" }, champs: r.champs || [], corps: r.corps || "", corpsOrigine: r.corps_origine || "", actif: r.actif !== false, updatedAt: r.updated_at });
 export const toTpl = (f) => ({ titre: (f.titre || "").trim(), corps: f.corps || "", actif: f.actif !== false });
-const REGLAGES_VIDES = { signataireNom: "", signataireQualite: "", signataireFeminin: false, ville: "Abidjan", adressePostale: "", cnpsEmployeur: "", primeTransport: 30000, modePaiement: "Virement" };
+const REGLAGES_VIDES = { signataireNom: "", signataireQualite: "", signataireFeminin: false, ville: "Abidjan", adressePostale: "", cnpsEmployeur: "", primeTransport: 30000, modePaiement: "Virement",
+  siegeDetail: "", signataireNationalite: "", horairesEtablissement: "" };
 export const mSettings = (r) => (r ? { signataireNom: r.signataire_nom || "", signataireQualite: r.signataire_qualite || "", signataireFeminin: !!r.signataire_feminin,
   ville: r.ville || "", adressePostale: r.adresse_postale || "", cnpsEmployeur: r.cnps_employeur || "",
-  primeTransport: r.prime_transport === null || r.prime_transport === undefined ? 30000 : Number(r.prime_transport), modePaiement: r.mode_paiement || "Virement" } : { ...REGLAGES_VIDES });
+  primeTransport: r.prime_transport === null || r.prime_transport === undefined ? 30000 : Number(r.prime_transport), modePaiement: r.mode_paiement || "Virement",
+  siegeDetail: r.siege_detail || "", signataireNationalite: r.signataire_nationalite || "", horairesEtablissement: r.horaires_etablissement || "" } : { ...REGLAGES_VIDES });
 export const toSettings = (f) => ({ signataire_nom: (f.signataireNom || "").trim(), signataire_qualite: (f.signataireQualite || "").trim(), signataire_feminin: !!f.signataireFeminin,
   ville: (f.ville || "").trim(), adresse_postale: (f.adressePostale || "").trim(), cnps_employeur: (f.cnpsEmployeur || "").trim(),
-  prime_transport: Math.max(0, Number(f.primeTransport) || 0), mode_paiement: (f.modePaiement || "Virement").trim() });
+  prime_transport: Math.max(0, Number(f.primeTransport) || 0), mode_paiement: (f.modePaiement || "Virement").trim(),
+  siege_detail: (f.siegeDetail || "").trim(), signataire_nationalite: (f.signataireNationalite || "").trim(), horaires_etablissement: (f.horairesEtablissement || "").trim() });
 
 export const mParam = (r) => ({ id: r.id, code: r.code, libelle: r.libelle || r.code, categorie: r.categorie || "general", valeur: r.valeur ?? {}, dateEffet: r.date_effet || "",
   dateFin: r.date_fin || "", baseLegale: r.base_legale || "", note: r.note || "", actif: r.actif !== false, valide: !!r.valide, validePar: r.valide_par || "", valideLe: r.valide_le || "" });
@@ -861,6 +864,10 @@ export const VARIABLES = [
   ["stage.duree_max", "Durée maximale d'un stage (paramètres)"], ["stage.priorite_mois", "Priorité d'embauche après un stage, en mois (paramètres)"],
   ["avenant.numero", "Numéro de l'avenant"], ["avenant.objet", "Objet de l'avenant"], ["avenant.date_effet", "Date d'effet de l'avenant"], ["avenant.modifications", "Liste des modifications"],
   ["certificat.date_sortie", "Date de sortie (certificat)"], ["certificat.emplois", "Emplois successifs (certificat)"],
+  ["entreprise.siege", "Adresse complète du siège (réglages des documents)"], ["signataire.nationalite", "Nationalité du signataire (réglages des documents)"],
+  ["signataire.autorite", "Signataire et sa qualité"], ["salarie.piece_validite", "Fin de validité de la pièce d'identité (dossier)"],
+  ["contrat.prime_transport", "Prime de transport (réglages)"], ["contrat.a_transport", "(condition) prime de transport"], ["contrat.horaires_liste", "Horaire de l'établissement (réglages des documents)"],
+  ["contrat.mode_versement", "Mode de paiement des salaires (réglages)"], ["contrat.objet_lignes", "Fonctions du contrat, une par ligne"], ["missions.liste", "Missions confiées (champ du document)"],
   ["absence.libelle", "Nature de l'absence"], ["absence.motif", "Motif de l'absence"], ["absence.date_debut", "Premier jour d'absence"], ["absence.date_fin", "Dernier jour d'absence"],
   ["absence.date_reprise", "Date de reprise"], ["absence.jours_ouvrables", "Jours ouvrables d'absence"], ["absence.jours_calendaires", "Jours calendaires d'absence"],
   ["absence.allocation", "Allocation de congé (estimation)"], ["absence.solde_apres", "Solde de congé après l'absence"],
@@ -910,6 +917,11 @@ export function emploisSuccessifs(emp, contracts, amendments, dateSortie) {
 }
 
 const AGENCE_PROPRE = (s) => String(s || "").replace(/^(RC|CC)\s*:\s*/, "");
+/* Texte saisi ligne par ligne → liste à puces du modèle (« - … ; » … « - … . ») */
+export function listeEnPuces(texte) {
+  const l = String(texte || "").split("\n").map((x) => x.trim().replace(/^[-•*]\s*/, "").replace(/\s*[;.,]+$/, "")).filter(Boolean);
+  return l.map((x, i) => `- ${x}${i === l.length - 1 ? "." : " ;"}`).join("\n");
+}
 /* Toutes les valeurs disponibles pour un document, à partir du dossier */
 export function buildDocContext({ emp, det, contract, amendment, contracts = [], amendments = [], params, settings, agency, extra = {}, champs = [], today, objetCtx = {} }) {
   const ctx = {};
@@ -920,6 +932,9 @@ export function buildDocContext({ emp, det, contract, amendment, contracts = [],
   set("entreprise.cnps", settings?.cnpsEmployeur || ""); set("entreprise.telephone", agency?.tel || "");
   set("signataire.nom", settings?.signataireNom || ""); set("signataire.qualite", settings?.signataireQualite || ""); set("signataire.e", settings?.signataireFeminin ? "e" : "");
   set("doc.ville", settings?.ville || ""); set("doc.date", dateLongue(today));
+  set("entreprise.siege", settings?.siegeDetail || agency?.address || ""); set("signataire.nationalite", settings?.signataireNationalite || "");
+  set("signataire.autorite", [settings?.signataireNom, settings?.signataireQualite].filter(Boolean).join(", "));
+  { const p = pval(params, "DISCIPLINE", today); set("discipline.delai_reponse", p?.reponse_heures ? `${p.reponse_heures} heures` : ""); }
   if (emp) {
     set("salarie.civilite", g === "F" ? "Madame" : g === "M" ? "Monsieur" : ""); set("salarie.madame_monsieur", g === "F" ? "Madame" : g === "M" ? "Monsieur" : "Madame, Monsieur");
     set("salarie.nom_complet", nomComplet(emp)); set("salarie.nom", emp.nom); set("salarie.prenoms", emp.prenoms); set("salarie.matricule", emp.matricule);
@@ -930,7 +945,7 @@ export function buildDocContext({ emp, det, contract, amendment, contracts = [],
   if (det) {
     set("salarie.date_naissance", dateLongue(det.dateNaissance)); set("salarie.lieu_naissance", det.lieuNaissance); set("salarie.nationalite", det.nationalite);
     set("salarie.piece", det.pieceType && det.pieceNumero ? `${det.pieceType} n° ${det.pieceNumero}` : ""); set("salarie.adresse", det.adresse);
-    set("salarie.telephone", det.telephone); set("salarie.cnps", det.cnpsNumero);
+    set("salarie.telephone", det.telephone); set("salarie.cnps", det.cnpsNumero); set("salarie.piece_validite", dateLongue(det.pieceValidite));
   }
   const conges = pval(params, "CONGES_ACQUISITION", today); set("conges.jours_par_mois", conges ? String(conges.jours_par_mois).replace(".", ",") : "");
   const cdd = pval(params, "CDD_REGLES", today); set("cdd.duree_max", cdd ? `${cdd.duree_max_mois} mois` : ""); set("cdd.indemnite_fin_taux", cdd ? String(cdd.indemnite_fin_taux).replace(".", ",") : "");
@@ -947,6 +962,13 @@ export function buildDocContext({ emp, det, contract, amendment, contracts = [],
     set("contrat.remuneration", fcfa(total)); set("contrat.remuneration_lettres", amountInWords(total));
     set("contrat.horaire", nf(c.horaireHebdo)); set("contrat.repartition", { "8h_5j": "à raison de 8 heures par jour sur 5 jours ouvrables", "6h40_6j": "à raison de 6 heures 40 par jour ouvrable", inegale: "de manière inégale, dans la limite de 8 heures par jour" }[c.repartition] || "");
     set("contrat.lieu_travail", c.lieuTravail); set("contrat.mode_paiement", (MODES_PAIEMENT[c.modePaiement] || "").toLowerCase());
+    const transport = c.type === "stage" ? 0 : Number(settings?.primeTransport) || 0;
+    set("contrat.a_transport", transport > 0); set("contrat.prime_transport", transport ? fcfa(transport) : "");
+    set("contrat.mode_versement", ({ Virement: "virement bancaire", "Espèces": "versement en espèces contre reçu", "Chèque": "chèque", "Mobile Money": "transfert de monnaie électronique (mobile money)" })[settings?.modePaiement] || (settings?.modePaiement || "").toLowerCase());
+    const horaires = String(settings?.horairesEtablissement || "").trim()
+      || ({ "8h_5j": "huit (8) heures par jour, du lundi au vendredi", "6h40_6j": "six heures quarante par jour, du lundi au samedi", inegale: "selon le planning de service communiqué par l'Employeur" })[c.repartition] || "";
+    set("contrat.horaires_liste", listeEnPuces(horaires));
+    set("contrat.objet_lignes", String(c.objet || "").split(/\n|;\s*/).map((x) => x.trim()).filter(Boolean).join("\n"));
     set("contrat.cdd", c.type === "CDD"); set("contrat.stage", c.type === "stage");
     set("contrat.mobilite", !!c.clauses?.mobilite); set("contrat.confidentialite", !!c.clauses?.confidentialite);
     const nc = c.clauses?.non_concurrence || {}; set("contrat.non_concurrence", !!nc.actif); set("contrat.nc_duree", nc.duree || ""); set("contrat.nc_contrepartie", nc.contrepartie || "");
@@ -969,6 +991,7 @@ export function buildDocContext({ emp, det, contract, amendment, contracts = [],
     const v = extra[ch.cle];
     set(`extra.${ch.cle}`, ch.type === "case" ? !!v : ch.type === "date" ? dateLongue(v) : (v ?? ""));
   }
+  set("missions.liste", listeEnPuces(extra.missions));
   if (emp) {
     const sortie = extra.date_sortie || emp.dateSortie || "";
     set("certificat.date_sortie", dateLongue(sortie)); set("certificat.emplois", emploisSuccessifs(emp, contracts, amendments, sortie));
@@ -1077,7 +1100,7 @@ export function modelesPourObjet(templates, type, row) {
   });
 }
 /* Avertissements propres à un document — affichés à l'écran, jamais imprimés */
-export function avertissementsDocument(code, { contract, params, today, extra, emp, objet, objetCtx = {} }) {
+export function avertissementsDocument(code, { contract, params, today, extra, emp, objet, objetCtx = {}, settings = {}, det = null }) {
   const w = [];
   const r = objet?.row;
   if (code === "RECU_SOLDE" && !objetCtx["rupture.bulletin"]) w.push({ niveau: "orange", texte: "Aucun bulletin du mois de sortie : le net versé n'est pas connu. Préparez d'abord ce bulletin (onglet Paie) : il reprend le salaire du dernier mois, les sommes de rupture et les retenues." });
@@ -1111,6 +1134,12 @@ export function avertissementsDocument(code, { contract, params, today, extra, e
     if (stg && contract?.dateFin && depasseMois(dureeEntre(contract.dateDebut, contract.dateFin), stg.duree_max_mois)) w.push({ niveau: "rouge", texte: `Stage de plus de ${stg.duree_max_mois} mois : durée maximale dépassée, renouvellements compris (Code du travail, art. 13.14).` });
   }
   if (emp && !emp.sexe) w.push({ niveau: "orange", texte: "Le sexe n'est pas renseigné dans le dossier : la civilité et les accords (né/née…) ne peuvent pas être écrits." });
+  if (["CONTRAT_CDI", "CONTRAT_CDD", "CONVENTION_STAGE"].includes(code)) {
+    const h = String(settings?.horairesEtablissement || "").toLowerCase();
+    if (/lundi au vendredi/.test(h) && /samedi/.test(h) && Number(contract?.horaireHebdo) <= 40)
+      w.push({ niveau: "orange", texte: "L'horaire de l'établissement (lundi au vendredi et samedi) dépasse la durée de 40 heures prévue au contrat : les heures au-delà sont des heures supplémentaires, payées avec majoration. Ajustez l'horaire dans Documents › Réglages ou la durée du contrat." });
+    if (det?.pieceValidite && det.pieceValidite < today) w.push({ niveau: "orange", texte: "La pièce d'identité du salarié est périmée : demandez une pièce en cours de validité avant la signature." });
+  }
   return w;
 }
 
@@ -1805,7 +1834,7 @@ export function alertesSuivi(hr, today) {
    8. FENÊTRES DE SAISIE
    ══════════════════════════════════════════════════════════════════════ */
 const EMP_VIDE = { nom: "", prenoms: "", sexe: "", poste: "", departmentId: "", managerId: "", dateEmbauche: "", statut: "actif", dateSortie: "", motifSortie: "", userId: "" };
-const DET_VIDE = { dateNaissance: "", lieuNaissance: "", nationalite: "", pieceType: "", pieceNumero: "", situationFamille: "celibataire", nbEnfantsCharge: 0, enfants: [],
+const DET_VIDE = { dateNaissance: "", lieuNaissance: "", nationalite: "", pieceType: "", pieceNumero: "", pieceValidite: "", situationFamille: "celibataire", nbEnfantsCharge: 0, enfants: [],
   cnpsNumero: "", cmuNumero: "", adresse: "", telephone: "", email: "", contactUrgence: { nom: "", lien: "", telephone: "" }, banque: "", numeroCompte: "",
   expatrie: false, medailleTravail: false, ippPlus40: false, partsItsForce: "", cmuPersonnes: "", conjointCmu: false };
 
@@ -1857,6 +1886,7 @@ function EmployeeModal({ initial, initialDet, employees, members, departments, o
         <Field label="Nationalité"><input className={inputCls} style={inputStyle} value={d.nationalite} onChange={(e) => setDet("nationalite", e.target.value)} /></Field>
         <Field label="Pièce d'identité"><input className={inputCls} style={inputStyle} value={d.pieceType} onChange={(e) => setDet("pieceType", e.target.value)} placeholder="CNI, passeport…" /></Field>
         <Field label="Numéro de la pièce"><input className={inputCls} style={inputStyle} value={d.pieceNumero} onChange={(e) => setDet("pieceNumero", e.target.value)} /></Field>
+        <Field label="Pièce valable jusqu'au"><input type="date" className={inputCls} style={inputStyle} value={d.pieceValidite} onChange={(e) => setDet("pieceValidite", e.target.value)} /></Field>
         <Field label="Situation de famille"><select className={inputCls} style={inputStyle} value={d.situationFamille} onChange={(e) => setDet("situationFamille", e.target.value)}>
           {Object.entries(SITUATIONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
         <Field label="N° CNPS"><input className={inputCls} style={inputStyle} value={d.cnpsNumero} onChange={(e) => setDet("cnpsNumero", e.target.value)} /></Field>
@@ -2811,7 +2841,7 @@ function DocumentEditor({ tpl, emp, contract, amendment, objet, doc, hr, actions
   const verrouille = !!saved?.signe;
   const texte = html ?? rendu.html;
   const restants = (texte.match(/class="rh-manque"/g) || []).length;
-  const avert = tpl ? avertissementsDocument(tpl.code, { contract, params: hr.params, today, extra, emp, objet, objetCtx: obj.ctx }) : [];
+  const avert = tpl ? avertissementsDocument(tpl.code, { contract, params: hr.params, today, extra, emp, objet, objetCtx: obj.ctx, settings: hr.settings, det }) : [];
   const titulaire = emp ? nomComplet(emp) : objet?.type === "candidat" ? `${objet.row.nom} ${objet.row.prenoms}`.trim() : "Entreprise";
   const setX = (k, v) => setExtra((x) => ({ ...x, [k]: v }));
 
@@ -3032,7 +3062,15 @@ function SettingsPanel({ hr, admin, actions, say }) {
           <Field label="Ville où les documents sont signés"><input className={inputCls} style={inputStyle} value={f.ville} onChange={(e) => set("ville", e.target.value)} /></Field>
           <Field label="Adresse postale"><input className={inputCls} style={inputStyle} value={f.adressePostale} onChange={(e) => set("adressePostale", e.target.value)} /></Field>
           <Field label="N° d'employeur CNPS"><input className={inputCls} style={inputStyle} value={f.cnpsEmployeur} onChange={(e) => set("cnpsEmployeur", e.target.value)} /></Field>
+          <Field label="Nationalité du signataire"><input className={inputCls} style={inputStyle} value={f.signataireNationalite} onChange={(e) => set("signataireNationalite", e.target.value)} placeholder="Ex. : ivoirienne" /></Field>
+          <Field label="Prime de transport mensuelle (FCFA)"><input type="number" min="0" className={inputCls} style={inputStyle} value={f.primeTransport} onChange={(e) => set("primeTransport", e.target.value)} /></Field>
+          <Field label="Mode de paiement des salaires"><select className={inputCls} style={inputStyle} value={f.modePaiement} onChange={(e) => set("modePaiement", e.target.value)}>
+            {["Virement", "Espèces", "Chèque", "Mobile Money"].map((m) => <option key={m} value={m}>{m}</option>)}</select></Field>
         </div>
+        <Field label="Adresse complète du siège (contrats)" hint="Ex. : Abidjan Cocody, Rue du Lycée Technique, 198 Logements, bâtiment H1, 3e étage, porte de droite">
+          <input className={inputCls} style={inputStyle} value={f.siegeDetail} onChange={(e) => set("siegeDetail", e.target.value)} /></Field>
+        <Field label="Horaire de l'établissement (une ligne par plage, repris dans les contrats)" hint="La durée totale doit correspondre à celle des contrats (40 heures par semaine) ; au-delà, ce sont des heures supplémentaires.">
+          <textarea rows={3} className={inputCls} style={inputStyle} value={f.horairesEtablissement} onChange={(e) => set("horairesEtablissement", e.target.value)} placeholder={"du lundi au vendredi, de 8 h 00 à 17 h 00, avec une pause d'une heure de 12 h 00 à 13 h 00"} /></Field>
         <label className="flex items-center gap-2 text-sm mb-3"><input type="checkbox" checked={f.signataireFeminin} onChange={(e) => set("signataireFeminin", e.target.checked)} /> La signataire est une femme (« Je soussignée »)</label>
       </fieldset>
       <ErrLine err={err} />
