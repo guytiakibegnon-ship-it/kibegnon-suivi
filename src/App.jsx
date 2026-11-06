@@ -450,6 +450,42 @@ const normName = (x) => (x || "").trim().toLowerCase();
 /* Avance légale d'entrée : libellé du supplément et observations posées par l'outil */
 const ENTRY_ADV_PREFIX = "Avance d'entrée — ";
 const AUTO_ENTRY_COMMENT = /^(Avance versée à l'entrée|Entrée du locataire|Réglé d'avance \(mois|Avance d'entrée|Couvert par l'avance d'entrée)/;
+/* ---- Lignes en double dans un tableau de recouvrement ----
+   Même lot (identifiant, sinon libellé) et même locataire. Renvoie, pour
+   chaque ligne en trop, le rang de la ligne qu'elle répète. */
+const cleDoublon = (x) => (x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+function doublonsLignes(lines) {
+  const vus = new Map(); const res = new Map();
+  (lines || []).forEach((l, i) => {
+    const lot = l.unitId || cleDoublon(l.unitLabel);
+    const nom = cleDoublon(l.tenantName);
+    if (!lot && !nom) return;
+    const k = `${lot}|${nom}`;
+    if (vus.has(k)) res.set(i, vus.get(k)); else vus.set(k, i);
+  });
+  return res;
+}
+/* Garde, pour chaque groupe, la ligne la plus renseignée (paiement, date,
+   commentaire). Deux paiements différents sur un même lot ne sont jamais
+   fusionnés d'office : ils restent à arbitrer. */
+function retirerDoublons(lines) {
+  const groupes = new Map();
+  lines.forEach((l, i) => {
+    const k = `${l.unitId || cleDoublon(l.unitLabel)}|${cleDoublon(l.tenantName)}`;
+    if (!groupes.has(k)) groupes.set(k, []);
+    groupes.get(k).push(i);
+  });
+  const garder = new Set(); let retirees = 0, conflits = 0;
+  for (const idx of groupes.values()) {
+    if (idx.length === 1) { garder.add(idx[0]); continue; }
+    const payes = [...new Set(idx.map((i) => Number(lines[i].collected) || 0).filter((v) => v > 0))];
+    if (payes.length > 1) { idx.forEach((i) => garder.add(i)); conflits += 1; continue; }
+    const score = (l) => ((Number(l.collected) || 0) > 0 ? 100 : 0) + (l.paidAt ? 10 : 0) + (l.unitId ? 5 : 0) + ((l.comment || "").length ? 1 : 0);
+    const best = idx.reduce((b, i) => (score(lines[i]) > score(lines[b]) ? i : b), idx[0]);
+    garder.add(best); retirees += idx.length - 1;
+  }
+  return { lines: lines.filter((_, i) => garder.has(i)), retirees, conflits };
+}
 const sameLotLine = (a, b) => (a.unitId && b.unitId && a.unitId === b.unitId) || (normName(a.unitLabel) && normName(a.unitLabel) === normName(b.unitLabel));
 /* État attendu d'une ligne pour un mois donné, d'après les avances du lot */
 function advanceStateFor(unitId, period, advances) {
@@ -815,15 +851,17 @@ const Chip = ({ color, bg, children, dot }) => (
   </span>
 );
 
+/* Fenêtres : « wide » occupe presque tout l'écran (tableaux à saisir),
+   les autres restent confortables pour un formulaire. */
 function Modal({ title, onClose, children, wide }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" style={{ background: "rgba(15,23,42,.55)" }} onClick={onClose}>
-      <div className={`bg-white w-full ${wide ? "sm:max-w-3xl" : "sm:max-w-lg"} sm:rounded-2xl rounded-t-2xl shadow-2xl max-h-[92vh] overflow-y-auto`} onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b sticky top-0 bg-white z-10" style={{ borderColor: "var(--line)" }}>
-          <h3 className="font-semibold" style={{ color: "var(--ink)" }}>{title}</h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100"><X size={18} /></button>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-3 lg:p-5" style={{ background: "rgba(15,23,42,.55)" }} onClick={onClose}>
+      <div className={`bg-white w-full ${wide ? "sm:max-w-[1320px]" : "sm:max-w-2xl"} sm:rounded-2xl rounded-t-2xl shadow-2xl max-h-[96vh] overflow-y-auto`} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b sticky top-0 bg-white z-10" style={{ borderColor: "var(--line)" }}>
+          <h3 className="font-semibold text-base sm:text-lg" style={{ color: "var(--ink)" }}>{title}</h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100" aria-label="Fermer"><X size={18} /></button>
         </div>
-        <div className="p-5">{children}</div>
+        <div className="p-5 sm:p-6">{children}</div>
       </div>
     </div>
   );
@@ -1024,8 +1062,8 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "33.4";
-const APP_BUILD = "2026-10-30";
+const APP_VERSION = "34.0";
+const APP_BUILD = "2026-11-06";
 
 /* ---- Papier à en-tête de l'agence ---- */
 const AGENCY = {
@@ -1043,7 +1081,7 @@ const AGENCY = {
   site: "www.entreprisekibegnon.com",
 };
 /* Logo « Agent Immobilier Agréé » intégré au fichier (aucun asset à déposer) */
-/* Logo officiel « Agent immobilier agréé » — n° AG-0456 attribué par la chambre des agents immobiliers */
+/* Logo « Agent immobilier agréé » — n° AG-0456 attribué par la Chambre des Affaires et de l'Immobilier (l'agrément, lui, relève du ministère de tutelle) */
 const LOGO_AGREMENT = "data:image/png;base64,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";
 
 /* En-tête commun à tous les documents imprimés */
@@ -1284,17 +1322,27 @@ function useTitleBadge(count) {
    surnuméraires sont silencieusement absentes : un tableau de 31 lots
    pouvait n'en afficher que 19. On lit donc par tranches jusqu'au bout. */
 const PAGE_SIZE = 1000;
+/* Une même ligne ne doit jamais apparaître deux fois à l'écran */
+function dedupById(rows) {
+  const vus = new Set();
+  return rows.filter((r) => { if (!r || r.id === undefined || r.id === null) return true; if (vus.has(r.id)) return false; vus.add(r.id); return true; });
+}
 async function fetchAll(table, order) {
   const rows = [];
   for (let from = 0; ; from += PAGE_SIZE) {
     let q = supabase.from(table).select("*").range(from, from + PAGE_SIZE - 1);
     if (order) q = q.order(order.col, { ascending: order.asc !== false });
+    /* Tri départagé par l'identifiant : sans lui, deux lignes de même rang
+       (même « position » dans deux tableaux différents) peuvent passer d'une
+       tranche à l'autre entre deux requêtes — l'une est lue deux fois,
+       l'autre jamais. C'était la cause des locataires en double. */
+    q = q.order("id", { ascending: true });
     const { data, error } = await q;
-    if (error) return { data: rows, error };
+    if (error) return { data: dedupById(rows), error };
     rows.push(...(data || []));
     if (!data || data.length < PAGE_SIZE) break;
   }
-  return { data: rows, error: null };
+  return { data: dedupById(rows), error: null };
 }
 /* ---- DEVIS : pièce jointe, montants, validations ---- */
 const QUOTE_FILE_TYPES = { "application/pdf": "PDF", "image/jpeg": "JPG", "image/png": "PNG", "image/webp": "WEBP" };
@@ -1344,8 +1392,8 @@ function quoteDeletionBlock(q, complaints) {
 
 /* Lignes d'une seule période : jamais tronquées, et bien plus rapide */
 async function fetchPeriodLines(periodId) {
-  const { data } = await supabase.from("rent_lines").select("*").eq("period_id", periodId).order("position");
-  return data || [];
+  const { data } = await supabase.from("rent_lines").select("*").eq("period_id", periodId).order("position").order("id");
+  return dedupById(data || []);
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -1404,7 +1452,8 @@ const mHandover = (r) => ({ id: r.id, date: r.handover_date, amount: Number(r.am
 const mFolderFile = (r) => ({ id: r.id, scope: r.scope, unitId: r.unit_id, ownerId: r.owner_id, formerTenantId: r.former_tenant_id, propertyId: r.property_id, category: r.category, label: r.label, fileUrl: r.file_url, fileName: r.file_name, fileType: r.file_type, fileSize: Number(r.file_size) || 0, notes: r.notes, uploadedBy: r.uploaded_by, createdAt: Date.parse(r.created_at),
   visitId: r.visit_id || null, caption: r.caption || "", location: r.location || "" });
 const mComplaint = (r) => ({ id: r.id, ref: r.ref, propertyId: r.property_id, unitId: r.unit_id, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, category: r.category, cause: r.cause, priority: r.priority, description: r.description, reportedAt: r.reported_at, channel: r.channel, status: r.status, assignedTo: r.assigned_to, quoteId: r.quote_id, cost: Number(r.cost) || 0, resolution: r.resolution, resolvedAt: r.resolved_at, createdBy: r.created_by });
-const mTax     = (r) => ({ id: r.id, propertyId: r.property_id, unitId: r.unit_id, customLabel: r.custom_label, ownerId: r.owner_id, ownerLabel: r.owner_label, taxYear: r.tax_year, noticeNumber: r.notice_number, taxedAmount: Number(r.taxed_amount), installments: r.installments || [], receipts: r.receipts, declarationNext: r.declaration_next, notes: r.notes, createdBy: r.created_by, ncc: r.ncc || "", declarationDate: r.declaration_date, nextBase: r.next_base, withholdings: r.withholdings || [], taxCenter: r.tax_center || "" });
+const mTax     = (r) => ({ id: r.id, propertyId: r.property_id, unitId: r.unit_id, customLabel: r.custom_label, ownerId: r.owner_id, ownerLabel: r.owner_label, taxYear: r.tax_year, noticeNumber: r.notice_number, taxedAmount: Number(r.taxed_amount), installments: r.installments || [], receipts: r.receipts, declarationNext: r.declaration_next, notes: r.notes, createdBy: r.created_by, ncc: r.ncc || "", declarationDate: r.declaration_date, nextBase: r.next_base, withholdings: r.withholdings || [], taxCenter: r.tax_center || "",
+  cadastreSection: r.cadastre_section || "", cadastreParcelle: r.cadastre_parcelle || "", cadastreCopro: r.cadastre_copro || "" });
 const mReq     = (r) => ({ id: r.id, reqType: r.req_type, userId: r.user_id, date: r.req_date, amount: Number(r.amount), destination: r.destination, mode: r.transport_mode, propertyId: r.property_id, startDate: r.start_date, endDate: r.end_date, absenceType: r.absence_type, motif: r.motif, status: r.status, decidedBy: r.decided_by, decidedAt: r.decided_at, decisionNote: r.decision_note, createdAt: Date.parse(r.created_at) });
 const mDoc     = (r) => ({ id: r.id, ref: r.ref, docType: r.doc_type, date: r.doc_date, propertyId: r.property_id, ownerId: r.owner_id, clientName: r.client_name, clientPhone: r.client_phone, clientEmail: r.client_email, clientAddr: r.client_addr, object: r.object, body: r.body, lines: r.lines || [], fields: r.fields || {}, monthsCount: Number(r.fields?.monthsCount) || 1, total: Number(r.total_amount), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at), unitId: r.unit_id, paidStamp: !!r.paid_stamp, stampedBy: r.stamped_by, period: r.period || "", approval: r.approval || "non_requise", approvedBy: r.approved_by, approvedAt: r.approved_at, approvalNote: r.approval_note || "", periodIso: r.period_iso || "", direction: r.direction || "encaissement", formerTenantId: r.former_tenant_id });
 const mTpl     = (r) => ({ id: r.id, label: r.label, nature: r.nature, deptId: r.dept_id, urgency: r.urgency, estMin: r.est_min, sortOrder: r.sort_order, active: r.active });
@@ -2819,9 +2868,11 @@ function useStore(userId) {
         crees.push(m);
       }
       const lignesPeriode = (await fetchPeriodLines(period.id)).map(mRLine);
-      const line = lignesPeriode.find((l) => l.unitId === doc.unitId
-          || (unit && (l.unitLabel || "").toLowerCase() === (unit.label || "").toLowerCase())
-          || (l.tenantName || "").toLowerCase() === (doc.clientName || "").toLowerCase());
+      /* Ligne du locataire : par lot d'abord, puis par nom — sans jamais
+         confondre deux lignes sans lot, ni créer une seconde ligne pour lui. */
+      const line = lignesPeriode.find((l) => doc.unitId && l.unitId === doc.unitId)
+          || lignesPeriode.find((l) => unit && cleDoublon(unit.label) && cleDoublon(l.unitLabel) === cleDoublon(unit.label))
+          || lignesPeriode.find((l) => cleDoublon(doc.clientName) && cleDoublon(l.tenantName) === cleDoublon(doc.clientName));
       const montant = line ? Math.max(Number(line.expected) || 0, parMois) : parMois;
 
       if (surArriere) {
@@ -2926,6 +2977,8 @@ function useStore(userId) {
   };
 
   /* ================= ACTIONS : IMPÔT FONCIER ================= */
+  const msgTax = (e) => (!e ? undefined : /cadastre_/.test(e.message || "")
+    ? "La référence cadastrale n'est pas encore installée : exécutez migration-v34.sql dans Supabase, puis réessayez." : e.message);
   const saveTaxRecord = async (f) => {
     const row = { property_id: f.propertyId || null, unit_id: f.unitId || null,
       custom_label: f.customLabel || "", owner_id: f.ownerId || null, owner_label: f.ownerLabel || "",
@@ -2935,17 +2988,18 @@ function useStore(userId) {
       receipts: taxReceipts({ installments: f.installments }).code,
       declaration_next: f.declarationNext || "non", notes: f.notes || "", tax_center: f.taxCenter || "",
       ncc: f.ncc || "", declaration_date: f.declarationDate || null,
+      cadastre_section: (f.cadastreSection || "").trim(), cadastre_parcelle: (f.cadastreParcelle || "").trim(), cadastre_copro: (f.cadastreCopro || "").trim(),
       next_base: f.nextBase ? Number(f.nextBase) : null,
       withholdings: (f.withholdings || []).filter((w) => Number(w.amount) > 0) };
     if (f.id) {
       setTaxRecords((p) => p.map((x) => (x.id === f.id ? { ...x, ...f } : x)));
       const { error } = await supabase.from("tax_records").update(row).eq("id", f.id);
-      return { error: error?.message, id: f.id };
+      return { error: msgTax(error), id: f.id };
     }
     const { data, error } = await supabase.from("tax_records")
       .insert({ ...row, created_by: userId }).select().single();
     if (data) setTaxRecords((p) => (p.some((x) => x.id === data.id) ? p : [mTax(data), ...p]));
-    return { error: error?.message, id: data?.id };
+    return { error: msgTax(error), id: data?.id };
   };
   const deleteTaxRecord = async (id) => {
     setTaxRecords((p) => p.filter((x) => x.id !== id));
@@ -5851,9 +5905,17 @@ function seedPeriod(args) {
 
 function seedPeriodBase({ period, rentPeriods, rentLines, rentCharges, units }) {
   const unitById = Object.fromEntries(units.map((u) => [u.id, u]));
-  const findUnit = (l) => unitById[l.unitId]
-    || units.find((u) => u.propertyId === period.propertyId
-        && (u.label || "").toLowerCase() === (l.unitLabel || "").toLowerCase());
+  const lotsDuBien = units.filter((u) => u.propertyId === period.propertyId);
+  /* Lot d'une ligne : par identifiant, sinon par libellé, sinon — libellé
+     retouché entre-temps — par le nom du locataire s'il n'occupe qu'un lot. */
+  const findUnit = (l) => {
+    if (unitById[l.unitId]) return unitById[l.unitId];
+    const parLibelle = lotsDuBien.find((u) => cleDoublon(u.label) === cleDoublon(l.unitLabel));
+    if (parLibelle) return parLibelle;
+    const nom = cleDoublon(l.tenantName);
+    const parNom = nom ? lotsDuBien.filter((u) => cleDoublon(u.tenantName) === nom) : [];
+    return parNom.length === 1 ? parNom[0] : undefined;
+  };
 
   const applyAdvance = (line, unit) => {
     const rank = advanceRank(unit, period.period);
@@ -5892,7 +5954,10 @@ function seedPeriodBase({ period, rentPeriods, rentLines, rentCharges, units }) 
   };
 
   if (prev) {
-    const prevLines = rentLines.filter((l) => l.periodId === prev.id).sort((a, b) => a.position - b.position);
+    /* Un doublon du mois précédent ne se recopie jamais dans le nouveau mois */
+    const prevTous = rentLines.filter((l) => l.periodId === prev.id).sort((a, b) => a.position - b.position);
+    const enTrop = doublonsLignes(prevTous);
+    const prevLines = prevTous.filter((_, i) => !enTrop.has(i));
     const lines = prevLines
       .map((l) => {
         const u = findUnit(l);
@@ -5921,8 +5986,12 @@ function seedPeriodBase({ period, rentPeriods, rentLines, rentCharges, units }) 
           comment: vacantNow ? "Lot vacant" : "" };
         return (u && !vacantNow) ? applyAdvance(base, u) : base;
       });
+    /* Dernier garde-fou : jamais deux fois le même lot pour le même locataire */
+    const enDouble = doublonsLignes(lines);
+    if (enDouble.size) lines.splice(0, lines.length, ...lines.filter((_, i) => !enDouble.has(i)));
     /* Lots ajoutés au bien depuis le mois précédent : ils rejoignent le tableau */
-    units.filter((u) => u.propertyId === period.propertyId && !prevLines.some((l) => sameLot(l, { unitId: u.id, unitLabel: u.label })))
+    const dejaLa = new Set(prevLines.map((l) => findUnit(l)?.id).filter(Boolean));
+    lotsDuBien.filter((u) => !dejaLa.has(u.id) && !prevLines.some((l) => sameLot(l, { unitId: u.id, unitLabel: u.label })))
       .forEach((u) => {
         const vac = u.status === "vacant" || !(u.tenantName || "").trim();
         lines.push({ unitId: u.id, unitLabel: u.label, tenantName: vac ? "" : u.tenantName, tenantPhone: vac ? "" : (u.tenantPhone || ""),
@@ -5986,6 +6055,13 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
   };
 
   const setLine = (i, k, v) => setLines((p) => p.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
+  const doublons = doublonsLignes(lines);
+  const [infoDoublons, setInfoDoublons] = useState("");
+  const nettoyer = () => {
+    const r = retirerDoublons(lines);
+    setLines(r.lines);
+    setInfoDoublons(`${r.retirees} ligne(s) en double retirée(s)${r.conflits ? ` — ${r.conflits} lot(s) portent deux paiements différents : vérifiez-les et supprimez la ligne erronée` : ""}. Enregistrez pour valider.`);
+  };
   const setCharge = (i, k, v) => setCharges((p) => p.map((c, j) => (j === i ? { ...c, [k]: v } : c)));
   const t = periodTotals(lines, charges, rate);
 
@@ -6037,12 +6113,22 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
         {!readOnly && <button onClick={loadFromUnits} className="kb-btn kb-btn-ghost text-sm"><Users size={14} /> Charger les lots du bâtiment</button>}
       </div>
 
+      {doublons.size > 0 && (
+        <div className="rounded-lg p-3 mb-3 text-xs flex items-start justify-between gap-3 flex-wrap" style={{ background: "#FFF4E5", color: "#8A4B00", border: "1px solid #F3D19C" }}>
+          <span className="flex items-start gap-2"><AlertTriangle size={14} className="mt-0.5 shrink-0" />
+            <span><strong>{doublons.size} ligne(s) en double</strong> : {[...doublons.keys()].map((i) => lines[i].tenantName || lines[i].unitLabel).join(", ")}.
+              {" "}Le même locataire figure plusieurs fois sur le même lot : les loyers et arriérés sont comptés en trop.</span></span>
+          {!readOnly && <button onClick={nettoyer} className="kb-btn text-xs px-2 py-1" style={{ background: "#8A4B00", color: "#fff" }}>Retirer les doublons</button>}
+        </div>
+      )}
+      {infoDoublons && <p className="text-xs mb-3" style={{ color: "#3d7d20" }}><Check size={12} className="inline mb-0.5" /> {infoDoublons}</p>}
+
       {/* Tableau des locataires — chaque ligne est un instantané du mois */}
       <div className="overflow-x-auto -mx-1 mb-2">
-        <table className="w-full text-xs" style={{ minWidth: 1080 }}>
+        <table className="w-full text-xs" style={{ minWidth: 1320 }}>
           <thead><tr style={{ background: "#F1F3F5" }}>
-            <th className="text-left px-2 py-2 font-semibold">Locataire</th>
-            <th className="text-left px-2 py-2 font-semibold w-20">Lot</th>
+            <th className="text-left px-2 py-2 font-semibold" style={{ minWidth: 200 }}>Locataire</th>
+            <th className="text-left px-2 py-2 font-semibold" style={{ minWidth: 110 }}>Lot</th>
             <th className="text-right px-2 py-2 font-semibold w-24">Loyer du mois</th>
             <th className="text-right px-2 py-2 font-semibold w-24" title="Reste à payer du mois précédent, figé à la création de ce tableau">Arriérés reportés</th>
             <th className="text-right px-2 py-2 font-semibold w-24">Total à recouvrer</th>
@@ -6051,7 +6137,7 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
             <th className="text-right px-2 py-2 font-semibold w-24">Reste à payer</th>
             <th className="text-center px-2 py-2 font-semibold w-20">Statut</th>
             <th className="text-right px-2 py-2 font-semibold w-20">Charges</th>
-            <th className="text-left px-2 py-2 font-semibold w-32">Commentaire</th>
+            <th className="text-left px-2 py-2 font-semibold" style={{ minWidth: 180 }}>Commentaire</th>
             {!readOnly && <th className="w-8" />}
           </tr></thead>
           <tbody>{lines.map((l, i) => {
@@ -6061,8 +6147,9 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
             const total = lineToCollect(l);
             const reste = lineDue(l);
             return (
-              <tr key={i} className="border-b" style={{ borderColor: "var(--line)", background: vacant ? "#FAFBFC" : "transparent" }}>
-                <td className="px-1 py-1"><input disabled={readOnly} className="w-full px-2 py-1.5 rounded border text-xs" style={inputStyle} value={l.tenantName} onChange={(e) => setLine(i, "tenantName", e.target.value)} placeholder="Nom du locataire" /></td>
+              <tr key={i} className="border-b" style={{ borderColor: "var(--line)", background: doublons.has(i) ? "#FFF4E5" : vacant ? "#FAFBFC" : "transparent" }}>
+                <td className="px-1 py-1"><input disabled={readOnly} className="w-full px-2 py-1.5 rounded border text-xs" style={inputStyle} value={l.tenantName} onChange={(e) => setLine(i, "tenantName", e.target.value)} placeholder="Nom du locataire" title={l.tenantName} />
+                  {doublons.has(i) && <div className="text-[9px] font-bold mt-0.5" style={{ color: "#8A4B00" }}>DOUBLON de la ligne {doublons.get(i) + 1}</div>}</td>
                 <td className="px-1 py-1"><input disabled={readOnly} className="w-full px-2 py-1.5 rounded border text-xs" style={inputStyle} value={l.unitLabel} onChange={(e) => setLine(i, "unitLabel", e.target.value)} placeholder="Appt A1" /></td>
                 <td className="px-1 py-1">
                   <input disabled={readOnly || vacant || prepaid} type="number" min={0} step={5000} className="w-full px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={vacant ? 0 : l.expected} onChange={(e) => setLine(i, "expected", e.target.value)} />
@@ -6756,6 +6843,7 @@ function Recouvrement({ store, me, userId }) {
                     <Chip color={st.color} dot>{st.label}</Chip>
                     {p.locked && <Chip color="#1A1C20" bg="#E5E7EB"><Lock size={10} /> Arrêté pour virement{p.lockedAt ? ` le ${fr(p.lockedAt, { day: "2-digit", month: "2-digit", year: "numeric" })}` : ""}{p.lockedBy && memberById[p.lockedBy] ? ` par ${memberById[p.lockedBy].name}` : ""}</Chip>}
                     {!mine && !p.locked && <Chip color="#94A3B8"><Lock size={10} /> lecture</Chip>}
+                    {doublonsLignes(lines).size > 0 && <Chip color="#8A4B00" bg="#FFF4E5"><AlertTriangle size={10} /> {doublonsLignes(lines).size} ligne(s) en double — à corriger</Chip>}
                     {(p.unlockLog || []).length > 0 && <span className="text-[10px]" style={{ color: "#B7791F" }} title={(p.unlockLog || []).map((x) => `${fr(x.at, { day: "2-digit", month: "2-digit" })} — ${memberById[x.by]?.name || "?"} : ${x.reason}`).join("\n")}>déverrouillé {p.unlockLog.length} fois</span>}
                   </div>
                   <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>
@@ -7564,6 +7652,12 @@ function Taches({ store, me, userId, liveSecForTask, isRunning, toggleTimer, adv
    ══════════════════════════════════════════════════════════════════════ */
 
 /* Libellé du bien suivi : lot > bien du patrimoine > libellé libre */
+/* Référence cadastrale, dans l'ordre : Section, Parcelle, puis Copropriété s'il y en a une */
+function refCadastrale(r) {
+  if (!r) return "";
+  return [r.cadastreSection && `Section ${r.cadastreSection}`, r.cadastreParcelle && `Parcelle ${r.cadastreParcelle}`,
+    r.cadastreCopro && `Copropriété ${r.cadastreCopro}`].filter(Boolean).join(" · ");
+}
 function taxLabel(rec, propById, unitById) {
   if (rec.customLabel) return rec.customLabel;
   const u = rec.unitId ? unitById[rec.unitId] : null;
@@ -7583,9 +7677,10 @@ function taxOwnerLabel(rec, ownerById, propById) {
 }
 
 /* ---------------- Modale de saisie ---------------- */
-function TaxModal({ initial, properties, units, owners, onSave, onClose }) {
+function TaxModal({ initial, properties, units, owners, records = [], onSave, onClose }) {
   const [f, setF] = useState(() => ({
     propertyId: "", unitId: "", customLabel: "", ownerId: "", ownerLabel: "",
+    cadastreSection: "", cadastreParcelle: "", cadastreCopro: "",
     taxYear: new Date().getFullYear(), noticeNumber: "", taxedAmount: "", ncc: "", taxCenter: "",
     receipts: "non", declarationNext: "non", declarationDate: "", nextBase: "", notes: "", withholdings: [], ...initial,
   }));
@@ -7602,6 +7697,10 @@ function TaxModal({ initial, properties, units, owners, onSave, onClose }) {
 
   const propUnits = units.filter((u) => u.propertyId === f.propertyId);
   const totals = taxTotals({ ...f, installments: inst });
+  /* Référence cadastrale déjà saisie pour le même bien une autre année */
+  const refAnterieure = (!f.cadastreSection && !f.cadastreParcelle && f.propertyId)
+    ? records.filter((r) => r.id !== f.id && r.propertyId === f.propertyId && (r.unitId || "") === (f.unitId || "") && (r.cadastreSection || r.cadastreParcelle))
+        .sort((a, b) => b.taxYear - a.taxYear)[0] : null;
   const valid = (f.propertyId || f.customLabel.trim()) && Number(f.taxedAmount) > 0;
 
   const submit = async () => {
@@ -7646,6 +7745,19 @@ function TaxModal({ initial, properties, units, owners, onSave, onClose }) {
         </Field>
       </div>
 
+      <p className="text-xs font-semibold mb-2 mt-1" style={{ color: "var(--ink)" }}>Référence cadastrale</p>
+      {refAnterieure && (
+        <p className="text-[11px] mb-2 p-2 rounded" style={{ background: "#EFF6FF", color: "#1F5C82" }}>
+          Référence enregistrée en {refAnterieure.taxYear} : <strong>{refCadastrale(refAnterieure)}</strong> —
+          <button onClick={() => setF((p) => ({ ...p, cadastreSection: refAnterieure.cadastreSection, cadastreParcelle: refAnterieure.cadastreParcelle, cadastreCopro: refAnterieure.cadastreCopro }))} className="ml-1 underline">reprendre</button>
+        </p>
+      )}
+      <div className="grid sm:grid-cols-3 gap-3">
+        <Field label="Section"><input className={inputCls} style={inputStyle} value={f.cadastreSection || ""} onChange={(e) => set("cadastreSection", e.target.value)} placeholder="Ex. CF" /></Field>
+        <Field label="Parcelle"><input className={inputCls} style={inputStyle} value={f.cadastreParcelle || ""} onChange={(e) => set("cadastreParcelle", e.target.value)} placeholder="Ex. 154" /></Field>
+        <Field label="Copropriété" hint="Seulement si le bien est en copropriété"><input className={inputCls} style={inputStyle} value={f.cadastreCopro || ""} onChange={(e) => set("cadastreCopro", e.target.value)} placeholder="Ex. lot 12" /></Field>
+      </div>
+
       <p className="text-xs font-semibold mb-2 mt-1" style={{ color: "var(--ink)" }}>Avis d'imposition</p>
       {f.propertyId && !f.taxCenter && propById[f.propertyId]?.taxCenter && (
         <p className="text-[11px] mb-2 p-2 rounded" style={{ background: "#EFF6FF", color: "#1F5C82" }}>
@@ -7653,7 +7765,7 @@ function TaxModal({ initial, properties, units, owners, onSave, onClose }) {
           <button onClick={() => set("taxCenter", propById[f.propertyId].taxCenter)} className="ml-1 underline">reprendre</button>
         </p>
       )}
-      <div className="grid sm:grid-cols-4 gap-3">
+      <div className="grid sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <Field label="Année d'imposition">
           <input type="number" min={2000} max={2100} className={inputCls} style={inputStyle} value={f.taxYear}
             onChange={(e) => { set("taxYear", e.target.value); recompute(e.target.value, f.taxedAmount); }} />
@@ -7673,7 +7785,7 @@ function TaxModal({ initial, properties, units, owners, onSave, onClose }) {
 
       <p className="text-xs font-semibold mb-2 mt-1" style={{ color: "var(--ink)" }}>Versements par tranche</p>
       <div className="overflow-x-auto -mx-1 mb-3">
-        <table className="w-full text-xs" style={{ minWidth: 720 }}>
+        <table className="w-full text-xs" style={{ minWidth: 1100 }}>
           <thead><tr style={{ background: "#F1F3F5" }}>
             <th className="text-left px-2 py-2 font-semibold w-24">Tranche</th>
             <th className="text-left px-2 py-2 font-semibold w-32">Date limite</th>
@@ -7870,7 +7982,8 @@ function TaxSheet({ records, year, title, propById, unitById, ownerById, onBack 
             return (
               <tr key={r.id} className="border-b" style={{ borderColor: "var(--line)" }}>
                 {multiYear && <td className="px-1.5 py-1.5 font-medium">{r.taxYear}</td>}
-                <td className="px-1.5 py-1.5 font-medium">{taxLabel(r, propById, unitById)}</td>
+                <td className="px-1.5 py-1.5 font-medium">{taxLabel(r, propById, unitById)}
+                  {refCadastrale(r) && <div style={{ fontSize: 8, fontWeight: 400, color: "var(--muted)" }}>{refCadastrale(r)}</div>}</td>
                 <td className="px-1.5 py-1.5">{r.noticeNumber || "—"}</td>
                 <td className="px-1.5 py-1.5 text-right tabular-nums">{fcfa(r.taxedAmount)}</td>
                 {Array.from({ length: 4 }, (_, i) => (r.installments || [])[i] || {}).map((tr, i) => {
@@ -8012,7 +8125,8 @@ function ImpotFoncier({ store, me }) {
       (!search || taxLabel(r, propById, unitById).toLowerCase().includes(search.toLowerCase()) ||
         taxOwnerLabel(r, ownerById, propById).toLowerCase().includes(search.toLowerCase()) ||
         (r.noticeNumber || "").toLowerCase().includes(search.toLowerCase()) ||
-        (r.ncc || "").toLowerCase().includes(search.toLowerCase()));
+        (r.ncc || "").toLowerCase().includes(search.toLowerCase()) ||
+        refCadastrale(r).toLowerCase().includes(search.toLowerCase()));
   }).sort((a, b) => b.taxYear - a.taxYear);
 
   /* Résumé pluriannuel : un bloc par propriétaire ou par bâtiment */
@@ -8131,6 +8245,7 @@ function ImpotFoncier({ store, me }) {
                     <Chip color="#2E78A8">{r.taxYear}</Chip>
                     {r.noticeNumber && <Chip color="#64748B">{r.noticeNumber}</Chip>}
                     {r.ncc && <Chip color="#7C3AED">NCC {r.ncc}</Chip>}
+                    {refCadastrale(r) && <Chip color="#0F766E">{refCadastrale(r)}</Chip>}
                     {taxWithheld(r) > 0 && <Chip color="#2E78A8">prélevé {fcfa(taxWithheld(r))}</Chip>}
                     {qr.versees > 0 && <Chip color={qr.color} dot>Quittances : {qr.label}</Chip>}
                     {t.settled && <Chip color="#4F9E2A" bg="#EAF6E3">Avis soldé</Chip>}
@@ -8181,7 +8296,7 @@ function ImpotFoncier({ store, me }) {
         sub="Ajoutez les biens de vos propriétaires soumis à l'impôt foncier."
         action={canEdit ? <button onClick={() => setModal({ taxYear: allYears ? new Date().getFullYear() : year })} className="kb-btn kb-btn-primary"><Plus size={15} /> Bien à suivre</button> : null} />}
 
-      {modal && <TaxModal initial={modal} properties={properties} units={units} owners={owners}
+      {modal && <TaxModal initial={modal} properties={properties} units={units} owners={owners} records={taxRecords}
         onSave={actions.saveTaxRecord} onClose={() => setModal(null)} />}
     </div>
   );
@@ -14035,4 +14150,6 @@ function Workspace({ userId }) {
 
 /* Composants partagés avec le module Ressources humaines (RH.jsx) */
 export { Modal, Field, Chip, StatCard, SectionCard, EmptyState, PrintPage, PrintHead, printSheet, fr, fcfa, isoDate, addDays, inputCls, inputStyle, MONTHS_FR,
-  AGENCY, amountInWords, LetterEditor };
+  AGENCY, amountInWords, LetterEditor,
+  /* outils du recouvrement et de l'impôt foncier (tests) */
+  fetchAll, doublonsLignes, retirerDoublons, seedPeriod, refCadastrale };
