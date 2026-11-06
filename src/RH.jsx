@@ -15,7 +15,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   AlertTriangle, ArrowLeft, Briefcase, Building2, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ClipboardList,
   DoorOpen, Eye, FileSignature, FileText, FolderOpen, Gavel, HeartPulse, History, Landmark, Layers, Pencil, Plus, Printer, Scale, Search,
-  ShieldAlert, ShieldCheck, Trash2, Upload, UserPlus, UserRound, Users, Wallet, X,
+  BadgePercent, ShieldAlert, ShieldCheck, Trash2, Upload, UserPlus, UserRound, Users, Wallet, X,
 } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip } from "recharts";
 import { supabase } from "./supabaseClient";
@@ -293,7 +293,9 @@ export const mDet = (r) => ({ employeeId: r.employee_id, dateNaissance: r.date_n
   enfants: r.enfants || [], cnpsNumero: r.cnps_numero || "", cmuNumero: r.cmu_numero || "", adresse: r.adresse || "", telephone: r.telephone || "", email: r.email || "",
   contactUrgence: r.contact_urgence || {}, banque: r.banque || "", numeroCompte: r.numero_compte || "", expatrie: !!r.expatrie, medailleTravail: !!r.medaille_travail, ippPlus40: !!r.ipp_plus_40,
   partsItsForce: r.parts_its_force === null || r.parts_its_force === undefined ? "" : Number(r.parts_its_force),
-  cmuPersonnes: r.cmu_personnes === null || r.cmu_personnes === undefined ? "" : Number(r.cmu_personnes), conjointCmu: !!r.conjoint_cmu });
+  cmuPersonnes: r.cmu_personnes === null || r.cmu_personnes === undefined ? "" : Number(r.cmu_personnes), conjointCmu: !!r.conjoint_cmu,
+  congesRepriseDate: r.conges_reprise_date || "", congesRepriseSolde: r.conges_reprise_solde === null || r.conges_reprise_solde === undefined ? "" : Number(r.conges_reprise_solde),
+  congesDernierRetour: r.conges_dernier_retour || "" });
 export const toDet = (f, employeeId) => ({ employee_id: employeeId, date_naissance: f.dateNaissance || null, lieu_naissance: f.lieuNaissance || "", nationalite: f.nationalite || "",
   piece_type: f.pieceType || "", piece_numero: f.pieceNumero || "", piece_validite: f.pieceValidite || null, situation_famille: f.situationFamille || "celibataire", nb_enfants_charge: Math.max(0, Number(f.nbEnfantsCharge) || 0),
   enfants: (f.enfants || []).filter((x) => (x.prenom || "").trim() || x.date_naissance), cnps_numero: f.cnpsNumero || "", cmu_numero: f.cmuNumero || "", adresse: f.adresse || "",
@@ -386,6 +388,35 @@ export const mSlip = (r) => ({ id: r.id, periodId: r.period_id, employeeId: r.em
 export const toSlip = (f) => ({ period_id: f.periodId, employee_id: f.employeeId, contract_id: f.contractId || null, variables: f.variables || {}, entete: f.entete || {},
   lignes: f.lignes || [], brut: Number(f.brut) || 0, imposable: Number(f.imposable) || 0, cotisations_salariales: Number(f.cotisationsSalariales) || 0,
   cotisations_patronales: Number(f.cotisationsPatronales) || 0, net_a_payer: Number(f.netAPayer) || 0, cout_total: Number(f.coutTotal) || 0 });
+/* Commissions et primes de réussite des commerciaux */
+export const COMMISSION_MODES = { pourcentage: "Pourcentage de l'assiette", forfait: "Montant forfaitaire", paliers: "Barème par paliers" };
+export const COMMISSION_CATEGORIES = { commission: "Commission sur opération", prime_reussite: "Prime de réussite" };
+export const COMMISSION_STATUTS = { proposee: { label: "À valider", color: "#C58A1B" }, validee: { label: "Validée", color: "#2E78A8" }, payee: { label: "Versée", color: "#4F9E2A" }, annulee: { label: "Annulée", color: "#94A3B8" } };
+export const mRule = (r) => ({ id: r.id, libelle: r.libelle || "", categorie: r.categorie || "commission", operation: r.operation || "", mode: r.mode || "pourcentage",
+  assiette: r.assiette || "", taux: Number(r.taux) || 0, montant: Number(r.montant) || 0, paliers: r.paliers || [], conditions: r.conditions || "", actif: r.actif !== false, ordre: Number(r.ordre) || 0 });
+export const toRule = (f) => ({ libelle: (f.libelle || "").trim(), categorie: f.categorie || "commission", operation: f.operation || "", mode: f.mode || "pourcentage",
+  assiette: f.assiette || "", taux: Math.max(0, Number(f.taux) || 0), montant: Math.max(0, Number(f.montant) || 0),
+  paliers: (f.paliers || []).filter((x) => x.seuil !== "" && x.seuil !== undefined).map((x) => ({ seuil: Number(x.seuil) || 0, taux: Number(x.taux) || 0, montant: Number(x.montant) || 0 })).sort((a, b) => a.seuil - b.seuil),
+  conditions: f.conditions || "", actif: f.actif !== false, ordre: Number(f.ordre) || 0 });
+export const mCom = (r) => ({ id: r.id, employeeId: r.employee_id, annee: Number(r.annee), mois: Number(r.mois), ruleId: r.rule_id || "", libelle: r.libelle || "", categorie: r.categorie || "commission",
+  dateOperation: r.date_operation || "", reference: r.reference || "", assiette: Number(r.assiette) || 0, taux: Number(r.taux) || 0, montant: Number(r.montant) || 0,
+  statut: r.statut || "proposee", payslipId: r.payslip_id || "", notes: r.notes || "", validePar: r.valide_par || "", valideLe: r.valide_le || "", createdAt: r.created_at || "" });
+export const toCom = (f) => ({ employee_id: f.employeeId, annee: Number(f.annee), mois: Number(f.mois), rule_id: f.ruleId || null, libelle: (f.libelle || "").trim(),
+  categorie: f.categorie || "commission", date_operation: f.dateOperation || null, reference: f.reference || "", assiette: Math.max(0, Number(f.assiette) || 0),
+  taux: Math.max(0, Number(f.taux) || 0), montant: Math.round(Number(f.montant) || 0), statut: f.statut || "proposee", notes: f.notes || "" });
+/* Montant d'une commission selon la règle du barème */
+export function calculCommission(rule, assiette) {
+  const a = Math.max(0, Number(assiette) || 0);
+  if (!rule) return { montant: 0, taux: 0, detail: "" };
+  if (rule.mode === "forfait") return { montant: Math.round(Number(rule.montant) || 0), taux: 0, detail: "forfait" };
+  if (rule.mode === "paliers") {
+    const p = [...(rule.paliers || [])].sort((x, y) => x.seuil - y.seuil).filter((x) => a >= Number(x.seuil)).pop();
+    if (!p) return { montant: 0, taux: 0, detail: "seuil non atteint" };
+    if (Number(p.taux)) return { montant: Math.round(a * Number(p.taux) / 100), taux: Number(p.taux), detail: `palier dès ${Number(p.seuil).toLocaleString("fr-FR")} F` };
+    return { montant: Math.round(Number(p.montant) || 0), taux: 0, detail: `palier dès ${Number(p.seuil).toLocaleString("fr-FR")} F` };
+  }
+  return { montant: Math.round(a * (Number(rule.taux) || 0) / 100), taux: Number(rule.taux) || 0, detail: `${String(rule.taux).replace(".", ",")} %` };
+}
 export const mTerm = (r) => ({ id: r.id, employeeId: r.employee_id, contractId: r.contract_id || "", motif: r.motif, fauteLourde: !!r.faute_lourde, dateNotification: r.date_notification || "",
   dateSortie: r.date_sortie, preavisMode: r.preavis_mode || "effectue", salaireReference: nOuVide(r.salaire_reference), elements: r.elements || {}, checklist: r.checklist || {},
   total: Number(r.total) || 0, statut: r.statut || "brouillon", validePar: r.valide_par || "", valideLe: r.valide_le || "", notes: r.notes || "" });
@@ -451,7 +482,8 @@ export function useHR(acces) {
   const proprietaire = acces === "proprietaire";
   const [st, setSt] = useState({ loading: true, error: "", employees: [], details: [], contracts: [], amendments: [], documents: [], params: [], scale: [], visas: [], audit: [],
     templates: [], settings: { ...REGLAGES_VIDES }, holidays: [], absences: [], adjustments: [], elements: [], periods: [], payslips: [], terminations: [],
-    openings: [], candidates: [], disciplinary: [], visits: [], accidents: [], trainings: [], events: [], acces: [], notes: [], lectures: [] });
+    openings: [], candidates: [], disciplinary: [], visits: [], accidents: [], trainings: [], events: [], acces: [], notes: [], lectures: [],
+    commissionRules: [], commissions: [], commissionsAbsentes: false });
   const load = useCallback(async () => {
     /* Compte non autorisé : aucune requête RH n'est émise (aucun salaire ne transite, même vide) */
     if (!autorise) { setSt((s) => ({ ...s, loading: false })); return; }
@@ -469,8 +501,11 @@ export function useHR(acces) {
       proprietaire ? q("hr_access", "created_at") : Promise.resolve({ data: [] }),
       q("hr_notes", "publie_le", false), q("hr_note_lectures", "lu_le"),
     ]);
+    /* Commissions (v34) : leur absence ne bloque pas le reste du module */
+    const [cr, cm] = await Promise.all([q("hr_commission_rules", "ordre"), supabase.from("hr_commissions").select("*").order("annee", { ascending: false }).order("mois", { ascending: false })]);
+    const commissionsAbsentes = !!(cr.error || cm.error);
     const err = res.find((r) => r.error)?.error;
-    setSt({ loading: false, error: err ? (/relation .* does not exist|schema cache/.test(err.message) ? "Le module RH n'est pas entièrement installé dans la base : exécutez dans le SQL Editor de Supabase, dans l'ordre, migration-v32.sql, migration-v32-1.sql, migration-v32-2.sql, migration-v33.sql, migration-v33-1.sql puis migration-v33-2.sql." : err.message) : "",
+    setSt({ loading: false, error: err ? (/relation .* does not exist|schema cache/.test(err.message) ? "Le module RH n'est pas entièrement installé dans la base : exécutez dans le SQL Editor de Supabase, dans l'ordre, migration-v32.sql, migration-v32-1.sql, migration-v32-2.sql, migration-v33.sql, migration-v33-1.sql, migration-v33-2.sql, migration-v33-3.sql puis migration-v34.sql." : err.message) : "",
       employees: (res[0].data || []).map(mEmp), details: (res[1].data || []).map(mDet), contracts: (res[2].data || []).map(mCtr),
       amendments: (res[3].data || []).map(mAmend), documents: (res[4].data || []).map(mHrDoc), params: (res[5].data || []).map(mParam),
       scale: (res[6].data || []).map(mScale), visas: (res[7].data || []).map(mVisa), audit: (res[8].data || []).map(mAudit),
@@ -480,7 +515,8 @@ export function useHR(acces) {
       terminations: (res[17].data || []).map(mTerm), openings: (res[18].data || []).map(mOpening), candidates: (res[19].data || []).map(mCand),
       disciplinary: (res[20].data || []).map(mDisc), visits: (res[21].data || []).map(mVisit), accidents: (res[22].data || []).map(mAcc),
       trainings: (res[23].data || []).map(mTraining), events: (res[24].data || []).map(mEvent), acces: (res[25].data || []).map(mAccess),
-      notes: (res[26].data || []).map(mNote), lectures: (res[27].data || []).map(mLecture) });
+      notes: (res[26].data || []).map(mNote), lectures: (res[27].data || []).map(mLecture),
+      commissionRules: (cr.data || []).map(mRule), commissions: (cm.data || []).map(mCom), commissionsAbsentes });
   }, [admin, autorise, proprietaire]);
   useEffect(() => { load(); }, [load]);
 
@@ -586,6 +622,16 @@ export function useHR(acces) {
       if (!(f.contenu || "").trim()) return { error: "Recopiez le visa, la mise en demeure ou l'observation." };
       const r = f.id ? await one(supabase.from("hr_registry_visas").update(toVisa(f)).eq("id", f.id)) : await one(supabase.from("hr_registry_visas").insert(toVisa(f)));
       if (r.error) return r; await load(); return { message: "Inscription au fascicule 3 enregistrée" };
+    },
+    /* Reprise de l'historique des congés : seules ces trois colonnes sont écrites */
+    saveReprises: async (rows) => {
+      const payload = rows.map((r) => ({ employee_id: r.employeeId, conges_reprise_date: r.date || null,
+        conges_reprise_solde: r.solde === "" || r.solde === null || r.solde === undefined ? (r.date || r.retour ? 0 : null) : Number(String(r.solde).replace(",", ".")),
+        conges_dernier_retour: r.retour || null }));
+      const { data, error } = await supabase.from("hr_employee_details").upsert(payload, { onConflict: "employee_id" }).select();
+      if (error) return { error: /conges_/.test(error.message) ? "La reprise de l'historique n'est pas encore installée : exécutez migration-v34.sql dans Supabase, puis réessayez." : error.message };
+      if (!data || data.length !== payload.length) return { error: refuse };
+      await load(); return { message: "Historique des congés enregistré : soldes recalculés" };
     },
     /* Enregistrement générique (lots 2 à 6) : la ligne doit revenir de la base */
     saveRow: async (table, row, id, message) => {
@@ -1203,30 +1249,47 @@ export const ABS_STATUT = { demande: { label: "Demandée", color: "#C58A1B" }, v
 const chevauche = (a, b) => a.dateDebut <= b.dateFin && b.dateDebut <= a.dateFin;
 
 /* ---------- Solde de congés payés (Code du travail art. 25.1 à 25.5 ; CCI art. 68 à 70) ---------- */
+/* Reprise de l'historique : solde restant dû à une date donnée (congés acquis
+   et non pris avant l'outil). Les droits courent ensuite à partir du lendemain. */
+export function repriseConges(det, debut) {
+  const date = det?.congesRepriseDate || (det?.congesDernierRetour ? plusJours(det.congesDernierRetour, -1) : "");
+  if (!date || (debut && date < debut)) return null;
+  const solde = det?.congesRepriseSolde === "" || det?.congesRepriseSolde === null || det?.congesRepriseSolde === undefined ? 0 : Number(det.congesRepriseSolde) || 0;
+  return { date, solde, dernierRetour: det?.congesDernierRetour || "" };
+}
 export function soldeConges({ emp, det, contracts, absences, adjustments, params, today }) {
   if (!emp) return null;
   const cs = (contracts || []).filter((c) => c.employeeId === emp.id && c.statut !== "annule" && c.type !== "stage");
   if (!cs.length) return null;                                     // stagiaire : pas de congé payé de salarié
   const debut = emp.dateEmbauche || cs.map((c) => c.dateDebut).sort()[0];
   const fin = minIso(today, emp.dateSortie || today);
-  if (!debut || fin < debut) return { debut, acquisBase: 0, majorations: 0, ajustements: 0, pris: 0, solde: 0, droitOuvert: false, lignesMaj: [], moisEffectifs: 0 };
+  const reprise = repriseConges(det, debut);
+  /* Point de départ du calcul : l'embauche, ou le lendemain du solde repris */
+  const depart = reprise ? plusJours(reprise.date, 1) : debut;
+  const vide = { debut, reprise, repris: reprise ? reprise.solde : 0, acquisBase: 0, majorations: 0, ajustements: 0, pris: 0, solde: reprise ? r2(reprise.solde) : 0, droitOuvert: false, lignesMaj: [], moisEffectifs: 0 };
+  if (!debut || fin < debut) return vide;
+  const regles0 = pval(params, "CONGES_REGLES", today) || { ouverture_mois: 12, prise_dans_mois: 12 };
+  if (fin < depart) return { ...vide, droitOuvert: fin >= plusMois(debut, regles0.ouverture_mois || 12), ouverture: plusMois(debut, regles0.ouverture_mois || 12) };
   const acq = Number(pval(params, "CONGES_ACQUISITION", fin)?.jours_par_mois) || 0;
   const assim = pval(params, "CONGES_ASSIMILATION", fin) || { types: [], maladie_limite_mois: 6 };
   const abs = (absences || []).filter((a) => a.employeeId === emp.id && a.statut === "valide");
   let nonAssim = 0;
   for (const a of abs) {
-    const d1 = maxIso(a.dateDebut, debut), d2 = minIso(a.dateFin, fin);
+    const d1 = maxIso(a.dateDebut, depart), d2 = minIso(a.dateFin, fin);
     if (d2 < d1) continue;
     const j = ecartJours(d1, d2) + 1;
     if (!(assim.types || []).includes(a.type)) nonAssim += j;
     else if (a.type === "maladie") { const lim = (Number(assim.maladie_limite_mois) || 6) * 30; if (j > lim) nonAssim += j - lim; }
   }
-  const dur = dureeEntre(debut, fin);
+  const dur = dureeEntre(depart, fin);
   const moisEffectifs = Math.max(0, dur.mois + dur.jours / 30 - nonAssim / 30);
   const acquisBase = r2(moisEffectifs * acq);
+  /* Majorations : à chaque anniversaire d'embauche postérieur au point de départ */
   let majorations = 0; const lignesMaj = [];
-  for (let k = 1; k <= Math.floor(dur.mois / 12); k++) {
+  const durTotale = dureeEntre(debut, fin);
+  for (let k = 1; k <= Math.floor(durTotale.mois / 12); k++) {
     const anniv = plusMois(debut, 12 * k);
+    if (anniv < depart) continue;
     let j = 0;
     const pal = [...(pval(params, "CONGES_MAJ_ANCIENNETE", anniv)?.paliers || [])].filter((p) => k >= p.apres_ans).sort((a, b) => b.apres_ans - a.apres_ans)[0];
     if (pal) j += pal.jours;
@@ -1240,16 +1303,33 @@ export function soldeConges({ emp, det, contracts, absences, adjustments, params
     if (det?.medailleTravail) j += Number(pval(params, "CONGES_MAJ_AUTRES", anniv)?.medaille_travail_jours) || 0;
     if (j) { majorations += j; lignesMaj.push({ date: anniv, jours: j }); }
   }
-  const conges = abs.filter((a) => a.type === "conge_paye" && a.dateDebut <= fin);
-  const pris = r2(conges.reduce((t, a) => t + (Number(a.joursOuvrables) || 0), 0));
-  const ajustements = r2((adjustments || []).filter((x) => x.employeeId === emp.id && x.dateEffet <= fin).reduce((t, x) => t + (Number(x.jours) || 0), 0));
-  const regles = pval(params, "CONGES_REGLES", today) || { ouverture_mois: 12, prise_dans_mois: 12 };
-  const dernierRetour = conges.filter((a) => a.dateFin < today).map((a) => plusJours(a.dateFin, 1)).sort().pop() || debut;
+  /* Congés pris après le point de départ (ceux d'avant sont dans le solde repris) ;
+     un congé à cheval est compté au prorata de ses jours postérieurs. */
+  const conges = abs.filter((a) => a.type === "conge_paye" && a.dateDebut <= fin && a.dateFin >= depart);
+  const joursApres = (a) => {
+    const jo = Number(a.joursOuvrables) || 0;
+    if (a.dateDebut >= depart) return jo;
+    const tot = joursCalendaires(a.dateDebut, a.dateFin);
+    return tot ? jo * joursCalendaires(depart, a.dateFin) / tot : 0;
+  };
+  const pris = r2(conges.reduce((t, a) => t + joursApres(a), 0));
+  const ajustements = r2((adjustments || []).filter((x) => x.employeeId === emp.id && x.dateEffet <= fin && x.dateEffet >= depart).reduce((t, x) => t + (Number(x.jours) || 0), 0));
+  const regles = regles0;
+  const retours = abs.filter((a) => a.type === "conge_paye" && a.dateFin < today).map((a) => plusJours(a.dateFin, 1));
+  if (reprise?.dernierRetour) retours.push(reprise.dernierRetour);
+  const dernierRetour = retours.sort().pop() || debut;
   const droitOuvert = fin >= plusMois(debut, regles.ouverture_mois);
   const echeance = plusMois(dernierRetour, (regles.ouverture_mois || 12) + (regles.prise_dans_mois || 12));
-  const solde = r2(acquisBase + majorations + ajustements - pris);
-  return { debut, moisEffectifs: r2(moisEffectifs), acquisBase, majorations, lignesMaj, ajustements, pris, solde, droitOuvert,
-    ouverture: plusMois(debut, regles.ouverture_mois || 12), dernierRetour, echeance, enRetard: droitOuvert && today > echeance && solde >= 1 };
+  const repris = reprise ? r2(reprise.solde) : 0;
+  const solde = r2(repris + acquisBase + majorations + ajustements - pris);
+  /* Droit d'une année pleine, pour signaler un cumul de plusieurs années */
+  const droitAnnuel = r2(12 * acq);
+  /* Ancien salarié sans historique repris ni congé enregistré : le solde serait surévalué */
+  const historiqueManquant = !reprise && !abs.some((a) => a.type === "conge_paye") && !(adjustments || []).some((x) => x.employeeId === emp.id)
+    && dureeEntre(debut, today).mois >= 12;
+  return { debut, depart, reprise, repris, moisEffectifs: r2(moisEffectifs), acquisBase, majorations, lignesMaj, ajustements, pris, solde, droitOuvert,
+    ouverture: plusMois(debut, regles.ouverture_mois || 12), dernierRetour, echeance, enRetard: droitOuvert && today > echeance && solde >= 1,
+    droitAnnuel, cumulExcessif: droitAnnuel > 0 && solde > droitAnnuel * 1.5, historiqueManquant };
 }
 
 /* ---------- Contrôles d'une absence avant enregistrement ---------- */
@@ -1351,7 +1431,7 @@ export function remunerationReference({ emp, contract, elements, params, scale, 
 }
 
 /* Calcul complet d'un bulletin. Toutes les rubriques et tous les taux viennent des paramètres. */
-export function calcBulletin({ emp, det, contract, period, params, scale, settings, elements = [], absences = [], historique = [], termination = null, variables = {} }) {
+export function calcBulletin({ emp, det, contract, period, params, scale, settings, elements = [], absences = [], historique = [], termination = null, variables = {}, commissions = [] }) {
   const v = variables || {};
   const debutM = debutDuMois(period.annee, period.mois), finM = finDuMois(period.annee, period.mois);
   const lignes = []; const anomalies = [];
@@ -1434,6 +1514,16 @@ export function calcBulletin({ emp, det, contract, period, params, scale, settin
     if (!l.montant) continue;
     if (l.retenue) continue;
     gain(l.code, l.libelle.toUpperCase(), null, null, null, Math.round(l.montant), l.soumis);
+  }
+  /* Commissions et primes de réussite validées pour le mois : éléments du salaire,
+     soumis aux cotisations et à l'ITS ; une ligne par nature, le détail en libellé. */
+  for (const [code, cat, lib] of [["1700", "commission", "COMMISSIONS SUR OPÉRATIONS"], ["1710", "prime_reussite", "PRIMES DE RÉUSSITE"]]) {
+    const liste = (commissions || []).filter((c) => c.employeeId === emp.id && (c.categorie || "commission") === cat && ["validee", "payee"].includes(c.statut)
+      && Number(c.annee) === Number(period.annee) && Number(c.mois) === Number(period.mois) && Number(c.montant) > 0);
+    if (!liste.length) continue;
+    const total = liste.reduce((t, c) => t + Math.round(Number(c.montant) || 0), 0);
+    lignes.push({ code, libelle: lib, nombre: liste.length, base: null, taux: null, gain: total, section: "gain", soumis: true,
+      detail: liste.map((c) => `${c.libelle}${c.reference ? ` (${c.reference})` : ""}`).join(" ; "), commissionIds: liste.map((c) => c.id) });
   }
   /* Primes ponctuelles */
   (v.primes || []).forEach((p, i) => { const m = Number(p.montant) || 0; if (m && (p.libelle || "").trim()) gain(String(1900 + i), p.libelle.toUpperCase(), null, null, null, Math.round(m), p.soumis !== false); });
@@ -2490,7 +2580,7 @@ function EmployeeSuivi({ emp, det, hr, today, on }) {
       <SectionCard title="Congés et absences" icon={CalendarDays} pad={false} action={<div className="flex gap-1.5">
         <button onClick={() => on.absence({ employeeId: emp.id })} className="kb-btn kb-btn-primary text-xs"><Plus size={13} /> Absence</button>
         {solde && <button onClick={() => on.adjust(emp)} className="kb-btn kb-btn-ghost text-xs">Ajuster le solde</button>}</div>}>
-        {solde ? <p className="text-sm px-4 pt-3">Solde de congés : <b>{fmt2(solde.solde)}</b> jours ouvrables <span className="text-xs" style={{ color: "var(--muted)" }}>(acquis {fmt2(solde.acquisBase)} + majorations {fmt2(solde.majorations)} + ajustements {fmt2(solde.ajustements)} − pris {fmt2(solde.pris)})
+        {solde ? <p className="text-sm px-4 pt-3">Solde de congés : <b>{fmt2(solde.solde)}</b> jours ouvrables <span className="text-xs" style={{ color: "var(--muted)" }}>({solde.reprise ? `repris au ${fmt(solde.reprise.date)} ${fmt2(solde.repris)} + ` : ""}acquis {fmt2(solde.acquisBase)} + majorations {fmt2(solde.majorations)} + ajustements {fmt2(solde.ajustements)} − pris {fmt2(solde.pris)})
           {solde.droitOuvert ? ` · à prendre avant le ${fmt(solde.echeance)}` : ` · droit ouvert le ${fmt(solde.ouverture)}`}</span></p>
           : <p className="text-xs px-4 pt-3" style={{ color: "var(--muted)" }}>Pas de congé payé de salarié (aucun contrat de travail).</p>}
         <div className="mt-2"><AbsencesTable liste={abs} hr={hr} on={on} compact /></div>
@@ -3195,6 +3285,59 @@ function AdjustModal({ emp, actions, today, onClose }) {
   );
 }
 
+/* Reprise de l'historique des congés : un tableau pour tous les salariés présents */
+function RepriseModal({ hr, emp, actions, today, onClose }) {
+  const salaries = (emp ? [emp] : hr.employees.filter((e) => e.statut !== "sorti"))
+    .filter((e) => hr.contracts.some((c) => c.employeeId === e.id && c.statut !== "annule" && c.type !== "stage"));
+  const [rows, setRows] = useState(() => salaries.map((e) => { const d = hr.details.find((x) => x.employeeId === e.id) || {};
+    return { employeeId: e.id, date: d.congesRepriseDate || "", solde: d.congesRepriseSolde === "" || d.congesRepriseSolde === undefined ? "" : String(d.congesRepriseSolde), retour: d.congesDernierRetour || "" }; }));
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const set = (i, k, v) => setRows((p) => p.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
+  const apercu = (e, r) => soldeConges({ emp: e, det: { ...(hr.details.find((x) => x.employeeId === e.id) || {}), congesRepriseDate: r.date, congesRepriseSolde: r.solde, congesDernierRetour: r.retour },
+    contracts: hr.contracts, absences: hr.absences, adjustments: hr.adjustments, params: hr.params, today });
+  const go = async () => {
+    setErr("");
+    for (const [i, r] of rows.entries()) {
+      const e = salaries[i];
+      if (r.date && e.dateEmbauche && r.date < e.dateEmbauche) return setErr(`${nomComplet(e)} : la date de reprise précède l'embauche.`);
+      if (r.date && r.date > today) return setErr(`${nomComplet(e)} : la date de reprise est dans le futur.`);
+      if (r.retour && r.retour > today) return setErr(`${nomComplet(e)} : la date de retour du dernier congé est dans le futur.`);
+      if (r.solde !== "" && !isFinite(Number(String(r.solde).replace(",", ".")))) return setErr(`${nomComplet(e)} : solde invalide.`);
+      if (r.solde !== "" && !r.date && !r.retour) return setErr(`${nomComplet(e)} : indiquez la date à laquelle ce solde était dû.`);
+    }
+    setBusy(true); const res = await actions.saveReprises(rows); setBusy(false);
+    if (res.error) setErr(res.error); else onClose(res);
+  };
+  return (
+    <Modal title={emp ? `Historique des congés — ${nomComplet(emp)}` : "Reprendre l'historique des congés payés"} onClose={() => onClose()} wide>
+      <WarnBox tone="info">
+        Pour chaque salarié présent avant l'outil, indiquez <b>le nombre de jours de congé qui lui restaient dus à une date</b> (registre des congés, dernier bulletin, dernier titre de congé),
+        et <b>la date de retour de son dernier congé</b>. Les congés pris avant cette date sont ainsi déjà déduits ; l'outil calcule ensuite les droits acquis depuis le lendemain
+        (2,2 jours ouvrables par mois de service effectif et majorations), puis retire les congés enregistrés après.
+        <span className="block mt-1">Le salarié a pris tous ses droits lors de son dernier congé ? Indiquez seulement la date de retour et un solde de 0 : le calcul repart de ce jour-là.</span>
+      </WarnBox>
+      <div className="overflow-x-auto"><table className="w-full text-sm" style={{ minWidth: 900 }}>
+        <thead><tr className="text-left text-xs" style={{ color: "var(--muted)", background: "#F8FAFC" }}>
+          <th className="px-2 py-2">Salarié</th><th className="px-2 py-2">Solde arrêté au</th><th className="px-2 py-2">Jours restant dus à cette date</th>
+          <th className="px-2 py-2">Retour du dernier congé</th><th className="px-2 py-2 text-right">Solde aujourd'hui</th></tr></thead>
+        <tbody>{salaries.map((e, i) => { const r = rows[i]; const a = apercu(e, r);
+          return (
+            <tr key={e.id} className="border-t" style={{ borderColor: "var(--line)" }}>
+              <td className="px-2 py-2">{nomComplet(e)}<span className="block text-[11px]" style={{ color: "var(--muted)" }}>embauche {fmt(e.dateEmbauche)}</span></td>
+              <td className="px-2 py-2"><input type="date" aria-label={`Date du solde repris — ${nomComplet(e)}`} className={inputCls} style={inputStyle} value={r.date} max={today} onChange={(ev) => set(i, "date", ev.target.value)} />
+                {!r.date && r.retour && <span className="block text-[11px]" style={{ color: "var(--muted)" }}>par défaut : veille du retour</span>}</td>
+              <td className="px-2 py-2"><input type="number" step="0.5" aria-label={`Jours restant dus — ${nomComplet(e)}`} className={inputCls} style={inputStyle} value={r.solde} placeholder="0" onChange={(ev) => set(i, "solde", ev.target.value)} /></td>
+              <td className="px-2 py-2"><input type="date" aria-label={`Retour du dernier congé — ${nomComplet(e)}`} className={inputCls} style={inputStyle} value={r.retour} max={today} onChange={(ev) => set(i, "retour", ev.target.value)} /></td>
+              <td className="px-2 py-2 text-right tabular-nums font-semibold">{a ? `${fmt2(a.solde)} j` : "—"}
+                {a?.droitOuvert && a.echeance && <span className="block text-[11px] font-normal" style={{ color: a.enRetard ? "#B5171D" : "var(--muted)" }}>à prendre avant le {fmt(a.echeance)}</span>}</td>
+            </tr>); })}</tbody>
+      </table></div>
+      <ErrLine err={err} />
+      <ModalFooter onClose={() => onClose()} onSubmit={go} busy={busy} />
+    </Modal>
+  );
+}
+
 function HolidayModal({ initial, actions, onClose }) {
   const [f, setF] = useState(() => ({ date: "", libelle: "", type: "chome_paye", aConfirmer: false, source: "", ...initial }));
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
@@ -3301,26 +3444,37 @@ function CongesTab({ hr, today, on, admin }) {
           <AbsencesTable liste={liste} hr={hr} on={on} />
         </SectionCard>
       )}
-      {vue === "soldes" && (
-        <SectionCard title="Soldes de congés payés" icon={CalendarDays} pad={false}>
-          <p className="text-xs px-4 pt-3" style={{ color: "var(--muted)" }}>Acquisition : {String(pval(hr.params, "CONGES_ACQUISITION", today)?.jours_par_mois ?? "—").replace(".", ",")} jours ouvrables par mois de service effectif, majorations d'ancienneté, d'enfants et de médaille à chaque année de service. Le congé doit être pris dans les 12 mois qui suivent l'ouverture du droit.</p>
+      {vue === "soldes" && (() => {
+        const lignes = salaries.map((e) => ({ e, s: soldeConges({ emp: e, det: hr.details.find((d) => d.employeeId === e.id), contracts: hr.contracts, absences: hr.absences, adjustments: hr.adjustments, params: hr.params, today }) })).filter((x) => x.s);
+        const aReprendre = lignes.filter((x) => x.s.historiqueManquant);
+        return (
+        <SectionCard title="Soldes de congés payés" icon={CalendarDays} pad={false}
+          action={<button onClick={() => on.reprise()} className="kb-btn kb-btn-primary text-xs"><History size={13} /> Reprendre l'historique</button>}>
+          <p className="text-xs px-4 pt-3" style={{ color: "var(--muted)" }}>Acquisition : {String(pval(hr.params, "CONGES_ACQUISITION", today)?.jours_par_mois ?? "—").replace(".", ",")} jours ouvrables par mois de service effectif, majorations d'ancienneté, d'enfants et de médaille à chaque année de service. Le congé doit être pris dans les 12 mois qui suivent l'ouverture du droit.
+            {" "}Pour un salarié présent avant l'outil, le calcul part du <b>solde repris</b> à une date donnée : les congés pris auparavant y sont déjà déduits.</p>
+          {aReprendre.length > 0 && <div className="px-4 pt-3"><WarnBox tone="orange">
+            <b>{aReprendre.length} salarié(s) sans historique</b> ({aReprendre.map((x) => nomComplet(x.e)).join(", ")}) : leur solde compte tous les mois depuis l'embauche, comme s'ils n'avaient jamais pris de congé.
+            {" "}Cliquez sur « Reprendre l'historique » et indiquez, pour chacun, le solde restant à une date (registre des congés, dernier bulletin) et la date de retour de son dernier congé.</WarnBox></div>}
           <div className="overflow-x-auto"><table className="w-full text-sm mt-2">
             <thead><tr className="text-left text-xs" style={{ color: "var(--muted)", background: "#F8FAFC" }}>
-              <th className="px-3 py-2">Salarié</th><th className="px-3 py-2 text-right">Acquis</th><th className="px-3 py-2 text-right">Majorations</th><th className="px-3 py-2 text-right">Ajustements</th>
+              <th className="px-3 py-2">Salarié</th><th className="px-3 py-2 text-right" title="Solde restant dû à la date de reprise de l'historique">Solde repris</th><th className="px-3 py-2 text-right">Acquis depuis</th><th className="px-3 py-2 text-right">Majorations</th><th className="px-3 py-2 text-right">Ajustements</th>
               <th className="px-3 py-2 text-right">Pris</th><th className="px-3 py-2 text-right">Solde</th><th className="px-3 py-2">Échéance de prise</th><th className="px-3 py-2"></th></tr></thead>
-            <tbody>{salaries.map((e) => { const s = soldeConges({ emp: e, det: hr.details.find((d) => d.employeeId === e.id), contracts: hr.contracts, absences: hr.absences, adjustments: hr.adjustments, params: hr.params, today });
-              if (!s) return null;
-              return (
+            <tbody>{lignes.map(({ e, s }) => (
                 <tr key={e.id} className="border-t" style={{ borderColor: "var(--line)" }}>
-                  <td className="px-3 py-2">{nomComplet(e)}</td><td className="px-3 py-2 text-right tabular-nums">{fmt2(s.acquisBase)}</td><td className="px-3 py-2 text-right tabular-nums">{fmt2(s.majorations)}</td>
+                  <td className="px-3 py-2">{nomComplet(e)}<span className="block text-[11px]" style={{ color: "var(--muted)" }}>embauché(e) le {fmt(s.debut)}</span></td>
+                  <td className="px-3 py-2 text-right tabular-nums">{s.reprise ? <>{fmt2(s.repris)}<span className="block text-[11px]" style={{ color: "var(--muted)" }}>au {fmt(s.reprise.date)}</span></>
+                    : s.historiqueManquant ? <Chip color="#C58A1B" bg="#FFF8EC">à reprendre</Chip> : <span style={{ color: "var(--muted)" }}>—</span>}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{fmt2(s.acquisBase)}</td><td className="px-3 py-2 text-right tabular-nums">{fmt2(s.majorations)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{fmt2(s.ajustements)}</td><td className="px-3 py-2 text-right tabular-nums">{fmt2(s.pris)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums font-semibold">{fmt2(s.solde)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums font-semibold">{fmt2(s.solde)}
+                    {s.cumulExcessif && <span className="block text-[10px] font-normal" style={{ color: "#B7791F" }} title="Le solde dépasse une année et demie de droits : vérifiez la reprise de l'historique ou planifiez le congé">plus d'un an de droits</span>}</td>
                   <td className="px-3 py-2 whitespace-nowrap">{!s.droitOuvert ? <span style={{ color: "var(--muted)" }}>droit ouvert le {fmt(s.ouverture)}</span> : s.enRetard ? <Chip color="#D81F26" bg="#FDF2F2">dépassée ({fmt(s.echeance)})</Chip> : fmt(s.echeance)}</td>
-                  <td className="px-3 py-2 text-right"><button onClick={() => on.adjust(e)} className="kb-btn kb-btn-ghost text-xs">Ajuster</button></td>
-                </tr>); })}</tbody>
+                  <td className="px-3 py-2 text-right whitespace-nowrap"><button onClick={() => on.reprise(e)} className="kb-btn kb-btn-ghost text-xs mr-1">Historique</button><button onClick={() => on.adjust(e)} className="kb-btn kb-btn-ghost text-xs">Ajuster</button></td>
+                </tr>))}</tbody>
           </table></div>
         </SectionCard>
-      )}
+        );
+      })()}
       {vue === "planning" && <Planning hr={hr} mois={mois} setMois={setMois} />}
       {vue === "feries" && (
         <SectionCard title="Jours fériés" icon={CalendarDays} pad={false} action={<div className="flex gap-2 items-center">
@@ -3368,7 +3522,8 @@ export function argsBulletin(hr, emp, period, variables = {}, slipId = null) {
     (t.elements?.ajustements || []).forEach((x, i) => { if (Number(x.montant)) calcul.lignes.push({ code: String(3900 + i), libelle: x.libelle || "Ajustement", montant: Number(x.montant), soumis: x.soumis !== false, retenue: Number(x.montant) < 0 }); });
     termination = { dateSortie: t.dateSortie, calcul };
   }
-  return { emp, det, contract, period, params: hr.params, scale: hr.scale, settings: hr.settings, elements: hr.elements, absences: hr.absences, historique, termination, variables };
+  return { emp, det, contract, period, params: hr.params, scale: hr.scale, settings: hr.settings, elements: hr.elements, absences: hr.absences, historique, termination, variables,
+    commissions: (hr.commissions || []).filter((c) => c.employeeId === emp.id) };
 }
 export function calculerBulletin(hr, emp, period, variables, slipId) {
   const args = argsBulletin(hr, emp, period, variables, slipId);
@@ -3383,7 +3538,7 @@ export function calculerBulletin(hr, emp, period, variables, slipId) {
     categorie: c ? `${c.categorie}${c.echelon ? ` / ${c.echelon}` : ""}` : "", qualification: c ? QUALIFICATIONS[c.qualification] : "", typeContrat: c ? CONTRACT_TYPES[c.type] : "",
     dateEmbauche: emp.dateEmbauche, anciennete: libAnciennete(ancienneteMois(emp.dateEmbauche, d2)), cnps: args.det?.cnpsNumero || "", adresse: args.det?.adresse || "",
     horaire: res.heures ? r2(173.33 * (Number(c?.horaireHebdo) || 40) / 40) : 0, parts: res.parts, joursPayes: res.joursPayes, absences: res.detailsAbsences || [],
-    conges: solde ? { acquis: r2(solde.acquisBase + solde.majorations + solde.ajustements), pris: solde.pris, solde: solde.solde } : null,
+    conges: solde ? { acquis: r2((solde.repris || 0) + solde.acquisBase + solde.majorations + solde.ajustements), pris: solde.pris, solde: solde.solde } : null,
     cumuls: { brut: cum("brut") + res.brut, imposable: cum("imposable") + res.imposable, salariales: cum("cotisationsSalariales") + res.cotisationsSalariales,
       patronales: cum("cotisationsPatronales") + res.cotisationsPatronales, net: cum("netAPayer") + res.net, heures: annee.reduce((t, b) => t + (Number(b.entete?.heuresPeriode) || 0), 0) + res.heures },
     heuresPeriode: res.heures, anomalies: res.anomalies,
@@ -3722,6 +3877,11 @@ function PaieTab({ hr, actions, admin, today, say, focus }) {
     setBusy(false); say({ message: "Bulletins recalculés avec les données à jour" });
   };
   const bloquants = brouillons.flatMap((b) => (b.entete?.anomalies || []).filter((a) => a.niveau === "bloquant").map((a) => `${b.entete?.nom} : ${a.texte}`));
+  /* Commission validée après la préparation des bulletins : elle n'y figure pas encore */
+  const surBulletins = new Set(slips.filter((b) => b.statut !== "annule").flatMap((b) => (b.lignes || []).flatMap((l) => l.commissionIds || [])));
+  const commAbsentes = (hr.commissions || []).filter((c) => c.statut === "validee" && c.annee === period.annee && c.mois === period.mois && !surBulletins.has(c.id)
+    && brouillons.some((b) => b.employeeId === c.employeeId));
+  if (commAbsentes.length) bloquants.push(`${commAbsentes.length} commission(s) validée(s) après la préparation des bulletins : cliquez sur « Recalculer les brouillons »`);
   const valider = async () => {
     setErr("");
     if (!brouillons.length) return setErr("Aucun bulletin en brouillon à valider.");
@@ -4467,7 +4627,7 @@ export const TYPES_DEMANDE = ["conge_paye", "permission", "absence_autorisee", "
 
 function useMonDossier(me) {
   const [st, setSt] = useState({ loading: true, error: "", emp: null, det: null, contracts: [], absences: [], adjustments: [], holidays: [], params: [],
-    payslips: [], periods: [], settings: { ...REGLAGES_VIDES }, documents: [] });
+    payslips: [], periods: [], settings: { ...REGLAGES_VIDES }, documents: [], commissions: [] });
   const load = useCallback(async () => {
     if (!me?.id) return;
     const e = await supabase.from("hr_employees").select("*").eq("user_id", me.id);
@@ -4480,12 +4640,14 @@ function useMonDossier(me) {
       supabase.from("hr_holidays").select("*").order("date"), supabase.from("hr_legal_params").select("*").order("code"),
       supabase.from("hr_payslips").select("*").eq("employee_id", id).eq("statut", "valide"), supabase.from("hr_pay_periods").select("*"),
       supabase.from("hr_company_settings").select("*"), supabase.from("hr_documents").select("*").eq("employee_id", id)]);
+    const com = await supabase.from("hr_commissions").select("*").eq("employee_id", id);   // v34 : facultatif
     const err = res.find((r) => r.error)?.error;
     setSt({ loading: false, error: err ? (/does not exist|schema cache/.test(err.message) ? "L'espace salarié n'est pas encore installé : le service du personnel doit exécuter migration-v33-2.sql." : err.message) : "",
       emp: mEmp(row), det: res[0].data?.[0] ? mDet(res[0].data[0]) : null, contracts: (res[1].data || []).map(mCtr),
       absences: (res[2].data || []).map(mAbs).sort((a, b) => (a.dateDebut < b.dateDebut ? 1 : -1)), adjustments: (res[3].data || []).map(mAdj),
       holidays: (res[4].data || []).map(mHoliday), params: (res[5].data || []).map(mParam), payslips: (res[6].data || []).map(mSlip),
-      periods: (res[7].data || []).map(mPeriod), settings: mSettings((res[8].data || [])[0]), documents: (res[9].data || []).map(mHrDoc) });
+      periods: (res[7].data || []).map(mPeriod), settings: mSettings((res[8].data || [])[0]), documents: (res[9].data || []).map(mHrDoc),
+      commissions: com.error ? [] : (com.data || []).map(mCom).sort((a, b) => b.annee - a.annee || b.mois - a.mois) });
   }, [me?.id]);
   useEffect(() => { load(); }, [load]);
   const actions = {
@@ -4639,6 +4801,15 @@ export function MonDossier({ me }) {
           )}
         </SectionCard>
       )}
+      {vue === "bulletins" && d.commissions.length > 0 && (
+        <SectionCard title="Mes commissions et primes" icon={Wallet} pad={false}>
+          <div className="divide-y" style={{ borderColor: "var(--line)" }}>{d.commissions.map((c) => (
+            <div key={c.id} className="px-4 py-2.5 flex flex-wrap items-center gap-2 text-sm">
+              <span className="flex-1">{c.libelle}<span className="block text-xs" style={{ color: "var(--muted)" }}>{[c.reference, `paie de ${MOIS_NOMS[c.mois - 1]} ${c.annee}`].filter(Boolean).join(" · ")}</span></span>
+              <span className="tabular-nums font-medium">{fcfa(c.montant)}</span><Chip color={COMMISSION_STATUTS[c.statut]?.color} dot>{COMMISSION_STATUTS[c.statut]?.label}</Chip>
+            </div>))}</div>
+        </SectionCard>
+      )}
       {vue === "documents" && (
         <SectionCard title="Mes documents" icon={FolderOpen} pad={false}>
           {d.documents.length === 0 ? <EmptyState icon={FolderOpen} title="Aucun document partagé" sub="Le service du personnel partage ici vos attestations, certificats et contrats." /> : (
@@ -4675,11 +4846,265 @@ export function MonDossier({ me }) {
 /* ══════════════════════════════════════════════════════════════════════
    10. MODULE
    ══════════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════
+   13 bis. COMMISSIONS ET PRIMES DE RÉUSSITE DES COMMERCIAUX
+   Barème modifiable (taux, forfaits, paliers de chiffre d'affaires),
+   commissions saisies par opération, validées, puis versées sur le bulletin
+   du mois : éléments du salaire, soumis aux cotisations CNPS et à l'ITS.
+   ══════════════════════════════════════════════════════════════════════ */
+const moisIso = (a, m) => `${a}-${pad(m)}`;
+function RuleModal({ initial, actions, onClose }) {
+  const [f, setF] = useState(() => ({ libelle: "", categorie: "commission", operation: "", mode: "pourcentage", assiette: "", taux: 0, montant: 0, paliers: [], conditions: "", actif: true, ordre: 0, ...initial }));
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const setP = (i, k, v) => set("paliers", f.paliers.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
+  const go = async () => {
+    setErr("");
+    if (!f.libelle.trim()) return setErr("Le libellé est obligatoire.");
+    if (f.mode === "pourcentage" && !(Number(f.taux) > 0)) return setErr("Indiquez le taux de la commission.");
+    if (f.mode === "forfait" && !(Number(f.montant) > 0)) return setErr("Indiquez le montant forfaitaire.");
+    if (f.mode === "paliers" && !(f.paliers || []).some((p) => Number(p.taux) > 0 || Number(p.montant) > 0)) return setErr("Ajoutez au moins un palier.");
+    setBusy(true); const r = await actions.saveRow("hr_commission_rules", toRule(f), f.id, f.id ? "Règle mise à jour" : "Règle ajoutée au barème"); setBusy(false);
+    if (r.error) setErr(r.error); else onClose(r);
+  };
+  return (
+    <Modal title={f.id ? "Modifier la règle du barème" : "Nouvelle règle du barème"} onClose={() => onClose()} wide>
+      <div className="grid sm:grid-cols-2 gap-x-3">
+        <Field label="Libellé *"><input className={inputCls} style={inputStyle} value={f.libelle} onChange={(e) => set("libelle", e.target.value)} placeholder="Ex. Commission sur mise en location" /></Field>
+        <Field label="Nature"><select className={inputCls} style={inputStyle} value={f.categorie} onChange={(e) => set("categorie", e.target.value)}>
+          {Object.entries(COMMISSION_CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+        <Field label="Opération concernée"><input className={inputCls} style={inputStyle} value={f.operation} onChange={(e) => set("operation", e.target.value)} placeholder="Location, vente, mandat de gestion, chiffre d'affaires…" /></Field>
+        <Field label="Mode de calcul"><select className={inputCls} style={inputStyle} value={f.mode} onChange={(e) => set("mode", e.target.value)}>
+          {Object.entries(COMMISSION_MODES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+        {f.mode !== "forfait" && <Field label="Assiette" hint="Somme sur laquelle le taux s'applique"><input className={inputCls} style={inputStyle} value={f.assiette} onChange={(e) => set("assiette", e.target.value)} placeholder="Ex. honoraires d'agence encaissés" /></Field>}
+        {f.mode === "pourcentage" && <Field label="Taux (%) *"><input type="number" step="0.01" min={0} max={100} className={inputCls} style={inputStyle} value={f.taux} onChange={(e) => set("taux", e.target.value)} /></Field>}
+        {f.mode === "forfait" && <Field label="Montant (FCFA) *"><input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.montant} onChange={(e) => set("montant", e.target.value)} /></Field>}
+      </div>
+      {f.mode === "paliers" && (
+        <div className="mb-3">
+          <p className="text-xs font-semibold mb-1">Paliers <span className="font-normal" style={{ color: "var(--muted)" }}>— le palier retenu est le plus élevé atteint ; indiquez un taux ou un montant</span></p>
+          {(f.paliers || []).map((p, i) => (
+            <div key={i} className="flex gap-2 mb-1.5 items-center flex-wrap">
+              <span className="text-xs w-16">À partir de</span>
+              <input type="number" min={0} step={10000} aria-label={`Seuil du palier ${i + 1}`} className="w-40 px-2 py-1.5 rounded border text-sm text-right" style={inputStyle} value={p.seuil} onChange={(e) => setP(i, "seuil", e.target.value)} />
+              <span className="text-xs">F : taux</span>
+              <input type="number" min={0} step="0.1" aria-label={`Taux du palier ${i + 1}`} className="w-24 px-2 py-1.5 rounded border text-sm text-right" style={inputStyle} value={p.taux} onChange={(e) => setP(i, "taux", e.target.value)} />
+              <span className="text-xs">% ou montant</span>
+              <input type="number" min={0} step={1000} aria-label={`Montant du palier ${i + 1}`} className="w-36 px-2 py-1.5 rounded border text-sm text-right" style={inputStyle} value={p.montant} onChange={(e) => setP(i, "montant", e.target.value)} />
+              <button onClick={() => set("paliers", f.paliers.filter((_, j) => j !== i))} className="p-1 text-slate-400 hover:text-red-500" aria-label="Retirer le palier"><X size={14} /></button>
+            </div>))}
+          <button onClick={() => set("paliers", [...(f.paliers || []), { seuil: "", taux: 0, montant: 0 }])} className="kb-btn kb-btn-ghost text-xs"><Plus size={12} /> Palier</button>
+        </div>
+      )}
+      <Field label="Conditions d'attribution" hint="Ex. opération encaissée, dossier complet, objectif du mois atteint"><textarea rows={2} className={inputCls} style={inputStyle} value={f.conditions} onChange={(e) => set("conditions", e.target.value)} /></Field>
+      <div className="flex gap-4 items-center mb-3">
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={f.actif} onChange={(e) => set("actif", e.target.checked)} /> Règle en vigueur</label>
+        <label className="flex items-center gap-2 text-sm">Ordre <input type="number" className="w-16 px-2 py-1 rounded border text-sm" style={inputStyle} value={f.ordre} onChange={(e) => set("ordre", e.target.value)} /></label>
+      </div>
+      <ErrLine err={err} />
+      <ModalFooter onClose={() => onClose()} onSubmit={go} busy={busy} />
+    </Modal>
+  );
+}
+
+function CommissionModal({ initial, hr, prospects, properties, actions, today, onClose }) {
+  const [a0, m0] = today.split("-").map(Number);
+  const [f, setF] = useState(() => ({ employeeId: "", annee: a0, mois: m0, ruleId: "", libelle: "", categorie: "commission", dateOperation: today, reference: "", assiette: "", taux: 0, montant: "", notes: "", statut: "proposee", ...initial }));
+  const [valider, setValider] = useState(false);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const regles = hr.commissionRules.filter((r) => r.actif || r.id === f.ruleId);
+  const regle = hr.commissionRules.find((r) => r.id === f.ruleId) || null;
+  const calc = regle ? calculCommission(regle, f.assiette) : null;
+  const salaries = hr.employees.filter((e) => e.statut !== "sorti" || e.id === f.employeeId);
+  const emp = hr.employees.find((e) => e.id === f.employeeId);
+  const periode = hr.periods.find((p) => p.annee === Number(f.annee) && p.mois === Number(f.mois));
+  const moisValide = periode?.statut === "validee";
+  /* Opérations conclues par ce commercial (prospects convertis qui lui sont attribués) */
+  const deja = new Set(hr.commissions.filter((c) => c.id !== f.id && c.statut !== "annulee").map((c) => c.reference));
+  const operations = emp?.userId ? (prospects || []).filter((p) => p.status === "converti" && p.assignedTo === emp.userId)
+    .map((p) => { const ref = `${p.ref || "Prospect"} — ${p.name}${p.propertyId ? ` — ${(properties || []).find((x) => x.id === p.propertyId)?.name || ""}` : ""} (${p.operation === "vente" ? "vente" : "location"})`;
+      return { id: p.id, ref, deja: deja.has(ref) }; }) : [];
+  const choisirRegle = (id) => { const r = hr.commissionRules.find((x) => x.id === id);
+    setF((p) => ({ ...p, ruleId: id, categorie: r?.categorie || p.categorie, libelle: r ? r.libelle : p.libelle,
+      ...(r ? { taux: calculCommission(r, p.assiette).taux, montant: calculCommission(r, p.assiette).montant || p.montant } : {}) })); };
+  const changerAssiette = (v) => setF((p) => { const r = hr.commissionRules.find((x) => x.id === p.ruleId);
+    return { ...p, assiette: v, ...(r ? { taux: calculCommission(r, v).taux, montant: calculCommission(r, v).montant } : {}) }; });
+  const go = async () => {
+    setErr("");
+    if (!f.employeeId) return setErr("Choisissez le salarié.");
+    if (!f.libelle.trim()) return setErr("Indiquez le libellé de la commission.");
+    if (!(Number(f.montant) > 0)) return setErr("Le montant doit être supérieur à 0.");
+    if (moisValide) return setErr(`La paie de ${MOIS_NOMS[f.mois - 1]} ${f.annee} est validée : rattachez cette commission au mois suivant.`);
+    setBusy(true);
+    const r = await actions.saveRow("hr_commissions", toCom({ ...f, statut: valider ? "validee" : f.statut === "validee" ? "validee" : "proposee" }), f.id,
+      valider ? "Commission validée : elle figurera sur le bulletin du mois" : f.id ? "Commission mise à jour" : "Commission enregistrée, à valider");
+    setBusy(false);
+    if (r.error) setErr(r.error); else onClose(r);
+  };
+  return (
+    <Modal title={f.id ? "Modifier la commission" : "Nouvelle commission ou prime"} onClose={() => onClose()} wide>
+      <div className="grid sm:grid-cols-3 gap-x-3">
+        <Field label="Salarié *"><select className={inputCls} style={inputStyle} value={f.employeeId} onChange={(e) => set("employeeId", e.target.value)}>
+          <option value="">— Choisir —</option>{salaries.map((e) => <option key={e.id} value={e.id}>{nomComplet(e)}{e.poste ? ` — ${e.poste}` : ""}</option>)}</select></Field>
+        <Field label="Versée avec la paie de" hint={moisValide ? "Paie déjà validée : choisissez le mois suivant" : "Mois du bulletin qui portera la commission"}>
+          <input type="month" className={inputCls} style={{ ...inputStyle, borderColor: moisValide ? "#D81F26" : undefined }} value={moisIso(f.annee, f.mois)}
+            onChange={(e) => { if (!e.target.value) return; const [y, m] = e.target.value.split("-").map(Number); setF((p) => ({ ...p, annee: y, mois: m })); }} /></Field>
+        <Field label="Date de l'opération"><input type="date" className={inputCls} style={inputStyle} value={f.dateOperation || ""} onChange={(e) => set("dateOperation", e.target.value)} /></Field>
+        <Field label="Règle du barème"><select className={inputCls} style={inputStyle} value={f.ruleId} onChange={(e) => choisirRegle(e.target.value)}>
+          <option value="">— Hors barème (montant libre) —</option>{regles.map((r) => <option key={r.id} value={r.id}>{r.libelle}</option>)}</select></Field>
+        <Field label="Nature"><select className={inputCls} style={inputStyle} value={f.categorie} onChange={(e) => set("categorie", e.target.value)}>
+          {Object.entries(COMMISSION_CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+        <Field label="Libellé *"><input className={inputCls} style={inputStyle} value={f.libelle} onChange={(e) => set("libelle", e.target.value)} /></Field>
+      </div>
+      {operations.length > 0 && (
+        <Field label="Opération conclue par ce commercial" hint="Prospects convertis qui lui sont attribués">
+          <select className={inputCls} style={inputStyle} value="" onChange={(e) => { const o = operations.find((x) => x.id === e.target.value); if (o) set("reference", o.ref); }}>
+            <option value="">— Reprendre une opération —</option>
+            {operations.map((o) => <option key={o.id} value={o.id}>{o.ref}{o.deja ? " (déjà commissionnée)" : ""}</option>)}</select></Field>
+      )}
+      <Field label="Référence de l'opération" hint="Bien, client, n° de bail ou de mandat"><input className={inputCls} style={inputStyle} value={f.reference} onChange={(e) => set("reference", e.target.value)} /></Field>
+      <div className="grid sm:grid-cols-3 gap-x-3">
+        <Field label={regle?.mode === "forfait" ? "Assiette (facultative)" : `Assiette${regle?.assiette ? ` — ${regle.assiette}` : ""} (FCFA)`}>
+          <input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.assiette} onChange={(e) => changerAssiette(e.target.value)} /></Field>
+        <Field label="Taux appliqué (%)"><input type="number" min={0} step="0.01" className={inputCls} style={inputStyle} value={f.taux} onChange={(e) => set("taux", e.target.value)} disabled={!!regle} /></Field>
+        <Field label="Montant (FCFA) *" hint={calc ? `Barème : ${fcfa(calc.montant)}${calc.detail ? ` (${calc.detail})` : ""}` : "Montant libre"}>
+          <input type="number" min={0} step={500} className={inputCls} style={{ ...inputStyle, borderColor: calc && Number(f.montant) !== calc.montant ? "#C58A1B" : undefined }} value={f.montant} onChange={(e) => set("montant", e.target.value)} /></Field>
+      </div>
+      {calc && Number(f.montant) !== calc.montant && Number(f.montant) > 0 && <WarnBox tone="orange">Le montant diffère du barème ({fcfa(calc.montant)}) : précisez le motif dans les observations.</WarnBox>}
+      {regle?.conditions && <p className="text-xs mb-3" style={{ color: "var(--muted)" }}>Conditions : {regle.conditions}</p>}
+      <Field label="Observations"><textarea rows={2} className={inputCls} style={inputStyle} value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
+      {f.statut !== "validee" && <label className="flex items-center gap-2 text-sm mb-3"><input type="checkbox" checked={valider} onChange={(e) => setValider(e.target.checked)} /> Valider immédiatement (elle figurera sur le bulletin du mois)</label>}
+      <ErrLine err={err} />
+      <ModalFooter onClose={() => onClose()} onSubmit={go} busy={busy} />
+    </Modal>
+  );
+}
+
+function CommissionsPrint({ hr, annee, mois, onBack }) {
+  const liste = hr.commissions.filter((c) => c.annee === annee && c.mois === mois && c.statut !== "annulee");
+  const parEmp = [...new Set(liste.map((c) => c.employeeId))].map((id) => ({ e: hr.employees.find((x) => x.id === id), l: liste.filter((c) => c.employeeId === id) }))
+    .sort((a, b) => nomComplet(a.e).localeCompare(nomComplet(b.e)));
+  const total = liste.reduce((t, c) => t + c.montant, 0);
+  const td = "px-2 py-1 border"; const tdn = "px-2 py-1 border whitespace-nowrap"; const bc = { borderColor: "#C9D1DA" };
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 print:hidden gap-2">
+        <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
+        <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+      </div>
+      <PrintPage className="bg-white rounded-xl border p-7 max-w-4xl mx-auto" style={{ borderColor: "var(--line)" }}>
+        <PrintHead title="ÉTAT DES COMMISSIONS ET PRIMES DE RÉUSSITE" subtitle={`Paie de ${MOIS_NOMS[mois - 1]} ${annee}`} />
+        {parEmp.length === 0 ? <p className="text-sm mt-4">Aucune commission pour ce mois.</p> : parEmp.map(({ e, l }) => (
+          <div key={e?.id} className="mt-4" style={{ breakInside: "avoid" }}>
+            <p className="text-sm font-semibold">{nomComplet(e)} <span className="font-normal" style={{ color: "var(--muted)" }}>— {e?.matricule}{e?.poste ? ` · ${e.poste}` : ""}</span></p>
+            <table className="w-full text-[11px] border-collapse mt-1">
+              <thead><tr style={{ background: "#F1F3F5" }}><th className={`${td} text-left`} style={bc}>Date</th><th className={`${td} text-left`} style={bc}>Nature</th><th className={`${td} text-left`} style={bc}>Opération</th>
+                <th className={`${td} text-right`} style={bc}>Assiette</th><th className={`${td} text-right`} style={bc}>Taux</th><th className={`${td} text-right`} style={bc}>Montant</th><th className={`${td} text-left`} style={bc}>État</th></tr></thead>
+              <tbody>{l.map((c) => (
+                <tr key={c.id}><td className={tdn} style={bc}>{c.dateOperation ? fmt(c.dateOperation) : "—"}</td><td className={td} style={bc}>{c.libelle}</td><td className={td} style={bc}>{c.reference || "—"}</td>
+                  <td className={`${tdn} text-right tabular-nums`} style={bc}>{c.assiette ? fcfa(c.assiette) : "—"}</td><td className={`${tdn} text-right`} style={bc}>{c.taux ? `${fmt2(c.taux)} %` : "—"}</td>
+                  <td className={`${tdn} text-right tabular-nums font-semibold`} style={bc}>{fcfa(c.montant)}</td><td className={td} style={bc}>{COMMISSION_STATUTS[c.statut]?.label}</td></tr>))}
+                <tr style={{ background: "#F8FAFC" }}><td colSpan={5} className={`${td} text-right font-semibold`} style={bc}>Total</td><td className={`${tdn} text-right tabular-nums font-bold`} style={bc}>{fcfa(l.reduce((t, c) => t + c.montant, 0))}</td><td className={td} style={bc} /></tr>
+              </tbody>
+            </table>
+          </div>))}
+        {parEmp.length > 0 && <p className="text-sm font-bold mt-4 text-right">Total du mois : {fcfa(total)}</p>}
+        <p className="text-[10px] mt-3" style={{ color: "var(--muted)" }}>Les commissions et primes de réussite sont des éléments du salaire : elles figurent sur le bulletin de paie du mois et sont soumises aux cotisations sociales (CNPS) et à l'impôt sur les traitements et salaires (ITS).</p>
+        <div className="grid grid-cols-2 gap-8 mt-8 text-xs text-center">
+          <div><p className="font-semibold">Le responsable commercial</p><div className="h-16" /></div>
+          <div><p className="font-semibold">La Direction</p><div className="h-16" /></div>
+        </div>
+      </PrintPage>
+    </div>
+  );
+}
+
+function CommissionsTab({ hr, store, actions, admin, today, say }) {
+  const [vue, setVue] = useState("mois");
+  const [mois, setMois] = useState(today.slice(0, 7));
+  const [modal, setModal] = useState(null);
+  const [imprimer, setImprimer] = useState(false);
+  const [an, mo] = mois.split("-").map(Number);
+  if (hr.commissionsAbsentes) return <WarnBox tone="orange">Le suivi des commissions n'est pas encore installé : exécutez migration-v34.sql dans le SQL Editor de Supabase, puis cliquez sur « Actualiser ».</WarnBox>;
+  if (imprimer) return <CommissionsPrint hr={hr} annee={an} mois={mo} onBack={() => setImprimer(false)} />;
+  const liste = hr.commissions.filter((c) => c.annee === an && c.mois === mo);
+  const actives = liste.filter((c) => c.statut !== "annulee");
+  const somme = (st) => actives.filter((c) => !st || c.statut === st).reduce((t, c) => t + c.montant, 0);
+  const periode = hr.periods.find((p) => p.annee === an && p.mois === mo);
+  const fermer = (r) => { setModal(null); say(r); };
+  const statut = async (c, st) => say(await actions.saveRow("hr_commissions", { statut: st }, c.id, st === "validee" ? "Commission validée" : st === "annulee" ? "Commission annulée" : "Commission remise à valider"));
+  const parEmp = [...new Set(liste.map((c) => c.employeeId))].map((id) => ({ e: hr.employees.find((x) => x.id === id), l: liste.filter((c) => c.employeeId === id) }));
+  return (
+    <div>
+      <div className="flex flex-wrap gap-1 mb-3 items-center">
+        {[["mois", "Commissions du mois"], ["bareme", "Barème"]].map(([k, l]) => (
+          <button key={k} onClick={() => setVue(k)} className="px-3 py-1.5 rounded-lg text-sm" style={{ background: vue === k ? "#1F2937" : "#fff", color: vue === k ? "#fff" : "var(--ink)", border: "1px solid var(--line)" }}>{l}</button>))}
+        <div className="flex-1" />
+        {vue === "mois" && <>
+          <input type="month" aria-label="Mois de paie" className="px-3 py-1.5 rounded-lg border text-sm" style={inputStyle} value={mois} onChange={(e) => e.target.value && setMois(e.target.value)} />
+          <button onClick={() => setImprimer(true)} className="kb-btn kb-btn-ghost text-sm"><Printer size={14} /> État du mois</button>
+          <button onClick={() => setModal({ kind: "com", initial: { annee: an, mois: mo } })} className="kb-btn kb-btn-primary text-sm"><Plus size={15} /> Commission ou prime</button>
+        </>}
+        {vue === "bareme" && admin && <button onClick={() => setModal({ kind: "rule", initial: { ordre: hr.commissionRules.length + 1 } })} className="kb-btn kb-btn-primary text-sm"><Plus size={15} /> Règle</button>}
+      </div>
+      {vue === "mois" && <>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+          <StatCard icon={Wallet} label="Total du mois" value={fcfa(somme())} sub={`${actives.length} opération(s)`} />
+          <StatCard icon={AlertTriangle} label="À valider" value={fcfa(somme("proposee"))} tint="#C58A1B" />
+          <StatCard icon={Check} label="Validées" value={fcfa(somme("validee"))} tint="#2E78A8" sub="figureront sur le bulletin" />
+          <StatCard icon={CheckCircle2} label="Versées" value={fcfa(somme("payee"))} tint="#4F9E2A" />
+        </div>
+        {periode?.statut === "validee" && liste.some((c) => c.statut === "validee") && <WarnBox tone="orange">La paie de {MOIS_NOMS[mo - 1]} {an} est validée et certaines commissions validées n'y figurent pas : rattachez-les au mois suivant (Modifier).</WarnBox>}
+        {hr.commissionRules.length === 0 && <WarnBox tone="info">Le barème est vide : ajoutez vos règles dans l'onglet « Barème » (taux, forfaits, paliers de chiffre d'affaires). Une commission peut aussi être saisie hors barème.</WarnBox>}
+        <SectionCard title={`Commissions et primes — ${MOIS_NOMS[mo - 1]} ${an}`} icon={Wallet} pad={false}>
+          {liste.length === 0 ? <EmptyState icon={Wallet} title="Aucune commission ce mois" sub="Saisissez les commissions des opérations conclues : elles seront ajoutées au bulletin une fois validées." /> : (
+            <div className="overflow-x-auto"><table className="w-full text-sm">
+              <thead><tr className="text-left text-xs" style={{ color: "var(--muted)", background: "#F8FAFC" }}>
+                <th className="px-3 py-2">Salarié</th><th className="px-3 py-2">Opération</th><th className="px-3 py-2 text-right">Assiette</th><th className="px-3 py-2 text-right">Montant</th><th className="px-3 py-2">État</th><th className="px-3 py-2" /></tr></thead>
+              <tbody>{parEmp.flatMap(({ e, l }) => l.map((c, i) => { const st = COMMISSION_STATUTS[c.statut];
+                return (
+                  <tr key={c.id} className="border-t" style={{ borderColor: "var(--line)", opacity: c.statut === "annulee" ? 0.5 : 1 }}>
+                    <td className="px-3 py-2">{i === 0 ? nomComplet(e) : ""}</td>
+                    <td className="px-3 py-2">{c.libelle}<span className="block text-[11px]" style={{ color: "var(--muted)" }}>{[c.dateOperation && fmt(c.dateOperation), c.reference].filter(Boolean).join(" · ")}</span></td>
+                    <td className="px-3 py-2 text-right tabular-nums">{c.assiette ? fcfa(c.assiette) : "—"}{c.taux ? <span className="block text-[11px]" style={{ color: "var(--muted)" }}>{fmt2(c.taux)} %</span> : null}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-semibold">{fcfa(c.montant)}</td>
+                    <td className="px-3 py-2"><Chip color={st.color} dot>{st.label}</Chip></td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      {c.statut === "proposee" && <button onClick={() => statut(c, "validee")} className="kb-btn kb-btn-primary text-xs mr-1">Valider</button>}
+                      {c.statut === "validee" && <button onClick={() => statut(c, "proposee")} className="kb-btn kb-btn-ghost text-xs mr-1">Dévalider</button>}
+                      {["proposee", "validee"].includes(c.statut) && <button onClick={() => setModal({ kind: "com", initial: c })} className="p-1.5 rounded hover:bg-slate-100" aria-label="Modifier la commission"><Pencil size={14} /></button>}
+                      {["proposee", "validee"].includes(c.statut) && <button onClick={() => statut(c, "annulee")} className="p-1.5 rounded hover:bg-slate-100" style={{ color: "#D81F26" }} aria-label="Annuler la commission"><X size={14} /></button>}
+                    </td>
+                  </tr>); }))}</tbody>
+            </table></div>)}
+        </SectionCard>
+      </>}
+      {vue === "bareme" && (
+        <SectionCard title="Barème des commissions et primes de réussite" icon={Scale} pad={false}>
+          <p className="text-xs px-4 pt-3" style={{ color: "var(--muted)" }}>Reportez ici les règles de votre document de commissions. Le barème propose le montant à la saisie ; un écart reste possible, avec un motif.{!admin && " Seul un accès complet modifie le barème."}</p>
+          {hr.commissionRules.length === 0 ? <EmptyState icon={Scale} title="Barème vide" /> : (
+            <div className="divide-y mt-2" style={{ borderColor: "var(--line)" }}>{hr.commissionRules.map((r) => (
+              <div key={r.id} className="px-4 py-3 flex flex-wrap items-center gap-3 text-sm" style={{ opacity: r.actif ? 1 : 0.55 }}>
+                <div className="flex-1 min-w-[16rem]"><p className="font-medium">{r.libelle} <Chip color={r.categorie === "prime_reussite" ? "#7C3AED" : "#2E78A8"}>{COMMISSION_CATEGORIES[r.categorie]}</Chip>{!r.actif && <Chip color="#94A3B8">hors vigueur</Chip>}</p>
+                  <p className="text-xs" style={{ color: "var(--muted)" }}>{[r.operation, r.mode === "pourcentage" ? `${fmt2(r.taux)} % ${r.assiette ? `de ${r.assiette}` : ""}` : r.mode === "forfait" ? `forfait de ${fcfa(r.montant)}`
+                    : `paliers : ${(r.paliers || []).map((p) => `dès ${fcfa(p.seuil)} → ${Number(p.taux) ? `${fmt2(p.taux)} %` : fcfa(p.montant)}`).join(" ; ")}`, r.conditions].filter(Boolean).join(" · ")}</p></div>
+                {admin && <button onClick={() => setModal({ kind: "rule", initial: r })} className="p-1.5 rounded hover:bg-slate-100" aria-label="Modifier la règle"><Pencil size={14} /></button>}
+              </div>))}</div>)}
+        </SectionCard>
+      )}
+      {modal?.kind === "rule" && <RuleModal initial={modal.initial} actions={actions} onClose={fermer} />}
+      {modal?.kind === "com" && <CommissionModal initial={modal.initial} hr={hr} prospects={store?.prospects} properties={store?.properties} actions={actions} today={today} onClose={fermer} />}
+    </div>
+  );
+}
+
 const TABS = [
   { id: "dashboard", label: "Tableau de bord", icon: Briefcase },
   { id: "salaries", label: "Salariés", icon: Users },
   { id: "conges", label: "Congés et absences", icon: CalendarDays },
   { id: "paie", label: "Paie", icon: Wallet },
+  { id: "commissions", label: "Commissions", icon: BadgePercent },
   { id: "sorties", label: "Sorties", icon: DoorOpen },
   { id: "recrutement", label: "Recrutement", icon: UserPlus },
   { id: "discipline", label: "Discipline", icon: Gavel },
@@ -4833,6 +5258,7 @@ export default function RH({ store, me, acces }) {
     },
     docAbsence: (abs) => editerObjet("absence", abs, empDe(abs.employeeId), contratA(contracts, abs.employeeId, abs.dateDebut)),
     adjust: (emp) => setModal({ kind: "adjust", emp }),
+    reprise: (emp) => setModal({ kind: "reprise", emp: emp || null }),
     holiday: (h) => setModal({ kind: "holiday", initial: h }),
     element: (x, emp) => setModal({ kind: "element", initial: x, emp }),
     gotoSlip: (b) => { setFocusPaie({ periodId: b.periodId, slipId: b.id, n: Date.now() }); aller("paie"); },
@@ -4881,7 +5307,7 @@ export default function RH({ store, me, acces }) {
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3 print:hidden">
         <div><h1 className="text-xl font-bold flex items-center gap-2"><Briefcase size={20} style={{ color: "var(--brass)" }} /> Ressources humaines</h1>
-          <p className="text-xs" style={{ color: "var(--muted)" }}>Données confidentielles — visibles uniquement par l'administrateur et la gérante.</p></div>
+          <p className="text-xs" style={{ color: "var(--muted)" }}>Données confidentielles — accès réservé au responsable du module et aux membres qu'il a désignés.</p></div>
         <button onClick={a.reload} className="kb-btn kb-btn-ghost text-sm">Actualiser</button>
       </div>
       <div className="flex gap-1 overflow-x-auto mb-4 pb-1 print:hidden" role="tablist">
@@ -4901,6 +5327,7 @@ export default function RH({ store, me, acces }) {
             ? <EmployeeDetail emp={emp} hr={hr} members={members} departments={departments} admin={admin} alerts={alerts} today={today} on={on} />
             : <EmployeeList hr={hr} members={members} alerts={alerts} onOpen={setEmpId} onNew={(init) => setModal({ kind: "emp", initial: init, det: null })} />)}
           {tab === "conges" && <CongesTab hr={hr} today={today} on={on} admin={admin} />}
+          {tab === "commissions" && <CommissionsTab hr={hr} store={store} actions={a} admin={admin} today={today} say={say} />}
           {tab === "paie" && <PaieTab key={focusPaie?.n || "paie"} hr={hr} actions={a} admin={admin} today={today} say={say} focus={focusPaie} />}
           {tab === "sorties" && <SortiesTab hr={hr} actions={a} admin={admin} on={on} say={say} />}
           {tab === "recrutement" && <RecrutementTab hr={hr} actions={a} on={on} say={say} />}
@@ -4929,6 +5356,7 @@ export default function RH({ store, me, acces }) {
       {modal?.kind === "sign" && <SignModal doc={modal.doc} onAttach={a.attachSigned} onClose={fermer} />}
       {modal?.kind === "absence" && <AbsenceModal initial={modal.initial} hr={hr} actions={a} me={me} today={today} onClose={fermer} />}
       {modal?.kind === "adjust" && <AdjustModal emp={modal.emp} actions={a} today={today} onClose={fermer} />}
+      {modal?.kind === "reprise" && <RepriseModal hr={hr} emp={modal.emp} actions={a} today={today} onClose={fermer} />}
       {modal?.kind === "holiday" && <HolidayModal initial={modal.initial} actions={a} onClose={fermer} />}
       {modal?.kind === "element" && <ElementModal initial={modal.initial} emp={modal.emp} actions={a} onClose={fermer} />}
       {modal?.kind === "discipline" && <DisciplineModal initial={modal.initial} hr={hr} actions={a} today={today} on={on} onClose={fermer} />}
