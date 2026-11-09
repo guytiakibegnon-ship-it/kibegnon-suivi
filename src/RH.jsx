@@ -20,8 +20,12 @@ import {
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip } from "recharts";
 import { supabase } from "./supabaseClient";
 import {
+  PARAMS_PAIE, getParams as parametresReference, calculerBulletin as moteurBulletin, calculerParts as moteurParts,
+  controleAnnuelITS, simulerReclassement, montantEnLettres, GRILLES_CATEGORIELLES,
+} from "./paie-engine.js";
+import {
   Modal, Field, Chip, StatCard, SectionCard, EmptyState, PrintPage, PrintHead, printSheet,
-  fcfa, inputCls, inputStyle, AGENCY, amountInWords, LetterEditor,
+  fcfa, inputCls, inputStyle, AGENCY, amountInWords, LetterEditor, LOGO, LOGO_AGREMENT,
 } from "./App.jsx";
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -507,7 +511,7 @@ export function useHR(acces) {
     const [cr, cm] = await Promise.all([q("hr_commission_rules", "ordre"), supabase.from("hr_commissions").select("*").order("annee", { ascending: false }).order("mois", { ascending: false })]);
     const commissionsAbsentes = !!(cr.error || cm.error);
     const err = res.find((r) => r.error)?.error;
-    setSt({ loading: false, error: err ? (/relation .* does not exist|schema cache/.test(err.message) ? "Le module RH n'est pas entièrement installé dans la base : exécutez dans le SQL Editor de Supabase, dans l'ordre, migration-v32.sql, migration-v32-1.sql, migration-v32-2.sql, migration-v33.sql, migration-v33-1.sql, migration-v33-2.sql, migration-v33-3.sql, migration-v34.sql puis migration-v35.sql." : err.message) : "",
+    setSt({ loading: false, error: err ? (/relation .* does not exist|schema cache/.test(err.message) ? "Le module RH n'est pas entièrement installé dans la base : exécutez dans le SQL Editor de Supabase, dans l'ordre, migration-v32.sql, migration-v32-1.sql, migration-v32-2.sql, migration-v33.sql, migration-v33-1.sql, migration-v33-2.sql, migration-v33-3.sql, migration-v34.sql, migration-v35.sql puis migration-v36.sql." : err.message) : "",
       employees: (res[0].data || []).map(mEmp), details: (res[1].data || []).map(mDet), contracts: (res[2].data || []).map(mCtr),
       amendments: (res[3].data || []).map(mAmend), documents: (res[4].data || []).map(mHrDoc), params: (res[5].data || []).map(mParam),
       scale: (res[6].data || []).map(mScale), visas: (res[7].data || []).map(mVisa), audit: (res[8].data || []).map(mAudit),
@@ -1562,8 +1566,11 @@ export function calcBulletin({ emp, det, contract, period, params, scale, settin
   /* Après cotisations : CMU, indemnités non soumises, retenues diverses */
   const cmuPers = personnesCMU(det, params, finM);
   const cmu = cmuPers * (Number(pval(params, "CMU_SALARIE", finM)?.montant_par_personne) || 0);
-  if (cmu) lignes.push({ code: RUB.cmu, libelle: "CMU", nombre: cmuPers, retenue: cmu, section: "apres" });
-  out.cmu = cmu;
+  /* Part patronale de la CMU (même nombre de personnes couvertes) : charge de l'employeur */
+  const cmuPat = cmuPers * (Number(pval(params, "CMU_EMPLOYEUR", finM)?.montant_par_personne) || 0);
+  if (cmu || cmuPat) lignes.push({ code: RUB.cmu, libelle: "CMU", nombre: cmuPers, retenue: cmu || 0, pat: cmuPat || 0, section: "apres" });
+  out.cmu = cmu; out.cmuPatronale = cmuPat;
+  out.cotisationsPatronales += cmuPat;
   const indem = [];
   if (transport) indem.push({ code: RUB.transport, libelle: "PRIME DE TRANSPORT", nombre: jp, base: transportPlein, gain: Math.min(transport, plafT ? plafProrata : transport) });
   const paniers = Number(v.paniers) || 0;
@@ -1618,6 +1625,183 @@ export function sursalairePourNet(args, netCible) {
   const nHi = net(hi), nLo = net(lo);
   const choix = Math.abs(nLo - cible) < Math.abs(nHi - cible) ? lo : hi;
   return { sursalaire: choix, net: net(choix) };
+}
+
+/* ══════════════════════ MOTEUR DE PAIE DE RÉFÉRENCE (paie-engine.js) ══════════════════════
+   1. parametresMoteur : traduit les paramètres légaux de l'application (seule source de vérité
+      des taux) dans le format du moteur.
+   2. contreCalcul : chaque bulletin est recalculé par le moteur à partir des mêmes données ;
+      un écart sur le brut, les retenues ou le net bloque la validation de la paie.
+   3. ecartsParametres : compare les paramètres de l'application aux valeurs de référence du
+      moteur (PARAMS_PAIE) et signale chaque différence, à trancher par l'administrateur. */
+const pctOu = (x, def) => (x === null || x === undefined || x === "" || Number.isNaN(Number(x)) ? def : Number(x) / 100);
+const numOu = (x, def) => (x === null || x === undefined || x === "" || Number.isNaN(Number(x)) ? def : Number(x));
+const reference = (date) => { try { return parametresReference(date); } catch { return PARAMS_PAIE[0]; } };
+export const VERSION_MOTEUR = "paie-engine 2024.01 — intégration v36";
+
+export function parametresMoteur(params, date) {
+  const ref = reference(date);
+  const v = (code) => pval(params, code, date);
+  const ret = v("CNPS_RETRAITE") || {}; const pf = v("CNPS_PRESTATIONS_FAMILIALES") || {}; const mat = v("CNPS_MATERNITE") || {}; const at = v("CNPS_AT_MP") || {};
+  const fdfp = v("FDFP_FORMATION_CONTINUE") || {}; const ce = v("ITS_PART_PATRONALE") || {}; const ceGlobal = v("CONTRIBUTION_EMPLOYEUR_ITS") || {};
+  const anc = v("PRIME_ANCIENNETE"); const hs = v("HS_MAJORATIONS")?.majorations; const hsp = v("HS_PLAFONDS") || {};
+  const tranches = v("ITS_BAREME")?.tranches; const reductions = v("ITS_REDUCTION_FAMILLE")?.reductions;
+  const lic = v("INDEMNITE_LICENCIEMENT"); const grat = v("GRATIFICATION");
+  const ligneUnique = !!pf.bulletin_ligne_unique_avec_maternite;
+  const tauxFPC = pctOu(fdfp.taux, ref.fiscalPatronal.taxeFPC);
+  return {
+    ...ref,
+    version: `application au ${fmt(date)}`, dateEffet: date, libelle: "Paramètres légaux de l'application",
+    smig: numOu(v("SMIG_MENSUEL")?.montant, ref.smig),
+    horaireMensuelLegal: numOu(v("DIVISEUR_HORAIRE_MENSUEL")?.heures, ref.horaireMensuelLegal),
+    joursOuvrablesMois: numOu(v("DIVISEUR_MENSUEL_JOURS")?.jours, ref.joursOuvrablesMois),
+    baremeITS: tranches?.length ? [...tranches].sort((a, b) => a.plancher - b.plancher).map((t) => ({ plafond: t.plafond === null || t.plafond === undefined ? Infinity : Number(t.plafond), taux: Number(t.taux) / 100 })) : ref.baremeITS,
+    ricf: reductions?.length ? Object.fromEntries(reductions.map((r) => [Number(r.parts), Number(r.mensuel) || 0])) : ref.ricf,
+    partsMax: numOu(v("ITS_PARTS")?.plafond, ref.partsMax),
+    cnps: {
+      ...ref.cnps,
+      retraiteSalarie: pctOu(ret.salarie, ref.cnps.retraiteSalarie), retraiteEmployeur: pctOu(ret.employeur, ref.cnps.retraiteEmployeur),
+      plafondRetraite: numOu(ret.plafond, Infinity),
+      /* Bulletin à une seule ligne « prestations familiales » maternité comprise (pratique de l'agence) */
+      prestationsFamiliales: pctOu(pf.employeur, ref.cnps.prestationsFamiliales) + (ligneUnique ? pctOu(mat.employeur, 0) : 0),
+      assuranceMaternite: ligneUnique ? 0 : pctOu(mat.employeur, ref.cnps.assuranceMaternite),
+      plafondPF_AT: numOu(pf.plafond, Infinity), plafondMaternite: numOu(mat.plafond, Infinity), plafondAT: numOu(at.plafond, Infinity),
+      accidentTravailDefaut: pctOu(at.employeur, ref.cnps.accidentTravailDefaut),
+    },
+    cmu: { forfaitTotal: ref.cmu.forfaitTotal, partSalariale: numOu(v("CMU_SALARIE")?.montant_par_personne, 0), partPatronale: numOu(v("CMU_EMPLOYEUR")?.montant_par_personne, 0) },
+    fiscalPatronal: {
+      ...ref.fiscalPatronal,
+      contributionEmployeurLocal: pctOu(ce.local, ref.fiscalPatronal.contributionEmployeurLocal),
+      contributionEmployeurExpatrie: pctOu(ce.expatrie, ref.fiscalPatronal.contributionEmployeurExpatrie),
+      taxeApprentissage: pctOu(v("FDFP_TAXE_APPRENTISSAGE")?.taux, ref.fiscalPatronal.taxeApprentissage),
+      taxeFPC: tauxFPC,
+      totalAttenduLocal: pctOu(ceGlobal.local, ref.fiscalPatronal.totalAttenduLocal), totalAttenduExpatrie: pctOu(ceGlobal.expatrie, ref.fiscalPatronal.totalAttenduExpatrie),
+      /* FPC versée à un taux inférieur au taux légal : le solde relève d'une régularisation annuelle */
+      fpcFractionnee: fdfp.taux_legal !== undefined && tauxFPC < pctOu(fdfp.taux_legal, tauxFPC),
+    },
+    heuresSup: {
+      ...ref.heuresSup,
+      majorations: hs?.length ? Object.fromEntries(hs.map((m) => [m.code, Number(m.taux) / 100])) : ref.heuresSup.majorations,
+      maxParSemaine: numOu(hsp.hebdo, ref.heuresSup.maxParSemaine), maxParAn: numOu(hsp.annuel, ref.heuresSup.maxParAn), maxProlongationJournaliere: numOu(hsp.journalier, ref.heuresSup.maxProlongationJournaliere),
+    },
+    conges: { ...ref.conges, joursParMois: numOu(v("CONGES_ACQUISITION")?.jours_par_mois, ref.conges.joursParMois) },
+    anciennete: anc ? { ...ref.anciennete, debutAns: Number(anc.debut_ans), tauxApres2Ans: Number(anc.taux_initial) / 100, tauxParAnneeSupplementaire: Number(anc.increment_par_an) / 100,
+      anneeMax: Number(anc.debut_ans) + (Number(anc.plafond_taux) - Number(anc.taux_initial)) / (Number(anc.increment_par_an) || 1) } : ref.anciennete,
+    licenciement: lic?.tranches ? { ...ref.licenciement, ancienneteMinimaleAnnees: numOu(lic.anciennete_min_ans, 1),
+      tranches: lic.tranches.map((t) => ({ jusquAnnee: t.jusqu_annee === null || t.jusqu_annee === undefined ? Infinity : Number(t.jusqu_annee), taux: Number(t.taux) / 100 })) } : ref.licenciement,
+    gratification: grat ? { ...ref.gratification, coefficient: Number(grat.fraction_minimum_categoriel), prorataTemporis: grat.prorata !== false } : ref.gratification,
+    exonerations: { ...ref.exonerations, primeTransportPlafond: numOu(v("INDEMNITE_TRANSPORT")?.plafond_exoneration, ref.exonerations.primeTransportPlafond) },
+  };
+}
+
+/* Contre-calcul d'un bulletin par le moteur de référence, à partir des mêmes entrées */
+const CODES_RECALCULES = new Set(["100", "200", "1000", "1500", "1510", "1520", "1530", "1540", "1590", "1950"]);
+export function contreCalcul(args, res) {
+  const { emp, det, contract, period, params, scale } = args;
+  if (!contract || contract.type === "stage" || !res?.lignes?.length) return null;
+  const d1 = debutDuMois(period.annee, period.mois), finM = finDuMois(period.annee, period.mois);
+  const pm = parametresMoteur(params, finM);
+  const L = res.lignes; const v = args.variables || {};
+  const jp = res.joursPayes;
+  const surs = (L.find((l) => l.code === RUB.surs)?.base) ?? (v.sursalaire !== undefined && v.sursalaire !== "" && v.sursalaire !== null ? Number(v.sursalaire) : Number(contract.sursalaire) || 0);
+  const minCat = minimumCategoriel(scale, contract.categorie, contract.echelon, finM);
+  const transportTotal = L.filter((l) => [RUB.transport, "1950"].includes(l.code)).reduce((t, l) => t + (l.gain || 0), 0);
+  const indemnites = [];
+  if (transportTotal) indemnites.push({ code: RUB.transport, libelle: "Prime de transport", nature: "transport", montant: transportTotal,
+    plafond: Math.round((pm.exonerations.primeTransportPlafond || 0) * jp / 30) });
+  L.filter((l) => l.section === "apres" && l.gain && l.code !== RUB.transport).forEach((l) => indemnites.push({ code: l.code, libelle: l.libelle, montant: l.gain,
+    nature: l.code === RUB.panier ? "panier" : "autre", plafond: Infinity }));
+  const entree = {
+    params: pm, brouillon: true,
+    salarie: {
+      matricule: emp.matricule, nom: nomComplet(emp), cnps: det?.cnpsNumero || "", dateEmbauche: emp.dateEmbauche || contract.dateDebut,
+      categorie: contract.categorie ? String(contract.categorie) : "", echelon: contract.echelon || "", expatrie: !!det?.expatrie,
+      salaireBase: Number(contract.salaireBase) || 0, sursalaire: surs, salaireCategoriel: minCat ?? (Number(contract.salaireBase) || 0),
+      parts: res.parts, personnesCMU: L.find((l) => l.code === RUB.cmu)?.nombre ?? personnesCMU(det, params, finM),
+    },
+    periode: { du: d1, au: finM, datePaiement: period.datePaiement || null },
+    variables: {
+      joursAbsenceNonPayes: Math.max(0, 30 - jp),
+      heuresSup: Object.entries(v.heuresSup || {}).filter(([, h]) => Number(h) > 0).map(([type, h]) => ({ type, heures: Number(h) })).filter((x) => pm.heuresSup.majorations[x.type] !== undefined),
+      primes: L.filter((l) => l.section === "gain" && l.gain && !CODES_RECALCULES.has(l.code)).map((l) => ({ code: l.code, libelle: l.libelle, montant: l.gain })),
+      indemnites,
+      retenues: L.filter((l) => l.section === "apres" && l.retenue && l.code !== RUB.cmu).map((l) => ({ code: l.code, libelle: l.libelle, montant: l.retenue })),
+    },
+    entreprise: { tauxAT: pm.cnps.accidentTravailDefaut },
+    conges: { solde: r2(args.conges?.solde || 0), plafonneParCumul: false, alerte: null },
+  };
+  let b;
+  try { b = moteurBulletin(entree); } catch (e) { return { conforme: false, erreur: String(e.message || e), comparaison: [], anomalies: [] }; }
+  const r = (code) => b.retenues.filter((x) => x.code === code).reduce((t, x) => t + x.montant, 0);
+  const app = (code) => L.filter((l) => l.code === code).reduce((t, l) => t + (l.retenue || 0), 0);
+  const comparaison = [
+    ["Brut imposable", res.imposable, b.totaux.brutImposable, true],
+    ["ITS", app(RUB.its), r("4300"), true],
+    ["CNPS — part salariale", app(RUB.cnps), r("4400"), true],
+    ["CMU — part salariale", res.cmu || 0, r("6500"), true],
+    ["Autres retenues", res.retenues, b.retenues.filter((x) => !["4300", "4400", "6500"].includes(x.code)).reduce((t, x) => t + x.montant, 0), true],
+    ["Indemnités non soumises", res.indemnites, b.totaux.totalExonere, true],
+    ["Net à payer", res.net, b.totaux.netAPayer, true],
+    ["Charges patronales", res.cotisationsPatronales, b.totaux.totalPatronal, false],
+  ].map(([libelle, application, moteur, salarial]) => ({ libelle, application: Math.round(application), moteur: Math.round(moteur), ecart: Math.round(moteur - application), salarial }));
+  const ecarts = comparaison.filter((c) => Math.abs(c.ecart) > 1);
+  const NIV = { bloquant: "bloquant", majeur: "orange", avertissement: "info" };
+  const DEJA = new Set(["SOUS_SMIG", "SOUS_CATEGORIEL", "HS_HEBDO", "NET_INCOHERENT"]);   // déjà contrôlés par l'application
+  const anomalies = (b.anomalies || []).filter((a) => !DEJA.has(a.code) && !(a.code === "FISCAL_PATRONAL" && pm.fiscalPatronal.fpcFractionnee))
+    .map((a) => ({ niveau: NIV[a.gravite] || "info", texte: a.message, code: a.code, source: "moteur" }));
+  return { conforme: ecarts.length === 0, version: VERSION_MOTEUR, date: finM, comparaison, anomalies,
+    ecarts: ecarts.map((e) => ({ ...e, niveau: e.salarial ? "bloquant" : "orange" })) };
+}
+
+/* Paramètres de l'application comparés aux valeurs de référence du moteur */
+const lireF = (n) => (n === Infinity || n === null || n === undefined ? "sans plafond" : `${Number(n).toLocaleString("fr-FR")} F`);
+const lireP = (x) => `${(Math.round(Number(x) * 100000) / 1000).toLocaleString("fr-FR")} %`;
+const lireBareme = (b) => b.map((t) => `${t.plafond === Infinity ? "au-delà" : `≤ ${Number(t.plafond).toLocaleString("fr-FR")}`} : ${lireP(t.taux)}`).join(" · ");
+const lireRicf = (r) => Object.entries(r).sort((a, b) => Number(a[0]) - Number(b[0])).map(([k, m]) => `${String(k).replace(".", ",")} p. ${Number(m).toLocaleString("fr-FR")}`).join(" · ");
+const HS_MOTEUR = { h41_46: "tranche41a46", h47_plus: "audelaDe46", nuit: "nuit", dim_ferie_jour: "jourDimancheFerie", dim_ferie_nuit: "nuitDimancheFerie" };
+export function ecartsParametres(params, date) {
+  const ref = reference(date); const app = parametresMoteur(params, date);
+  const v = (code) => pval(params, code, date);
+  const lignes = [];
+  /* [libellé, code du paramètre, valeur appli, valeur moteur, proposition (valeur à enregistrer), référence à valider ?, note] */
+  const add = (libelle, code, a, m, proposition = null, aValider = false, note = "") => lignes.push({ libelle, code, application: a, moteur: m, ecart: a !== m, proposition, aValider, note });
+  const avec = (code, patch) => ({ ...(v(code) || {}), ...patch });
+  add("SMIG mensuel", "SMIG_MENSUEL", lireF(app.smig), lireF(ref.smig), avec("SMIG_MENSUEL", { montant: ref.smig }));
+  add("Diviseur horaire mensuel", "DIVISEUR_HORAIRE_MENSUEL", `${app.horaireMensuelLegal} h`, `${ref.horaireMensuelLegal} h`, avec("DIVISEUR_HORAIRE_MENSUEL", { heures: ref.horaireMensuelLegal }));
+  add("Barème ITS (mensuel)", "ITS_BAREME", lireBareme(app.baremeITS), lireBareme(ref.baremeITS));
+  add("Réduction pour charges de famille", "ITS_REDUCTION_FAMILLE", lireRicf(app.ricf), lireRicf(ref.ricf));
+  /* Table des parts : comparée situation par situation */
+  const situations = ["celibataire", "marie", "divorce", "veuf"]; const diff = [];
+  for (const sf of situations) for (let n = 0; n <= 6; n++) { const a = partsITS({ situationFamille: sf, nbEnfantsCharge: n }, params, date); const m = moteurParts(sf, n, 0); if (a !== m) diff.push(`${SITUATIONS[sf]} ${n} enf. : ${a} / ${m}`); }
+  lignes.push({ libelle: "Nombre de parts (situation, enfants)", code: "ITS_PARTS", application: diff.length ? diff.join(" · ") : "identique", moteur: diff.length ? "voir écarts" : "identique", ecart: diff.length > 0, proposition: null });
+  add("CNPS retraite — salarié", "CNPS_RETRAITE", lireP(app.cnps.retraiteSalarie), lireP(ref.cnps.retraiteSalarie));
+  add("CNPS retraite — employeur", "CNPS_RETRAITE", lireP(app.cnps.retraiteEmployeur), lireP(ref.cnps.retraiteEmployeur));
+  add("CNPS retraite — plafond mensuel", "CNPS_RETRAITE", lireF(app.cnps.plafondRetraite), lireF(ref.cnps.plafondRetraite), avec("CNPS_RETRAITE", { plafond: ref.cnps.plafondRetraite }));
+  add("Prestations familiales + maternité — taux employeur", "CNPS_PRESTATIONS_FAMILIALES", lireP(app.cnps.prestationsFamiliales + app.cnps.assuranceMaternite), lireP(ref.cnps.prestationsFamiliales + ref.cnps.assuranceMaternite));
+  add("Prestations familiales — plafond", "CNPS_PRESTATIONS_FAMILIALES", lireF(app.cnps.plafondPF_AT), lireF(ref.cnps.plafondPF_AT), avec("CNPS_PRESTATIONS_FAMILIALES", { plafond: ref.cnps.plafondPF_AT }), !!ref.cnps.plafondPF_AT_aValider);
+  add("Assurance maternité — plafond", "CNPS_MATERNITE", lireF(app.cnps.plafondMaternite), lireF(ref.cnps.plafondPF_AT), avec("CNPS_MATERNITE", { plafond: ref.cnps.plafondPF_AT }), !!ref.cnps.plafondPF_AT_aValider);
+  add("Accident du travail — plafond", "CNPS_AT_MP", lireF(app.cnps.plafondAT), lireF(ref.cnps.plafondPF_AT), avec("CNPS_AT_MP", { plafond: ref.cnps.plafondPF_AT }), !!ref.cnps.plafondPF_AT_aValider);
+  const tauxAT = app.cnps.accidentTravailDefaut; const dansFourchette = tauxAT >= 0.02 - 1e-9 && tauxAT <= 0.05 + 1e-9;
+  lignes.push({ libelle: "Accident du travail — taux employeur", code: "CNPS_AT_MP", application: lireP(tauxAT), moteur: "2 % à 5 % selon l'activité", ecart: !dansFourchette, proposition: null, note: dansFourchette ? "Taux notifié par la CNPS, dans la fourchette légale." : "" });
+  add("CMU — part salariale par personne", "CMU_SALARIE", lireF(app.cmu.partSalariale), lireF(ref.cmu.partSalariale), avec("CMU_SALARIE", { montant_par_personne: ref.cmu.partSalariale }));
+  add("CMU — part patronale par personne", "CMU_EMPLOYEUR", lireF(app.cmu.partPatronale), lireF(ref.cmu.partPatronale), avec("CMU_EMPLOYEUR", { montant_par_personne: ref.cmu.partPatronale }));
+  add("Contribution employeur — personnel local", "ITS_PART_PATRONALE", lireP(app.fiscalPatronal.contributionEmployeurLocal), lireP(ref.fiscalPatronal.contributionEmployeurLocal), avec("ITS_PART_PATRONALE", { local: ref.fiscalPatronal.contributionEmployeurLocal * 100 }));
+  add("Taxe d'apprentissage", "FDFP_TAXE_APPRENTISSAGE", lireP(app.fiscalPatronal.taxeApprentissage), lireP(ref.fiscalPatronal.taxeApprentissage), avec("FDFP_TAXE_APPRENTISSAGE", { taux: ref.fiscalPatronal.taxeApprentissage * 100 }));
+  add("Taxe additionnelle FPC", "FDFP_FORMATION_CONTINUE", lireP(app.fiscalPatronal.taxeFPC), lireP(ref.fiscalPatronal.taxeFPC), avec("FDFP_FORMATION_CONTINUE", { taux: ref.fiscalPatronal.taxeFPC * 100 }), false,
+    app.fiscalPatronal.fpcFractionnee ? "Si l'entreprise verse 0,6 % chaque mois et régularise le solde au 31 décembre, le taux de l'application est le bon : prévoir la régularisation annuelle." : "");
+  for (const m of v("HS_MAJORATIONS")?.majorations || []) { const t = HS_MOTEUR[m.code]; if (!t) continue;
+    add(`Heures sup. — ${m.libelle}`, "HS_MAJORATIONS", `+${m.taux} %`, `+${Math.round(ref.heuresSup.majorations[t] * 100)} %`); }
+  add("Heures sup. — plafond hebdomadaire / annuel", "HS_PLAFONDS", `${app.heuresSup.maxParSemaine} h / ${app.heuresSup.maxParAn} h`, `${ref.heuresSup.maxParSemaine} h / ${ref.heuresSup.maxParAn} h`);
+  add("Congés — jours ouvrables par mois", "CONGES_ACQUISITION", String(app.conges.joursParMois).replace(".", ","), String(ref.conges.joursParMois).replace(".", ","), avec("CONGES_ACQUISITION", { jours_par_mois: ref.conges.joursParMois }));
+  const libAnc = (a) => `${lireP(a.tauxApres2Ans)} après ${a.debutAns ?? 2} ans, +${lireP(a.tauxParAnneeSupplementaire)} par an, ${a.anneeMax} ans au plus`;
+  add("Prime d'ancienneté", "PRIME_ANCIENNETE", libAnc(app.anciennete), libAnc(ref.anciennete));
+  add("Prime de transport — plafond d'exonération", "INDEMNITE_TRANSPORT", lireF(app.exonerations.primeTransportPlafond), lireF(ref.exonerations.primeTransportPlafond), avec("INDEMNITE_TRANSPORT", { plafond_exoneration: ref.exonerations.primeTransportPlafond }));
+  lignes.push({ libelle: "Prime de panier — plafond d'exonération", code: "PRIME_PANIER", application: "exonérée sans plafond", moteur: lireF(ref.exonerations.primeDePanierPlafond), ecart: true, proposition: null, aValider: !!ref.exonerations.primeDePanier_aValider,
+    note: "Tant que ce plafond n'est pas confirmé sur texte, l'application garde l'exonération totale de la prime de panier." });
+  add("Gratification — fraction du minimum catégoriel", "GRATIFICATION", lireP(app.gratification.coefficient), lireP(ref.gratification.coefficient), avec("GRATIFICATION", { fraction_minimum_categoriel: ref.gratification.coefficient }), !!ref.gratification.aValider);
+  const libLic = (l) => l.tranches.map((t) => `${lireP(t.taux)}${t.jusquAnnee === Infinity ? " au-delà" : ` jusqu'à ${t.jusquAnnee} ans`}`).join(" · ");
+  add("Indemnité de licenciement", "INDEMNITE_LICENCIEMENT", libLic(app.licenciement), libLic(ref.licenciement));
+  return lignes.map((l) => ({ ...l, param: resolveParam(params, l.code, date) }));
 }
 
 /* ══════════════════════ FIN DE CONTRAT ══════════════════════ */
@@ -2276,9 +2460,9 @@ function DocModal({ initial, employees, onUpload, onUpdate, onClose }) {
 }
 
 /* Paramètre légal : nouvelle version datée, ou correction de la version affichée */
-function ParamModal({ mode, param, onNewVersion, onFix, onClose }) {
-  const [valeur, setValeur] = useState(() => JSON.parse(JSON.stringify(param.valeur ?? {})));
-  const [texte, setTexte] = useState(false); const [raw, setRaw] = useState(() => JSON.stringify(param.valeur ?? {}, null, 2));
+function ParamModal({ mode, param, proposition, onNewVersion, onFix, onClose }) {
+  const [valeur, setValeur] = useState(() => JSON.parse(JSON.stringify(proposition ?? param.valeur ?? {})));
+  const [texte, setTexte] = useState(false); const [raw, setRaw] = useState(() => JSON.stringify(proposition ?? param.valeur ?? {}, null, 2));
   const [dateEffet, setDateEffet] = useState(""); const [baseLegale, setBaseLegale] = useState(param.baseLegale); const [note, setNote] = useState(param.note);
   const [valide, setValide] = useState(mode === "fix" ? param.valide : false); const [actif, setActif] = useState(param.actif);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
@@ -2302,6 +2486,7 @@ function ParamModal({ mode, param, onNewVersion, onFix, onClose }) {
       {mode === "new"
         ? <WarnBox tone="info">La version actuelle reste appliquée jusqu'à la veille de la date d'effet ; les périodes passées ne sont jamais recalculées avec la nouvelle valeur.</WarnBox>
         : <WarnBox>La correction remplace la valeur de la version en vigueur depuis le {fmt(param.dateEffet)}, y compris pour les périodes passées. À réserver aux erreurs de saisie (tracé au journal).</WarnBox>}
+      {proposition && <WarnBox tone="info">Valeur proposée par le moteur de paie de référence. Vérifiez-la sur vos bordereaux ou le texte officiel avant d'enregistrer ; les bulletins validés ne sont jamais recalculés.</WarnBox>}
       {mode === "new" && <Field label="Date d'effet *"><input type="date" className={inputCls} style={inputStyle} value={dateEffet} onChange={(e) => setDateEffet(e.target.value)} /></Field>}
       <div className="flex justify-between items-center mb-2"><p className="text-sm font-semibold">Valeur</p>
         <button type="button" onClick={basculer} className="text-xs underline" style={{ color: "var(--brass)" }}>{texte ? "Revenir au formulaire" : "Mode texte (JSON)"}</button></div>
@@ -3433,6 +3618,8 @@ function AbsencesTable({ liste, hr, on, compact }) {
                 <button onClick={() => on.decideAbsence(a, "refuse")} className="kb-btn kb-btn-ghost text-xs mr-1">Refuser</button></>}
               {a.statut === "valide" && !a.anterieur && ["conge_paye", "permission", "absence_autorisee", "absence_exceptionnelle", "formation", "autre"].includes(a.type) &&
                 <button onClick={() => on.docAbsence(a)} className="p-1.5 rounded hover:bg-slate-100" aria-label="Éditer le document de l'absence" title={a.type === "conge_paye" ? "Titre de congé" : "Autorisation d'absence"}><FileText size={14} /></button>}
+              {a.statut === "valide" && !a.anterieur && a.type === "conge_paye" && on.etatSolde &&
+                <button onClick={() => on.etatSolde(a)} className="p-1.5 rounded hover:bg-slate-100" aria-label="État de solde pour congés" title="État de solde pour congés"><Wallet size={14} /></button>}
               {["demande", "valide"].includes(a.statut) && <button onClick={() => on.absence(a)} className="p-1.5 rounded hover:bg-slate-100" aria-label="Modifier l'absence"><Pencil size={14} /></button>}
               {["demande", "valide"].includes(a.statut) && <button onClick={() => on.decideAbsence(a, "annule")} className="p-1.5 rounded hover:bg-slate-100" aria-label="Annuler l'absence" title="Annuler" style={{ color: "#D81F26" }}><X size={14} /></button>}
             </td>
@@ -3578,6 +3765,14 @@ export function calculerBulletin(hr, emp, period, variables, slipId) {
   const res = calcBulletin(args);
   const d2 = finDuMois(period.annee, period.mois);
   const solde = soldeConges({ emp, det: args.det, contracts: hr.contracts, absences: hr.absences, adjustments: hr.adjustments, params: hr.params, today: d2 });
+  /* Contre-calcul par le moteur de paie de référence : tout écart salarial est bloquant */
+  const controle = contreCalcul({ ...args, conges: solde }, res);
+  if (controle) {
+    controle.ecarts.forEach((e) => res.anomalies.push({ niveau: e.niveau, code: "CONTRE_CALCUL", source: "moteur",
+      texte: `Contre-calcul du moteur de paie — ${e.libelle} : ${fcfa(e.application)} sur le bulletin, ${fcfa(e.moteur)} au moteur (écart ${fcfa(e.ecart)}).` }));
+    if (controle.erreur) res.anomalies.push({ niveau: "bloquant", code: "CONTRE_CALCUL", source: "moteur", texte: `Contre-calcul impossible : ${controle.erreur}` });
+    controle.anomalies.forEach((a) => res.anomalies.push(a));
+  }
   const annee = hr.payslips.filter((b) => b.employeeId === emp.id && b.statut === "valide" && b.id !== slipId).filter((b) => { const p = periodeDe(hr, b.periodId); return p && p.annee === period.annee && p.mois < period.mois; });
   const cum = (k) => annee.reduce((t, b) => t + (Number(b[k]) || 0), 0);
   const c = args.contract;
@@ -3590,48 +3785,90 @@ export function calculerBulletin(hr, emp, period, variables, slipId) {
     cumuls: { brut: cum("brut") + res.brut, imposable: cum("imposable") + res.imposable, salariales: cum("cotisationsSalariales") + res.cotisationsSalariales,
       patronales: cum("cotisationsPatronales") + res.cotisationsPatronales, net: cum("netAPayer") + res.net, heures: annee.reduce((t, b) => t + (Number(b.entete?.heuresPeriode) || 0), 0) + res.heures },
     heuresPeriode: res.heures, anomalies: res.anomalies,
+    situationFamille: args.det?.situationFamille || "", personnesCMU: res.lignes.find((l) => l.code === RUB.cmu)?.nombre ?? null,
+    /* Photographie de l'employeur et des paramètres appliqués : le bulletin validé reste reproductible à l'identique */
+    employeur: identiteEmployeur(hr.settings),
+    controle: controle ? { conforme: controle.conforme, version: controle.version, comparaison: controle.comparaison, erreur: controle.erreur || "" } : null,
+    parametresPaie: JSON.parse(JSON.stringify(parametresMoteur(hr.params, d2), (k, x) => (x === Infinity ? "sans plafond" : x))),
   };
-  return { res, entete, contract: c };
+  return { res, entete, contract: c, controle };
 }
 
+/* Identité légale de l'employeur portée sur les documents de paie */
+export const identiteEmployeur = (settings) => ({
+  raisonSociale: AGENCY.name, forme: AGENCY.form, adresse: AGENCY.address, adressePostale: settings?.adressePostale || "",
+  rc: AGENCY.rc, cc: AGENCY.cc, regime: AGENCY.regime, centre: AGENCY.centre, agrement: AGENCY.agrement,
+  carte: "Agent immobilier agréé n° AG-0456 (Chambre des Affaires et de l'Immobilier)", cnps: settings?.cnpsEmployeur || "", tel: AGENCY.tel, email: AGENCY.email,
+});
+/* En-tête des documents de paie : logos, identité de l'employeur, titre et références */
+export function EntetePaie({ employeur, titre, children }) {
+  const x = employeur || identiteEmployeur({});
+  return (
+    <table className="w-full border-collapse" style={{ border: "1px solid #9AA6B5" }}><tbody><tr>
+      <td className="p-2 align-top" style={{ border: "1px solid #9AA6B5", width: "64%" }}>
+        <div className="flex items-start gap-2.5">
+          <img src={LOGO} alt="Entreprise Kibegnon" style={{ height: 42, width: "auto" }} />
+          <div className="leading-snug text-[9.5px]">
+            <p className="font-bold text-[12px]" style={{ color: "#0F2742" }}>{x.raisonSociale}</p>
+            <p>{x.forme}</p>
+            <p>{x.adresse}{x.adressePostale ? ` — ${x.adressePostale}` : ""}</p>
+            <p>{x.rc} · {x.cc}</p>
+            <p>{x.regime} · {x.centre}</p>
+            <p>N° employeur CNPS : <b>{x.cnps || "…………"}</b> · {x.agrement}</p>
+          </div>
+        </div>
+      </td>
+      <td className="p-2 align-top" style={{ border: "1px solid #9AA6B5" }}>
+        <div className="flex items-start justify-between gap-2">
+          <div className="leading-snug">
+            <p className="text-[14px] font-bold tracking-wide" style={{ color: "#0F2742" }}>{titre}</p>
+            {children}
+          </div>
+          <img src={LOGO_AGREMENT} alt={x.carte} title={x.carte} style={{ height: 54, width: "auto" }} />
+        </div>
+      </td>
+    </tr></tbody></table>
+  );
+}
 function BulletinSheet({ slip, period, settings, sautApres }) {
   const e = slip.entete || {}; const L = slip.lignes || [];
   const gains = L.filter((l) => l.section === "gain"); const cot = L.filter((l) => l.section === "cotisation"); const apres = L.filter((l) => l.section === "apres");
   const d1 = debutDuMois(period.annee, period.mois), d2 = finDuMois(period.annee, period.mois);
+  const employeur = e.employeur || identiteEmployeur(settings);
   const td = "px-1.5 py-0.5 align-top"; const tdr = `${td} text-right tabular-nums`;
   const Row = ({ l }) => (
-    <tr><td className={td}>{l.code}</td><td className={td}>{l.libelle}{l.detail ? <span style={{ color: "var(--muted)" }}> — {l.detail}</span> : ""}</td>
+    <tr><td className={td}>{l.code}</td><td className={td}>{l.libelle}{l.detail ? <span style={{ color: "#5B6573" }}> — {l.detail}</span> : ""}</td>
       <td className={tdr}>{nfr(l.nombre)}</td><td className={tdr}>{nfr(l.base)}</td><td className={tdr}>{l.taux ? nfr(l.taux) : ""}</td>
       <td className={tdr}>{l.gain ? nfr(l.gain) : ""}</td><td className={tdr}>{l.retenue ? nfr(l.retenue) : ""}</td>
       <td className={tdr}>{l.tauxPat ? nfr(l.tauxPat) : ""}</td><td className={tdr}>{l.pat ? nfr(l.pat) : ""}</td></tr>
   );
   const box = { border: "1px solid #9AA6B5" };
+  const totRet = cot.reduce((t, l) => t + (l.retenue || 0), 0); const totPat = cot.reduce((t, l) => t + (l.pat || 0), 0);
+  const ident = [["Matricule", e.matricule], ["N° CNPS", e.cnps], ["Emploi", e.emploi], ["Catégorie / échelon", e.categorie], ["Qualification", e.qualification],
+    ["Contrat", e.typeContrat], ["Date d'embauche", fmt(e.dateEmbauche)], ["Ancienneté", e.anciennete], ["Situation de famille", SITUATIONS[e.situationFamille] || ""],
+    ["Parts ITS", nfr(e.parts)], ["Personnes CMU", nfr(e.personnesCMU)], ["Horaire mensuel", e.horaire ? `${nfr(e.horaire)} h` : ""]];
   return (
-    <div className="text-[10.5px] leading-snug" style={{ pageBreakAfter: sautApres ? "always" : "auto", breakAfter: sautApres ? "page" : "auto", color: "#111827" }}>
-      <table className="w-full border-collapse" style={box}><tbody><tr>
-        <td className="p-2 align-top w-1/2" style={box}><p className="text-base font-bold">BULLETIN DE PAIE</p>
-          <p className="font-semibold">{AGENCY.name}</p><p>{AGENCY.address}</p>{settings?.adressePostale && <p>{settings.adressePostale}</p>}
-          <p>N° employeur CNPS : {settings?.cnpsEmployeur || "…………"}</p></td>
-        <td className="p-2 align-top" style={box}>
-          <p>Période du <b>{fmt(d1)}</b> au <b>{fmt(d2)}</b></p>
-          <p>Paiement le <b>{fmt(slip.datePaiement) || "…………"}</b> par <b>{slip.modePaiement || settings?.modePaiement || "…"}</b></p>
-          {slip.numero && <p>N° {slip.numero}</p>}{slip.statut === "brouillon" && <p className="font-bold" style={{ color: "#C58A1B" }}>PROJET — NON VALIDÉ</p>}
-          {slip.statut === "annule" && <p className="font-bold" style={{ color: "#D81F26" }}>BULLETIN ANNULÉ — {slip.motifAnnulation}</p>}
-          <p className="mt-2 font-semibold">{e.civilite} {e.nom}</p>{e.adresse && <p>{e.adresse}</p>}</td>
-      </tr></tbody></table>
-      <table className="w-full border-collapse mt-1" style={box}><tbody><tr>
-        {[["Matricule", e.matricule], ["Emploi", e.emploi], ["Catégorie", e.categorie], ["Qualification", e.qualification], ["Contrat", e.typeContrat],
-          ["Embauche", fmt(e.dateEmbauche)], ["Ancienneté", e.anciennete], ["N° CNPS", e.cnps || "—"], ["Horaire", nfr(e.horaire)], ["Parts ITS", nfr(e.parts)]].map(([k, v]) => (
-          <td key={k} className="px-1.5 py-1 align-top" style={box}><p style={{ color: "var(--muted)" }}>{k}</p><p className="font-medium">{v || "—"}</p></td>))}
-      </tr></tbody></table>
-      {e.conges && <p className="mt-1">Congés (jours ouvrables) — acquis : <b>{nfr(e.conges.acquis)}</b> · pris : <b>{nfr(e.conges.pris)}</b> · reste à prendre : <b>{nfr(e.conges.solde)}</b>{e.absences?.length ? ` · Absences du mois : ${e.absences.join(", ")}` : ""}</p>}
+    <div className="text-[10px] leading-snug kb-bulletin" style={{ pageBreakAfter: sautApres ? "always" : "auto", breakAfter: sautApres ? "page" : "auto", color: "#111827" }}>
+      <EntetePaie employeur={employeur} titre="BULLETIN DE PAIE">
+        {slip.numero && <p>N° <b>{slip.numero}</b></p>}
+        <p>Période du <b>{fmt(d1)}</b> au <b>{fmt(d2)}</b></p>
+        <p>Paiement le <b>{fmt(slip.datePaiement) || "…………"}</b> par <b>{slip.modePaiement || settings?.modePaiement || "…"}</b></p>
+        {slip.statut === "brouillon" && <p className="font-bold" style={{ color: "#C58A1B" }}>PROJET — NON VALIDÉ</p>}
+        {slip.statut === "annule" && <p className="font-bold" style={{ color: "#D81F26" }}>BULLETIN ANNULÉ — {slip.motifAnnulation}</p>}
+      </EntetePaie>
+      <table className="w-full border-collapse mt-1" style={box}><tbody>
+        <tr><td colSpan={6} className="px-1.5 py-1" style={{ ...box, background: "#F1F3F5" }}><b className="text-[11px]">{e.civilite} {e.nom}</b>{e.adresse ? <span> — {e.adresse}</span> : ""}</td></tr>
+        {[0, 6].map((i) => <tr key={i}>{ident.slice(i, i + 6).map(([k, v]) => (
+          <td key={k} className="px-1.5 py-0.5 align-top" style={{ ...box, width: "16.66%" }}><p style={{ color: "#5B6573" }}>{k}</p><p className="font-medium">{v || "—"}</p></td>))}</tr>)}
+      </tbody></table>
+      {e.conges && <p className="mt-1">Congés (jours ouvrables) — acquis : <b>{nfr(e.conges.acquis)}</b> · pris : <b>{nfr(e.conges.pris)}</b> · reste à prendre : <b>{nfr(e.conges.solde)}</b>{e.joursPayes !== undefined && e.joursPayes !== 30 ? ` · Jours payés : ${nfr(e.joursPayes)} sur 30` : ""}{e.absences?.length ? ` · Absences du mois : ${e.absences.join(", ")}` : ""}</p>}
       <table className="w-full border-collapse mt-1" style={box}>
         <thead><tr style={{ background: "#F1F3F5" }}>{["N°", "Désignation", "Nombre", "Base", "Taux", "Gain", "Retenue", "Taux pat.", "Part patronale"].map((h) => <th key={h} className="px-1.5 py-1 text-left font-semibold" style={box}>{h}</th>)}</tr></thead>
         <tbody>
           {gains.map((l, i) => <Row key={`g${i}`} l={l} />)}
           <tr style={{ background: "#F8FAFC" }}><td /><td className={`${td} font-semibold`}>Total brut</td><td /><td /><td /><td className={`${tdr} font-semibold`}>{nfr(slip.brut)}</td><td /><td /><td /></tr>
           {cot.map((l, i) => <Row key={`c${i}`} l={l} />)}
-          <tr style={{ background: "#F8FAFC" }}><td /><td className={`${td} font-semibold`}>Total cotisations</td><td /><td /><td /><td /><td className={`${tdr} font-semibold`}>{nfr(slip.cotisationsSalariales)}</td><td /><td className={`${tdr} font-semibold`}>{nfr(slip.cotisationsPatronales)}</td></tr>
+          <tr style={{ background: "#F8FAFC" }}><td /><td className={`${td} font-semibold`}>Total cotisations</td><td /><td /><td /><td /><td className={`${tdr} font-semibold`}>{nfr(totRet)}</td><td /><td className={`${tdr} font-semibold`}>{nfr(totPat)}</td></tr>
           {apres.map((l, i) => <Row key={`a${i}`} l={l} />)}
         </tbody>
       </table>
@@ -3639,12 +3876,209 @@ function BulletinSheet({ slip, period, settings, sautApres }) {
         <thead><tr style={{ background: "#F1F3F5" }}>{["Cumuls", "Salaire brut", "Net imposable", "Charges salariales", "Charges patronales", "Heures travaillées", "NET À PAYER"].map((h) => <th key={h} className="px-1.5 py-1 text-left font-semibold" style={box}>{h}</th>)}</tr></thead>
         <tbody>
           <tr><td className={td} style={box}>Période</td><td className={tdr} style={box}>{nfr(slip.brut)}</td><td className={tdr} style={box}>{nfr(slip.imposable)}</td><td className={tdr} style={box}>{nfr(slip.cotisationsSalariales)}</td>
-            <td className={tdr} style={box}>{nfr(slip.cotisationsPatronales)}</td><td className={tdr} style={box}>{nfr(e.heuresPeriode)}</td><td className={`${tdr} text-sm font-bold`} style={box} rowSpan={2}>{nfr(slip.netAPayer)}</td></tr>
+            <td className={tdr} style={box}>{nfr(slip.cotisationsPatronales)}</td><td className={tdr} style={box}>{nfr(e.heuresPeriode)}</td><td className={`${tdr} text-[13px] font-bold`} style={box} rowSpan={2}>{nfr(slip.netAPayer)}</td></tr>
           <tr><td className={td} style={box}>Année</td><td className={tdr} style={box}>{nfr(e.cumuls?.brut)}</td><td className={tdr} style={box}>{nfr(e.cumuls?.imposable)}</td><td className={tdr} style={box}>{nfr(e.cumuls?.salariales)}</td>
             <td className={tdr} style={box}>{nfr(e.cumuls?.patronales)}</td><td className={tdr} style={box}>{nfr(e.cumuls?.heures)}</td></tr>
         </tbody>
       </table>
-      <p className="mt-1 text-[9px]" style={{ color: "var(--muted)" }}>Net à payer en lettres : {amountInWords(slip.netAPayer)}. En cas de contestation, le salarié peut demander la justification des éléments du bulletin.</p>
+      <p className="mt-1.5"><b>Net à payer :</b> {montantEnLettres(slip.netAPayer)}.</p>
+      <div className="mt-1.5 pt-1 text-[8.5px] leading-snug" style={{ color: "#4B5563", borderTop: "1px solid #D5DBE3" }}>
+        <p>Bulletin individuel de paie délivré au moment du paiement (Code du travail, art. 32.5). Charges salariales : ITS (ordonnance n°2023-719), retraite CNPS, CMU ; charges patronales : retraite, prestations familiales et maternité, accidents du travail, CMU, contribution employeur, taxe d'apprentissage et taxe FPC.</p>
+        <p>L'acceptation sans protestation ni réserve de ce bulletin ne vaut pas renonciation au paiement du salaire, des indemnités et accessoires dus (Code du travail, art. 32.6). L'action en paiement du salaire se prescrit par deux ans (art. 33.5) : conservez ce bulletin.</p>
+      </div>
+    </div>
+  );
+}
+
+/* ══ Moteur de paie : panneaux et états ══ */
+const reviverParams = (k, x) => (x === "sans plafond" ? Infinity : x);
+/* Paramètres ayant produit un bulletin (photographie), à défaut ceux de l'application */
+function parametresDuBulletin(b, hr, date) {
+  if (b?.entete?.parametresPaie) { try { return JSON.parse(JSON.stringify(b.entete.parametresPaie), reviverParams); } catch { /* photographie illisible */ } }
+  return parametresMoteur(hr.params, date);
+}
+function ControleMoteur({ controle }) {
+  if (!controle) return null;
+  const ok = controle.conforme;
+  return (
+    <div className="bg-white rounded-xl border p-3" style={{ borderColor: ok ? "#CDE7C0" : "#F5C6C7" }}>
+      <p className="text-sm font-semibold flex items-center gap-1.5">{ok ? <ShieldCheck size={15} style={{ color: "#4F9E2A" }} /> : <ShieldAlert size={15} style={{ color: "#D81F26" }} />} Contre-calcul du moteur de paie</p>
+      <p className="text-xs mt-0.5 mb-2" style={{ color: "var(--muted)" }}>{ok ? "Le moteur de référence retrouve exactement chaque montant du bulletin." : controle.erreur || "Écart entre le bulletin et le moteur : la paie ne peut pas être validée en l'état."}</p>
+      {controle.comparaison?.length > 0 && <table className="w-full text-[11px]"><thead><tr style={{ color: "var(--muted)" }}><th className="text-left font-medium py-0.5">Élément</th><th className="text-right font-medium">Bulletin</th><th className="text-right font-medium">Moteur</th></tr></thead>
+        <tbody>{controle.comparaison.map((c) => { const e = Math.abs(c.ecart) > 1;
+          return <tr key={c.libelle} style={{ color: e ? "#B5171D" : undefined }}><td className="py-0.5">{c.libelle}</td><td className="text-right tabular-nums">{nfr(c.application)}</td><td className="text-right tabular-nums font-medium">{nfr(c.moteur)}{e ? " ≠" : " ✓"}</td></tr>; })}</tbody></table>}
+    </div>
+  );
+}
+/* Grille servant à la simulation : celle de l'application, ou à défaut la grille de référence du moteur */
+function grillePourSimulation(hr, date) {
+  const app = (hr.scale || []).filter((r) => r.dateEffet <= date && (!r.dateFin || r.dateFin >= date) && r.salaireMinimum !== null)
+    .map((r) => ({ code: `${r.categorie}${r.echelon ? ` ${r.echelon}` : ""}`, base: Number(r.salaireMinimum), college: QUALIFICATIONS[r.qualification] || "", cadre: Number(r.categorie) >= 8 }))
+    .sort((a, b) => a.base - b.base);
+  if (app.length >= 3) return { source: "Grille catégorielle de l'application", categories: app };
+  const g = GRILLES_CATEGORIELLES.commerce;
+  return { source: `${g.libelle} — ${g.source} (grille de référence du moteur, source secondaire à confronter à l'arrêté)`, categories: g.categories.map((c) => ({ ...c })) };
+}
+function SimulationReclassement({ hr, emp, contract, date }) {
+  const [ouvert, setOuvert] = useState(false);
+  if (!contract || contract.type === "stage") return null;
+  const brut = remunerationMensuelle(contract);
+  const g = grillePourSimulation(hr, date);
+  const lignes = ouvert ? simulerReclassement({ categories: g.categories, brutActuel: brut, dateEmbauche: emp.dateEmbauche || contract.dateDebut, dateRef: date, params: parametresMoteur(hr.params, date) }) : [];
+  return (
+    <div className="bg-white rounded-xl border p-3" style={{ borderColor: "var(--line)" }}>
+      <button onClick={() => setOuvert(!ouvert)} className="w-full flex items-center justify-between text-sm font-semibold">Simuler un reclassement {ouvert ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>
+      {ouvert && <>
+        <p className="text-xs mt-1 mb-2" style={{ color: "var(--muted)" }}>À rémunération constante ({fcfa(brut)} : salaire catégoriel + sursalaire), nouvelle répartition selon la catégorie. Le changement de catégorie se fait par avenant. {g.source}.</p>
+        <table className="w-full text-[11px]"><thead><tr style={{ color: "var(--muted)" }}><th className="text-left font-medium">Cat.</th><th className="text-right font-medium">Minimum</th><th className="text-right font-medium">Sursalaire</th><th className="text-right font-medium">Anc. à 2 ans</th></tr></thead>
+          <tbody>{lignes.map((l) => <tr key={l.categorie} style={{ color: l.possibleABrutConstant ? undefined : "var(--muted)" }}>
+            <td className="py-0.5">{l.categorie}</td><td className="text-right tabular-nums">{nfr(l.salaireBase)}</td>
+            <td className="text-right tabular-nums">{l.possibleABrutConstant ? nfr(l.sursalaire) : `+${nfr(l.augmentationRequise)} requis`}</td><td className="text-right tabular-nums">{nfr(l.primeAncienneteA2Ans)}</td></tr>)}</tbody></table>
+      </>}
+    </div>
+  );
+}
+/* Paramètres de l'application comparés au moteur de référence (onglet Paie) */
+function MoteurPaieCard({ hr, admin, on, today, onControleAnnuel }) {
+  const [tout, setTout] = useState(false);
+  const lignes = useMemo(() => ecartsParametres(hr.params, today), [hr.params, today]);
+  const ecarts = lignes.filter((l) => l.ecart);
+  const codesPaie = new Set(lignes.map((l) => l.code));
+  const aConfirmer = [...codesPaie].map((c) => resolveParam(hr.params, c, today)).filter((p) => p && !p.valide);
+  const [annee, setAnnee] = useState(Number(today.slice(0, 4)));
+  const vus = tout ? lignes : ecarts;
+  return (
+    <SectionCard title="Moteur de paie" icon={ShieldCheck} pad={false}>
+      <div className="px-4 pt-3 text-sm space-y-1">
+        <p>Chaque bulletin est recalculé par le moteur de paie de référence à partir des mêmes données : un écart sur le brut, les retenues ou le net bloque la validation de la paie.</p>
+        <p className="text-xs" style={{ color: "var(--muted)" }}>Les taux appliqués sont ceux des Paramètres légaux. Ci-dessous, les valeurs qui diffèrent de la référence du moteur : à vous de trancher, au vu de vos bordereaux CNPS et déclarations fiscales.</p>
+        {aConfirmer.length > 0 && <WarnBox>{aConfirmer.length} paramètre(s) de paie encore « à confirmer » : {aConfirmer.map((p) => p.libelle).join(", ")}.</WarnBox>}
+      </div>
+      <div className="overflow-x-auto"><table className="w-full text-sm mt-2">
+        <thead><tr className="text-left text-xs" style={{ color: "var(--muted)", background: "#F8FAFC" }}><th className="px-3 py-2">Paramètre</th><th className="px-3 py-2">Application</th><th className="px-3 py-2">Moteur de référence</th><th className="px-3 py-2"></th></tr></thead>
+        <tbody>{vus.map((l, i) => (
+          <tr key={`${l.libelle}${i}`} className="border-t align-top" style={{ borderColor: "var(--line)" }}>
+            <td className="px-3 py-2">{l.libelle}<span className="block font-mono text-[10px]" style={{ color: "var(--muted)" }}>{l.code}</span></td>
+            <td className="px-3 py-2" style={{ color: l.ecart ? "#8A6212" : undefined }}>{l.application}</td>
+            <td className="px-3 py-2">{l.moteur}{l.aValider && <span className="block text-[10px]" style={{ color: "#B7791F" }}>valeur du moteur elle-même à valider</span>}{l.note && <span className="block text-[11px]" style={{ color: "var(--muted)" }}>{l.note}</span>}</td>
+            <td className="px-3 py-2 text-right whitespace-nowrap">{!l.ecart ? <Chip color="#4F9E2A">identique</Chip>
+              : admin && l.proposition && l.param ? <button onClick={() => on.param("fix", l.param, l.proposition)} className="kb-btn kb-btn-ghost text-xs">Reprendre la valeur du moteur</button> : <Chip color="#8A6212">à arbitrer</Chip>}</td>
+          </tr>))}
+          {!vus.length && <tr><td colSpan={4} className="px-3 py-3 text-sm" style={{ color: "#4F9E2A" }}>Tous les paramètres de paie sont identiques à la référence du moteur.</td></tr>}</tbody>
+      </table></div>
+      <div className="px-4 py-3 flex flex-wrap items-center gap-2 border-t" style={{ borderColor: "var(--line)" }}>
+        <button onClick={() => setTout(!tout)} className="kb-btn kb-btn-ghost text-xs">{tout ? `Écarts seulement (${ecarts.length})` : `Voir les ${lignes.length} paramètres comparés`}</button>
+        <div className="flex-1" />
+        <input type="number" className="w-24 px-2 py-1 rounded-lg border text-xs" style={inputStyle} value={annee} onChange={(e) => setAnnee(Number(e.target.value))} aria-label="Année du contrôle ITS" />
+        <button onClick={() => onControleAnnuel(annee)} className="kb-btn kb-btn-ghost text-xs"><Printer size={13} /> Contrôle annuel de l'ITS</button>
+      </div>
+    </SectionCard>
+  );
+}
+/* Contrôle annuel de l'ITS : chaque bulletin validé recalculé avec ses propres paramètres */
+export function controleITSAnnee(hr, annee) {
+  const valides = hr.payslips.filter((b) => b.statut === "valide").map((b) => ({ b, p: periodeDe(hr, b.periodId) })).filter((x) => x.p && x.p.annee === annee);
+  const parEmp = {};
+  valides.forEach(({ b, p }) => { (parEmp[b.employeeId] = parEmp[b.employeeId] || []).push({ b, p }); });
+  return Object.entries(parEmp).map(([id, liste]) => {
+    const emp = hr.employees.find((e) => e.id === id);
+    const mois = liste.sort((x, y) => x.p.mois - y.p.mois).map(({ b, p }) => {
+      const fin = finDuMois(p.annee, p.mois);
+      return { periode: `${p.annee}-${pad(p.mois)}`, brutImposable: Number(b.imposable) || 0, parts: Number(b.entete?.parts) || 1,
+        itsRetenu: (b.lignes || []).filter((l) => l.code === RUB.its).reduce((t, l) => t + (l.retenue || 0), 0), params: parametresDuBulletin(b, hr, fin) };
+    });
+    return { emp, ...controleAnnuelITS(mois, annee) };
+  }).sort((a, b) => nomComplet(a.emp).localeCompare(nomComplet(b.emp)));
+}
+function ControleAnnuelITSPrint({ hr, annee }) {
+  const rows = controleITSAnnee(hr, annee);
+  const td = "px-2 py-1 border"; const bc = { borderColor: "#C9D1DA" };
+  const tot = (k) => rows.reduce((t, r) => t + r[k], 0);
+  return (
+    <div className="text-[11px]">
+      <PrintHead title="CONTRÔLE ANNUEL DE L'ITS" subtitle={`Année ${annee}`} />
+      <p className="mt-3 mb-2" style={{ color: "var(--muted)" }}>Le barème de l'ITS est mensuel (ordonnance n°2023-719 ; note DGI n°00026) : l'impôt dû pour l'année est la somme des impôts dus chaque mois. Chaque bulletin validé est recalculé avec les paramètres qui l'ont produit ; un écart révèle une erreur de bulletin, à régulariser sur la paie suivante.</p>
+      <table className="w-full border-collapse">
+        <thead><tr style={{ background: "#F1F3F5" }}>{["Matricule", "Salarié", "Bulletins", "Brut imposable annuel", "ITS retenu", "ITS recalculé", "Écart", "Mois en écart"].map((h) => <th key={h} className={`${td} text-left font-semibold`} style={bc}>{h}</th>)}</tr></thead>
+        <tbody>{rows.map((r) => (
+          <tr key={r.emp?.id}><td className={td} style={bc}>{r.emp?.matricule}</td><td className={td} style={bc}>{nomComplet(r.emp)}</td><td className={`${td} text-right`} style={bc}>{r.nbBulletins}</td>
+            <td className={`${td} text-right tabular-nums`} style={bc}>{nfr(r.brutAnnuel)}</td><td className={`${td} text-right tabular-nums`} style={bc}>{nfr(r.itsRetenu)}</td>
+            <td className={`${td} text-right tabular-nums`} style={bc}>{nfr(r.itsDu)}</td><td className={`${td} text-right tabular-nums font-semibold`} style={{ ...bc, color: r.ecart ? "#B5171D" : "#2F6B1A" }}>{r.ecart ? nfr(r.ecart) : "conforme"}</td>
+            <td className={td} style={bc}>{r.detail.filter((m) => m.ecart).map((m) => `${MOIS_NOMS[Number(m.periode.slice(5)) - 1]} : ${nfr(m.ecart)}`).join(" ; ") || "—"}</td></tr>))}
+          {rows.length > 0 && <tr style={{ background: "#F8FAFC" }}><td colSpan={3} className={`${td} font-semibold`} style={bc}>Total</td><td className={`${td} text-right tabular-nums font-semibold`} style={bc}>{nfr(tot("brutAnnuel"))}</td>
+            <td className={`${td} text-right tabular-nums font-semibold`} style={bc}>{nfr(tot("itsRetenu"))}</td><td className={`${td} text-right tabular-nums font-semibold`} style={bc}>{nfr(tot("itsDu"))}</td>
+            <td className={`${td} text-right tabular-nums font-bold`} style={bc}>{nfr(tot("ecart"))}</td><td className={td} style={bc} /></tr>}
+        </tbody>
+      </table>
+      {!rows.length && <p className="mt-3">Aucun bulletin validé pour {annee}.</p>}
+      <p className="mt-2" style={{ color: "var(--muted)" }}>Écart positif : ITS insuffisamment retenu ; écart négatif : ITS retenu en trop.</p>
+    </div>
+  );
+}
+/* État de solde pour congés : allocation d'un congé payé et retenues qu'elle supporte sur le bulletin du mois de départ */
+export function etatSoldeConges(hr, abs) {
+  const emp = hr.employees.find((e) => e.id === abs.employeeId); if (!emp) return null;
+  const [y, m] = abs.dateDebut.split("-").map(Number);
+  const period = hr.periods.find((p) => p.annee === y && p.mois === m) || { id: null, annee: y, mois: m, statut: "ouverte", datePaiement: "", modePaiement: hr.settings.modePaiement };
+  const slip = hr.payslips.find((b) => b.employeeId === emp.id && b.periodId === period.id && b.statut !== "annule") || null;
+  const joursCal = joursCalendaires(abs.dateDebut, abs.dateFin);
+  const base = { ...(slip?.variables || {}), allocationMontant: "" };
+  const avec = calcBulletin(argsBulletin(hr, emp, period, { ...base, allocationJours: joursCal }, slip?.id));
+  const sans = calcBulletin(argsBulletin(hr, emp, period, { ...base, allocationJours: 0 }, slip?.id));
+  const ligne = (r, code) => r.lignes.filter((l) => l.code === code).reduce((t, l) => t + (l.retenue || 0), 0);
+  const allocation = avec.lignes.filter((l) => l.code === RUB.conges).reduce((t, l) => t + (l.gain || 0), 0);
+  const its = ligne(avec, RUB.its) - ligne(sans, RUB.its); const cnps = ligne(avec, RUB.cnps) - ligne(sans, RUB.cnps);
+  const det = hr.details.find((d) => d.employeeId === emp.id);
+  const avant = soldeConges({ emp, det, contracts: hr.contracts, absences: hr.absences, adjustments: hr.adjustments, params: hr.params, today: plusJours(abs.dateDebut, -1) });
+  const contract = contratA(hr.contracts, emp.id, abs.dateDebut);
+  return { emp, det, contract, abs, period, slip, joursCal, joursOuvrables: Number(abs.joursOuvrables) || 0, smm: avec.allocation?.smm || null,
+    allocation, its, cnps, net: allocation - its - cnps, avant, apres: avant ? r2(avant.solde - (Number(abs.joursOuvrables) || 0)) : null };
+}
+function EtatSoldeCongesPrint({ hr, absence, onBack }) {
+  const x = etatSoldeConges(hr, absence);
+  if (!x) return <EmptyState icon={CalendarDays} title="Salarié introuvable" />;
+  const td = "px-2 py-1.5 border"; const bc = { borderColor: "#C9D1DA" };
+  const L = ({ k, v, b }) => <tr><td className={td} style={bc}>{k}</td><td className={`${td} text-right tabular-nums ${b ? "font-bold" : ""}`} style={bc}>{v}</td></tr>;
+  const signataire = hr.settings.signataireNom ? `${hr.settings.signataireNom}${hr.settings.signataireQualite ? `, ${hr.settings.signataireQualite}` : ""}` : "La Direction";
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 print:hidden gap-2">
+        <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
+        <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+      </div>
+      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl" style={{ borderColor: "var(--line)" }}>
+        <div className="text-[11.5px]" style={{ color: "#111827" }}>
+          <EntetePaie employeur={identiteEmployeur(hr.settings)} titre="ÉTAT DE SOLDE POUR CONGÉS">
+            <p>Congé du <b>{fmt(x.abs.dateDebut)}</b> au <b>{fmt(x.abs.dateFin)}</b> inclus</p>
+            <p>Reprise le <b>{fmt(plusJours(x.abs.dateFin, 1))}</b></p>
+            <p>Édité le {fmt(todayIso())}</p>
+          </EntetePaie>
+          <table className="w-full border-collapse mt-3"><tbody>
+            <tr><td className={td} style={bc}>Salarié</td><td className={`${td} font-semibold`} style={bc}>{x.emp.sexe === "F" ? "Mme" : x.emp.sexe === "M" ? "M." : ""} {nomComplet(x.emp)} — matricule {x.emp.matricule}</td></tr>
+            <tr><td className={td} style={bc}>Emploi, catégorie</td><td className={td} style={bc}>{x.emp.poste || "—"}{x.contract ? ` — catégorie ${x.contract.categorie}${x.contract.echelon ? ` / ${x.contract.echelon}` : ""}` : ""}</td></tr>
+            <tr><td className={td} style={bc}>Date d'embauche · N° CNPS</td><td className={td} style={bc}>{fmt(x.emp.dateEmbauche)} · {x.det?.cnpsNumero || "—"}</td></tr>
+          </tbody></table>
+          <p className="font-semibold mt-4 mb-1">1. Droits à congé (jours ouvrables)</p>
+          <table className="w-full border-collapse"><tbody>
+            {x.avant && <><L k="Droits acquis à la veille du départ (base et majorations)" v={nfr(r2(x.avant.acquisBase + x.avant.majorations + x.avant.ajustements))} />
+              <L k="Congés déjà pris" v={nfr(x.avant.pris)} /><L k="Solde disponible avant le départ" v={nfr(x.avant.solde)} b /></>}
+            <L k="Jours de congé pris (ouvrables)" v={nfr(x.joursOuvrables)} /><L k="Solde restant après le congé" v={x.apres === null ? "—" : nfr(x.apres)} b />
+          </tbody></table>
+          <p className="font-semibold mt-4 mb-1">2. Allocation de congé</p>
+          <table className="w-full border-collapse"><tbody>
+            <L k={`Salaire mensuel moyen (${x.smm?.source || "—"})`} v={fcfa(x.smm?.montant || 0)} />
+            <L k={`Allocation : salaire moyen ÷ 30 × ${x.joursCal} jours calendaires`} v={fcfa(x.allocation)} b />
+            <L k="ITS supporté par l'allocation" v={`− ${fcfa(x.its)}`} /><L k="Retraite CNPS (part salariale) sur l'allocation" v={`− ${fcfa(x.cnps)}`} />
+            <L k="Allocation nette" v={fcfa(x.net)} b />
+          </tbody></table>
+          <p className="mt-2"><b>Arrêté à la somme nette de :</b> {montantEnLettres(x.net)}.</p>
+          <p className="mt-2 text-[10.5px]" style={{ color: "#4B5563" }}>L'allocation est versée au salarié avant son départ en congé. Elle figure sur le bulletin de paie de {MOIS_NOMS[x.period.mois - 1]} {x.period.annee} (rubrique {RUB.conges}){x.slip?.numero ? `, n° ${x.slip.numero}` : ""} ; l'ITS et la retraite ci-dessus sont la part des retenues de ce bulletin due à l'allocation, calculée sur les données à la date d'édition. Les jours de congé ne sont pas payés en salaire : ils le sont par l'allocation.</p>
+          <div className="grid grid-cols-2 gap-10 mt-8 text-center">
+            <div><p className="font-semibold">Le salarié</p><p className="text-[10px]" style={{ color: "#4B5563" }}>« Lu et approuvé », date et signature</p><div className="h-16" /></div>
+            <div><p className="font-semibold">Pour l'employeur</p><p className="text-[10px]" style={{ color: "#4B5563" }}>{signataire}</p><div className="h-16" /></div>
+          </div>
+        </div>
+      </PrintPage>
     </div>
   );
 }
@@ -3706,6 +4140,8 @@ function PayslipEditor({ slip, hr, actions, admin, period, onBack, say }) {
             <div className="flex gap-2"><button onClick={() => setAnnul(false)} className="kb-btn kb-btn-ghost text-xs">Fermer</button><button disabled={busy} onClick={annuler} className="kb-btn text-xs text-white" style={{ background: "#D81F26" }}>Confirmer l'annulation</button></div>
           </div>}
           {!lecture && (calc.res.anomalies || []).map((a, i) => <WarnBox key={i} tone={a.niveau === "bloquant" ? "rouge" : a.niveau}>{a.texte}</WarnBox>)}
+          <ControleMoteur controle={lecture ? slip.entete?.controle : calc.entete.controle} />
+          {!lecture && <SimulationReclassement hr={hr} emp={emp} contract={calc.contract} date={finDuMois(period.annee, period.mois)} />}
           {!lecture && (
             <div className="bg-white rounded-xl border p-3" style={{ borderColor: "var(--line)" }}>
               <p className="text-sm font-semibold mb-2">Éléments du mois</p>
@@ -3770,8 +4206,9 @@ function LivreDePaie({ period, slips, hr }) {
     <div>
       {groupes.map((g, gi) => (
         <div key={gi} style={{ pageBreakAfter: gi < groupes.length - 1 ? "always" : "auto" }} className="mb-4">
-          <p className="font-bold">Livre de paie mensuel — période du {fmt(debutDuMois(period.annee, period.mois))} au {fmt(finDuMois(period.annee, period.mois))}</p>
-          <p className="text-[10px] mb-2" style={{ color: "var(--muted)" }}>{AGENCY.name} · N° employeur CNPS : {hr.settings.cnpsEmployeur || "—"} · édité le {fmt(todayIso())} · {period.statut === "validee" ? `paie validée, payée le ${fmt(period.datePaiement)}` : "AVANT VALIDATION"}{groupes.length > 1 ? ` · feuillet ${gi + 1}/${groupes.length}` : ""}</p>
+          <PrintHead title="LIVRE DE PAIE" subtitle={`Période du ${fmt(debutDuMois(period.annee, period.mois))} au ${fmt(finDuMois(period.annee, period.mois))}`}
+            extra={<p className="text-[10px]">{AGENCY.rc} · {AGENCY.cc} · N° employeur CNPS : {hr.settings.cnpsEmployeur || "—"}</p>} />
+          <p className="text-[10px] mt-2 mb-2" style={{ color: "var(--muted)" }}>Registre des paiements de salaire (Code du travail, art. 32.5) · édité le {fmt(todayIso())} · {period.statut === "validee" ? `paie validée, payée le ${fmt(period.datePaiement)}` : "AVANT VALIDATION"}{groupes.length > 1 ? ` · feuillet ${gi + 1}/${groupes.length}` : ""}</p>
           <table className="w-full text-[9.5px] border-collapse">
             <thead><tr style={{ background: "#F1F3F5" }}><th className="px-1.5 py-1 border text-left" style={bc}>Rubriques</th>
               {g.map(({ b, e }) => <th key={b.id} className={th} style={bc}>{e?.matricule}<br />{nomComplet(e)}</th>)}
@@ -3798,31 +4235,39 @@ function LivreDePaie({ period, slips, hr }) {
 const montantLigne = (b, code, champ) => (b.lignes || []).filter((l) => l.code === code).reduce((t, l) => t + (l[champ] || 0), 0);
 function EtatCharges({ period, slips, hr }) {
   const actifs = slips.filter((b) => b.statut !== "annule");
-  const cols = [["Brut", (b) => b.brut], ["ITS", (b) => montantLigne(b, "4300", "retenue")], ["CNPS salarié", (b) => montantLigne(b, "4400", "retenue")],
-    ["Retraite employeur", (b) => montantLigne(b, "4700", "pat")], ["Prest. familiales", (b) => montantLigne(b, "4800", "pat") + montantLigne(b, "4810", "pat")],
-    ["Accident du travail", (b) => montantLigne(b, "4900", "pat")], ["Part patronale IS", (b) => montantLigne(b, "5000", "pat")],
-    ["Taxe d'apprentissage", (b) => montantLigne(b, "5200", "pat")], ["Taxe FPC", (b) => montantLigne(b, "5300", "pat")], ["CMU", (b) => montantLigne(b, "6500", "retenue")]];
+  const pat = (code) => (b) => montantLigne(b, code, "pat"); const ret = (code) => (b) => montantLigne(b, code, "retenue");
+  const cols = [["Brut", (b) => b.brut], ["ITS", ret("4300")], ["CNPS salarié", ret("4400")], ["CMU salarié", ret("6500")],
+    ["Retraite employeur", pat("4700")], ["Prest. familiales et maternité", (b) => pat("4800")(b) + pat("4810")(b)], ["Accident du travail", pat("4900")], ["CMU employeur", pat("6500")],
+    ["Contribution employeur", pat("5000")], ["Taxe d'apprentissage", pat("5200")], ["Taxe FPC", pat("5300")]];
   const tot = (f) => actifs.reduce((t, b) => t + (f(b) || 0), 0);
-  const cnps = tot(cols[2][1]) + tot(cols[3][1]) + tot(cols[4][1]) + tot(cols[5][1]);
-  const dgi = tot(cols[1][1]) + tot(cols[6][1]); const fdfp = tot(cols[7][1]) + tot(cols[8][1]);
+  const T = Object.fromEntries(cols.map(([l, f]) => [l, tot(f)]));
+  const cnps = T["CNPS salarié"] + T["Retraite employeur"] + T["Prest. familiales et maternité"] + T["Accident du travail"];
+  const cmu = T["CMU salarié"] + T["CMU employeur"];
+  const dgi = T.ITS + T["Contribution employeur"]; const fdfp = T["Taxe d'apprentissage"] + T["Taxe FPC"];
+  const fpc = pval(hr.params, "FDFP_FORMATION_CONTINUE", finDuMois(period.annee, period.mois)) || {};
   const bc = { borderColor: "#C9D1DA" };
+  const Ligne = ({ l, detail, v, fort }) => <tr><td className="px-2 py-1 border" style={bc}>{l}{detail && <span className="block text-[10px]" style={{ color: "var(--muted)" }}>{detail}</span>}</td>
+    <td className={`px-2 py-1 border text-right tabular-nums ${fort ? "font-bold" : "font-semibold"}`} style={bc}>{nfr(v)}</td></tr>;
   return (
     <div>
-      <p className="font-bold">État des charges sociales et fiscales — {libPeriode(period)}</p>
-      <p className="text-[10px] mb-2" style={{ color: "var(--muted)" }}>{AGENCY.name} · N° employeur CNPS : {hr.settings.cnpsEmployeur || "—"} · édité le {fmt(todayIso())}</p>
+      <PrintHead title="CHARGES SOCIALES ET FISCALES" subtitle={`Mois de ${libPeriode(period)}`}
+        extra={<p className="text-[10px]">{AGENCY.rc} · {AGENCY.cc} · N° employeur CNPS : {hr.settings.cnpsEmployeur || "—"}</p>} />
+      <p className="text-[10px] mt-2 mb-2" style={{ color: "var(--muted)" }}>Édité le {fmt(todayIso())} · {actifs.length} bulletin(s) · {period.statut === "validee" ? `paie validée, payée le ${fmt(period.datePaiement)}` : "AVANT VALIDATION"}</p>
       <table className="w-full text-[9.5px] border-collapse">
         <thead><tr style={{ background: "#F1F3F5" }}><th className="px-1.5 py-1 border text-left" style={bc}>Salarié</th>{cols.map(([l]) => <th key={l} className="px-1.5 py-1 border text-right" style={bc}>{l}</th>)}</tr></thead>
         <tbody>{actifs.map((b) => { const e = hr.employees.find((x) => x.id === b.employeeId); return (
           <tr key={b.id}><td className="px-1.5 py-0.5 border" style={bc}>{e?.matricule} {nomComplet(e)}</td>{cols.map(([l, f]) => <td key={l} className="px-1.5 py-0.5 border text-right tabular-nums" style={bc}>{nfr(f(b))}</td>)}</tr>); })}
-          <tr style={{ background: "#F8FAFC" }}><td className="px-1.5 py-0.5 border font-bold" style={bc}>Total</td>{cols.map(([l, f]) => <td key={l} className="px-1.5 py-0.5 border text-right tabular-nums font-bold" style={bc}>{nfr(tot(f))}</td>)}</tr>
+          <tr style={{ background: "#F8FAFC" }}><td className="px-1.5 py-0.5 border font-bold" style={bc}>Total</td>{cols.map(([l]) => <td key={l} className="px-1.5 py-0.5 border text-right tabular-nums font-bold" style={bc}>{nfr(T[l])}</td>)}</tr>
         </tbody>
       </table>
-      <table className="text-[11px] mt-4 border-collapse"><tbody>
-        <tr><td className="px-2 py-1 border" style={bc}>À verser à la CNPS (retraite, prestations familiales, accident du travail)</td><td className="px-2 py-1 border text-right font-bold tabular-nums" style={bc}>{nfr(cnps)}</td></tr>
-        <tr><td className="px-2 py-1 border" style={bc}>À verser aux impôts (ITS retenu + part patronale)</td><td className="px-2 py-1 border text-right font-bold tabular-nums" style={bc}>{nfr(dgi)}</td></tr>
-        <tr><td className="px-2 py-1 border" style={bc}>FDFP (taxe d'apprentissage + taxe FPC)</td><td className="px-2 py-1 border text-right font-bold tabular-nums" style={bc}>{nfr(fdfp)}</td></tr>
-        <tr><td className="px-2 py-1 border" style={bc}>CMU retenue sur les salariés</td><td className="px-2 py-1 border text-right font-bold tabular-nums" style={bc}>{nfr(tot(cols[9][1]))}</td></tr>
+      <table className="text-[11px] mt-4 border-collapse min-w-[28rem]"><tbody>
+        <Ligne l="CNPS — retraite, prestations familiales et maternité, accident du travail" detail={`Retraite ${nfr(T["CNPS salarié"] + T["Retraite employeur"])} · PF et maternité ${nfr(T["Prest. familiales et maternité"])} · AT ${nfr(T["Accident du travail"])}`} v={cnps} />
+        <Ligne l="CMU — parts salariale et patronale" detail={`Salariés ${nfr(T["CMU salarié"])} · employeur ${nfr(T["CMU employeur"])}`} v={cmu} />
+        <Ligne l="Impôts — ITS retenu et contribution employeur" detail={`ITS ${nfr(T.ITS)} · contribution employeur ${nfr(T["Contribution employeur"])}`} v={dgi} />
+        <Ligne l="FDFP — taxe d'apprentissage et taxe FPC" detail={`Apprentissage ${nfr(T["Taxe d'apprentissage"])} · FPC ${nfr(T["Taxe FPC"])}`} v={fdfp} />
+        <Ligne l="Total des charges à reverser" v={cnps + cmu + dgi + fdfp} fort />
       </tbody></table>
+      {fpc.taux_legal !== undefined && Number(fpc.taux) < Number(fpc.taux_legal) && <p className="text-[10.5px] mt-2" style={{ color: "#8A6212" }}>Taxe FPC appliquée à {String(fpc.taux).replace(".", ",")} % (taux légal {String(fpc.taux_legal).replace(".", ",")} %) : le solde est à régulariser en fin d'année, sauf plan de formation agréé par le FDFP.</p>}
     </div>
   );
 }
@@ -3880,7 +4325,8 @@ function EtatIndemnitesStage({ period, hr }) {
   );
 }
 
-function PaieTab({ hr, actions, admin, today, say, focus }) {
+function PaieTab({ hr, actions, admin, today, say, focus, on }) {
+  const [annuel, setAnnuel] = useState(null);
   const [periodId, setPeriodId] = useState(focus?.periodId || "");
   const [slipId, setSlipId] = useState(focus?.slipId || "");
   const [impression, setImpression] = useState(null);
@@ -3897,6 +4343,15 @@ function PaieTab({ hr, actions, admin, today, say, focus }) {
   };
   if (slipId) { const s = hr.payslips.find((b) => b.id === slipId); const p = s && periodeDe(hr, s.periodId);
     if (s && p) return <PayslipEditor key={s.id + s.statut} slip={s} hr={hr} actions={actions} admin={admin} period={p} onBack={() => setSlipId("")} say={say} />; }
+  if (annuel) return (
+    <div>
+      <div className="flex items-center justify-between mb-3 print:hidden gap-2">
+        <button onClick={() => setAnnuel(null)} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
+        <button onClick={() => printSheet("landscape")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+      </div>
+      <PrintPage className="bg-white rounded-xl border p-5" style={{ borderColor: "var(--line)" }}><ControleAnnuelITSPrint hr={hr} annee={annuel} /></PrintPage>
+    </div>
+  );
   if (impression && period) {
     const liste = slips.filter((b) => b.statut !== "annule");
     return (
@@ -3927,6 +4382,7 @@ function PaieTab({ hr, actions, admin, today, say, focus }) {
           </div>
           <ErrLine err={err} />
         </SectionCard>
+        <MoteurPaieCard hr={hr} admin={admin} on={on} today={today} onControleAnnuel={setAnnuel} />
         <SectionCard title="Paies" icon={Layers} pad={false}>
           {hr.periods.length === 0 ? <EmptyState icon={Landmark} title="Aucune paie" sub="Ouvrez la paie du mois pour préparer les bulletins." /> : (
             <div className="divide-y" style={{ borderColor: "var(--line)" }}>{hr.periods.map((p) => { const bs = hr.payslips.filter((b) => b.periodId === p.id && b.statut !== "annule");
@@ -3999,11 +4455,12 @@ function PaieTab({ hr, actions, admin, today, say, focus }) {
         {brouillons.length > 0 && <button disabled={busy} onClick={recalculer} className="kb-btn kb-btn-ghost text-sm disabled:opacity-40">Recalculer les brouillons</button>}
         <button onClick={() => setImpression("bulletins")} className="kb-btn kb-btn-ghost text-sm"><Printer size={14} /> Bulletins</button>
         <button onClick={() => setImpression("livre")} className="kb-btn kb-btn-ghost text-sm"><ClipboardList size={14} /> Livre de paie</button>
-        <button onClick={() => setImpression("etat")} className="kb-btn kb-btn-ghost text-sm"><Scale size={14} /> État des charges</button>
+        <button onClick={() => setImpression("etat")} className="kb-btn kb-btn-ghost text-sm"><Scale size={14} /> Charges et déclarations</button>
       </div>
       {brouillons.length > 0 && (
         <div className="bg-white rounded-xl border p-3 mb-4 flex flex-wrap items-end gap-2" style={{ borderColor: "var(--line)" }}>
           <Field label="Date de paiement *" hint="Au plus tard 8 jours après la fin du mois (Code du travail, art. 32.3)"><input type="date" className={inputCls} style={inputStyle} value={datePaiement} onChange={(e) => setDatePaiement(e.target.value)} /></Field>
+          {datePaiement && datePaiement > plusJours(finDuMois(period.annee, period.mois), 8) && <p className="text-xs mb-3 max-w-xs" style={{ color: "#8A6212" }}>Paiement plus de 8 jours après la fin du mois : délai légal dépassé (art. 32.3). La date réelle doit néanmoins figurer sur les bulletins.</p>}
           <button disabled={busy} onClick={valider} className="kb-btn kb-btn-primary mb-3 disabled:opacity-40"><ShieldCheck size={15} /> Valider la paie ({brouillons.length})</button>
           {bloquants.length > 0 && <p className="text-xs mb-3" style={{ color: "#B5171D" }}>{bloquants.length} point(s) bloquant(s) à corriger.</p>}
         </div>
@@ -5319,7 +5776,8 @@ export default function RH({ store, me, acces }) {
     visa: (v) => setModal({ kind: "visa", initial: v }),
     removeVisa: (v) => setModal({ kind: "confirm", title: "Supprimer l'inscription", body: <>Supprimer l'inscription du {fmt(v.dateVisite)} ?</>,
       run: async () => { const r = await a.deleteVisa(v.id); if (!r.error) say(r); return r; } }),
-    param: (mode, p) => setModal({ kind: "param", mode, param: p }),
+    param: (mode, p, proposition) => setModal({ kind: "param", mode, param: p, proposition }),
+    etatSolde: (abs) => setPrint({ kind: "solde-conges", absence: abs }),
     validate: async (p) => say(await a.validateParam(p, me.id)),
     scale: (r) => setModal({ kind: "scale", initial: r }),
     newDoc: (emp) => setModal({ kind: "choose-doc", emp }),
@@ -5395,6 +5853,7 @@ export default function RH({ store, me, acces }) {
     }
   };
 
+  if (print?.kind === "solde-conges") return <EtatSoldeCongesPrint hr={hr} absence={print.absence} onBack={() => setPrint(null)} />;
   if (print?.kind === "declaration") return <DeclarationAnnuellePrint hr={hr} annee={print.annee} onBack={() => setPrint(null)} />;
   if (print) return <RegistrePrint kind={print} hr={hr} onBack={() => setPrint(null)} />;
   if (editor) return (
@@ -5432,7 +5891,7 @@ export default function RH({ store, me, acces }) {
             : <EmployeeList hr={hr} members={members} alerts={alerts} onOpen={setEmpId} onNew={(init) => setModal({ kind: "emp", initial: init, det: null })} />)}
           {tab === "conges" && <CongesTab hr={hr} today={today} on={on} admin={admin} />}
           {tab === "commissions" && <CommissionsTab hr={hr} store={store} actions={a} admin={admin} today={today} say={say} />}
-          {tab === "paie" && <PaieTab key={focusPaie?.n || "paie"} hr={hr} actions={a} admin={admin} today={today} say={say} focus={focusPaie} />}
+          {tab === "paie" && <PaieTab key={focusPaie?.n || "paie"} hr={hr} actions={a} admin={admin} today={today} say={say} focus={focusPaie} on={on} />}
           {tab === "sorties" && <SortiesTab hr={hr} actions={a} admin={admin} on={on} say={say} />}
           {tab === "recrutement" && <RecrutementTab hr={hr} actions={a} on={on} say={say} />}
           {tab === "discipline" && <DisciplineTab hr={hr} today={today} on={on} />}
@@ -5456,7 +5915,7 @@ export default function RH({ store, me, acces }) {
       {modal?.kind === "ctr" && modalEmp && <ContractModal initial={modal.initial} emp={modalEmp} params={params} scale={scale} autres={contracts.filter((c) => c.employeeId === modalEmp.id)} onSave={a.saveContract} onClose={fermer} />}
       {modal?.kind === "amend" && modalEmp && <AmendmentModal contract={modal.contract} documents={documents.filter((d) => d.employeeId === modalEmp.id)} onApply={a.applyAmendment} onClose={fermer} />}
       {modal?.kind === "doc" && <DocModal initial={modal.initial} employees={employees} onUpload={a.uploadDocument} onUpdate={a.updateDocument} onClose={fermer} />}
-      {modal?.kind === "param" && <ParamModal mode={modal.mode} param={modal.param} onNewVersion={a.newParamVersion} onFix={a.fixParam} onClose={fermer} />}
+      {modal?.kind === "param" && <ParamModal mode={modal.mode} param={modal.param} proposition={modal.proposition} onNewVersion={a.newParamVersion} onFix={a.fixParam} onClose={fermer} />}
       {modal?.kind === "scale" && <ScaleModal initial={modal.initial} onSave={a.saveScale} onClose={fermer} />}
       {modal?.kind === "visa" && <VisaModal initial={modal.initial} onSave={a.saveVisa} onClose={fermer} />}
       {modal?.kind === "choose-doc" && <DocChooserModal emp={modal.emp} contracts={contracts} templates={hr.templates} params={params} today={today}
