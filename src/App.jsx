@@ -1250,7 +1250,7 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "35.0";
+const APP_VERSION = "36.0";
 const APP_BUILD = "2026-11-09";
 
 /* ---- Papier à en-tête de l'agence ---- */
@@ -14505,7 +14505,7 @@ function Workspace({ userId }) {
 
 /* Composants partagés avec le module Ressources humaines (RH.jsx) */
 export { Modal, Field, Chip, StatCard, SectionCard, EmptyState, PrintPage, PrintHead, printSheet, fr, fcfa, isoDate, addDays, inputCls, inputStyle, MONTHS_FR,
-  AGENCY, amountInWords, LetterEditor,
+  AGENCY, amountInWords, LetterEditor, LOGO, LOGO_AGREMENT,
   /* outils du recouvrement et de l'impôt foncier (tests) */
   fetchAll, doublonsLignes, retirerDoublons, seedPeriod, refCadastrale,
   ventilerQuittance, poserQuittance, controleRecouvrement, arrearsOf, paymentHistory, quittanceActive };
