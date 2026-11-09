@@ -13,7 +13,7 @@
  * ==========================================================================*/
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
-  AlertTriangle, ArrowLeft, Briefcase, Building2, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ClipboardList,
+  AlertTriangle, GraduationCap, ArrowLeft, Briefcase, Building2, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ClipboardList,
   DoorOpen, Eye, FileSignature, FileText, FolderOpen, Gavel, HeartPulse, History, Landmark, Layers, Pencil, Plus, Printer, Scale, Search,
   BadgePercent, ShieldAlert, ShieldCheck, Trash2, Upload, UserPlus, UserRound, Users, Wallet, X,
 } from "lucide-react";
@@ -367,10 +367,12 @@ export const toHoliday = (f) => ({ date: f.date, libelle: (f.libelle || "").trim
 export const mAbs = (r) => ({ id: r.id, employeeId: r.employee_id, type: r.type, evenement: r.evenement || "", dateDebut: r.date_debut, dateFin: r.date_fin,
   joursOuvrables: Number(r.jours_ouvrables) || 0, joursCalendaires: Number(r.jours_calendaires) || 0, dateReprise: r.date_reprise || "", remuneree: r.remuneree !== false,
   motif: r.motif || "", statut: r.statut || "demande", justificatifId: r.justificatif_id || "", decidePar: r.decide_par || "", decideLe: r.decide_le || "", notes: r.notes || "",
-  createdAt: Date.parse(r.created_at) || 0 });
+  anterieur: !!r.anterieur, createdAt: Date.parse(r.created_at) || 0 });
 export const toAbs = (f) => ({ employee_id: f.employeeId, type: f.type, evenement: f.type === "permission" ? f.evenement || "" : "", date_debut: f.dateDebut, date_fin: f.dateFin,
   jours_ouvrables: Number(f.joursOuvrables) || 0, jours_calendaires: Number(f.joursCalendaires) || 0, date_reprise: f.dateReprise || null, remuneree: f.remuneree !== false,
-  motif: f.motif || "", statut: f.statut || "demande", justificatif_id: f.justificatifId || null, notes: f.notes || "" });
+  motif: f.motif || "", statut: f.statut || "demande", justificatif_id: f.justificatifId || null, notes: f.notes || "",
+  /* Congé pris avant la mise en service du logiciel : noté pour mémoire (solde), sans effet sur la paie */
+  anterieur: f.type === "conge_paye" && !!f.anterieur });
 export const mAdj = (r) => ({ id: r.id, employeeId: r.employee_id, dateEffet: r.date_effet, jours: Number(r.jours) || 0, motif: r.motif || "" });
 export const toAdj = (f) => ({ employee_id: f.employeeId, date_effet: f.dateEffet, jours: Number(f.jours) || 0, motif: (f.motif || "").trim() });
 export const mElem = (r) => ({ id: r.id, employeeId: r.employee_id, libelle: r.libelle || "", nature: r.nature || "gain", montant: Number(r.montant) || 0, prorata: r.prorata !== false,
@@ -505,7 +507,7 @@ export function useHR(acces) {
     const [cr, cm] = await Promise.all([q("hr_commission_rules", "ordre"), supabase.from("hr_commissions").select("*").order("annee", { ascending: false }).order("mois", { ascending: false })]);
     const commissionsAbsentes = !!(cr.error || cm.error);
     const err = res.find((r) => r.error)?.error;
-    setSt({ loading: false, error: err ? (/relation .* does not exist|schema cache/.test(err.message) ? "Le module RH n'est pas entièrement installé dans la base : exécutez dans le SQL Editor de Supabase, dans l'ordre, migration-v32.sql, migration-v32-1.sql, migration-v32-2.sql, migration-v33.sql, migration-v33-1.sql, migration-v33-2.sql, migration-v33-3.sql puis migration-v34.sql." : err.message) : "",
+    setSt({ loading: false, error: err ? (/relation .* does not exist|schema cache/.test(err.message) ? "Le module RH n'est pas entièrement installé dans la base : exécutez dans le SQL Editor de Supabase, dans l'ordre, migration-v32.sql, migration-v32-1.sql, migration-v32-2.sql, migration-v33.sql, migration-v33-1.sql, migration-v33-2.sql, migration-v33-3.sql, migration-v34.sql puis migration-v35.sql." : err.message) : "",
       employees: (res[0].data || []).map(mEmp), details: (res[1].data || []).map(mDet), contracts: (res[2].data || []).map(mCtr),
       amendments: (res[3].data || []).map(mAmend), documents: (res[4].data || []).map(mHrDoc), params: (res[5].data || []).map(mParam),
       scale: (res[6].data || []).map(mScale), visas: (res[7].data || []).map(mVisa), audit: (res[8].data || []).map(mAudit),
@@ -554,6 +556,15 @@ export function useHR(acces) {
       }
       await load();
       return { id: r.row.id, message: f.id ? "Contrat mis à jour" : "Contrat enregistré" };
+    },
+    /* Embauche d'un stagiaire en CDI ou CDD : la base clôt la convention de stage,
+       crée le contrat de travail et met le dossier à jour, en une seule opération. */
+    embaucherStagiaire: async (emp, stage, f) => {
+      const { employee_id, ...contrat } = toCtr({ ...f, employeeId: emp.id, statut: "actif" });
+      const { data, error } = await supabase.rpc("hr_embaucher_stagiaire", { p_employee: emp.id, p_contrat: contrat, p_anciennete_stage: !!f.repriseAnciennete });
+      if (error) return { error: /hr_embaucher_stagiaire/.test(error.message) ? "Mise à jour de la base requise : exécutez migration-v35.sql dans Supabase." : error.message };
+      await load();
+      return { id: data, message: `${nomComplet(emp)} est embauché(e) en ${f.type} à compter du ${fmt(f.dateDebut)}. Éditez maintenant son contrat de travail (« Éditer un document »).` };
     },
     applyAmendment: async (contractId, objet, dateEffet, changes, documentId) => {
       const { error } = await supabase.rpc("hr_apply_amendment", { p_contract: contractId, p_objet: objet, p_date_effet: dateEffet, p_changes: changes, p_document: documentId || null });
@@ -622,16 +633,6 @@ export function useHR(acces) {
       if (!(f.contenu || "").trim()) return { error: "Recopiez le visa, la mise en demeure ou l'observation." };
       const r = f.id ? await one(supabase.from("hr_registry_visas").update(toVisa(f)).eq("id", f.id)) : await one(supabase.from("hr_registry_visas").insert(toVisa(f)));
       if (r.error) return r; await load(); return { message: "Inscription au fascicule 3 enregistrée" };
-    },
-    /* Reprise de l'historique des congés : seules ces trois colonnes sont écrites */
-    saveReprises: async (rows) => {
-      const payload = rows.map((r) => ({ employee_id: r.employeeId, conges_reprise_date: r.date || null,
-        conges_reprise_solde: r.solde === "" || r.solde === null || r.solde === undefined ? (r.date || r.retour ? 0 : null) : Number(String(r.solde).replace(",", ".")),
-        conges_dernier_retour: r.retour || null }));
-      const { data, error } = await supabase.from("hr_employee_details").upsert(payload, { onConflict: "employee_id" }).select();
-      if (error) return { error: /conges_/.test(error.message) ? "La reprise de l'historique n'est pas encore installée : exécutez migration-v34.sql dans Supabase, puis réessayez." : error.message };
-      if (!data || data.length !== payload.length) return { error: refuse };
-      await load(); return { message: "Historique des congés enregistré : soldes recalculés" };
     },
     /* Enregistrement générique (lots 2 à 6) : la ligne doit revenir de la base */
     saveRow: async (table, row, id, message) => {
@@ -1098,12 +1099,17 @@ export function markupToHtml(text) {
     else if (l.startsWith("## ")) { const h = l.slice(3).replace(/^Article —/, () => `Article ${++art} —`); out.push(`<h2 class="rh-art">${inline(h)}</h2>`); }
     else if (/^\[\[signatures:/.test(l)) {
       const corps = l.replace(/^\[\[signatures:\s*/, "").replace(/\]\]$/, "");
-      const cols = corps.split("|").map((c) => c.split("//").map((x) => inline(x.trim())).filter(Boolean).join("<br>"));
+      /* Première ligne de chaque colonne (qualité de la partie) en gras */
+      const cols = corps.split("|").map((c) => c.split("//").map((x) => inline(x.trim())).filter(Boolean).map((x, i) => (i === 0 && !/<strong>/.test(x) ? `<strong>${x}</strong>` : x)).join("<br>"));
       /* Le bloc de signatures reste sur la même page que les dernières lignes du texte */
       const avant = [];
       while (avant.length < 2 && out.length && /^<p[ >]/.test(out[out.length - 1])) avant.unshift(out.pop());
       out.push(`<div class="rh-fin">${avant.join("\n")}<table class="rh-sign"><tbody><tr>${cols.map((c) => `<td>${c}</td>`).join("")}</tr></tbody></table></div>`);
-    } else out.push(`<p>${inline(l)}</p>`);
+    } else if (/^(ci-après|ci-dessous|ci-dessus)\b/i.test(l.trim()) && out.length && /^<p>/.test(out[out.length - 1])) {
+      /* « ci-après dénommé… » : suite de la comparution, sur une nouvelle ligne du même paragraphe */
+      out[out.length - 1] = out[out.length - 1].replace(/<\/p>$/, `<br>${inline(l.trim())}</p>`);
+    } else if (/^<strong>[^<]*<\/strong>$/.test(inline(l.trim()))) out.push(`<p class="rh-label">${inline(l.trim())}</p>`);   // « D'une part, », « Et d'autre part, »
+    else out.push(`<p>${inline(l)}</p>`);
   }
   flush();
   return out.join("\n");
@@ -1127,6 +1133,7 @@ export function sanitizeHtml(html) {
 export function modelesDisponibles(templates, contract, params, today) {
   return (templates || []).filter((t) => t.actif).filter((t) => {
     const b = t.applicable?.besoin || "aucun";
+    if (contract?.type === "stage" && DOCS_RESERVES_SALARIES.includes(t.code)) return false;     // documents de salarié
     if (["avenant", "absence", "discipline", "rupture", "candidat"].includes(b)) return false;   // proposés depuis l'objet concerné
     if (b === "contrat") return !!contract && (!t.applicable.types || t.applicable.types.includes(contract.type));
     if (b === "essai") return !!contract && essaiStatus(contract, params, today).applicable;
@@ -1249,24 +1256,16 @@ export const ABS_STATUT = { demande: { label: "Demandée", color: "#C58A1B" }, v
 const chevauche = (a, b) => a.dateDebut <= b.dateFin && b.dateDebut <= a.dateFin;
 
 /* ---------- Solde de congés payés (Code du travail art. 25.1 à 25.5 ; CCI art. 68 à 70) ---------- */
-/* Reprise de l'historique : solde restant dû à une date donnée (congés acquis
-   et non pris avant l'outil). Les droits courent ensuite à partir du lendemain. */
-export function repriseConges(det, debut) {
-  const date = det?.congesRepriseDate || (det?.congesDernierRetour ? plusJours(det.congesDernierRetour, -1) : "");
-  if (!date || (debut && date < debut)) return null;
-  const solde = det?.congesRepriseSolde === "" || det?.congesRepriseSolde === null || det?.congesRepriseSolde === undefined ? 0 : Number(det.congesRepriseSolde) || 0;
-  return { date, solde, dernierRetour: det?.congesDernierRetour || "" };
-}
 export function soldeConges({ emp, det, contracts, absences, adjustments, params, today }) {
   if (!emp) return null;
   const cs = (contracts || []).filter((c) => c.employeeId === emp.id && c.statut !== "annule" && c.type !== "stage");
   if (!cs.length) return null;                                     // stagiaire : pas de congé payé de salarié
   const debut = emp.dateEmbauche || cs.map((c) => c.dateDebut).sort()[0];
   const fin = minIso(today, emp.dateSortie || today);
-  const reprise = repriseConges(det, debut);
-  /* Point de départ du calcul : l'embauche, ou le lendemain du solde repris */
-  const depart = reprise ? plusJours(reprise.date, 1) : debut;
-  const vide = { debut, reprise, repris: reprise ? reprise.solde : 0, acquisBase: 0, majorations: 0, ajustements: 0, pris: 0, solde: reprise ? r2(reprise.solde) : 0, droitOuvert: false, lignesMaj: [], moisEffectifs: 0 };
+  /* Les congés pris avant le logiciel sont notés au calendrier (« antérieur au
+     logiciel ») : ils se déduisent comme les autres, sans effet sur la paie. */
+  const depart = debut;
+  const vide = { debut, repris: 0, acquisBase: 0, majorations: 0, ajustements: 0, pris: 0, solde: 0, droitOuvert: false, lignesMaj: [], moisEffectifs: 0 };
   if (!debut || fin < debut) return vide;
   const regles0 = pval(params, "CONGES_REGLES", today) || { ouverture_mois: 12, prise_dans_mois: 12 };
   if (fin < depart) return { ...vide, droitOuvert: fin >= plusMois(debut, regles0.ouverture_mois || 12), ouverture: plusMois(debut, regles0.ouverture_mois || 12) };
@@ -1303,8 +1302,7 @@ export function soldeConges({ emp, det, contracts, absences, adjustments, params
     if (det?.medailleTravail) j += Number(pval(params, "CONGES_MAJ_AUTRES", anniv)?.medaille_travail_jours) || 0;
     if (j) { majorations += j; lignesMaj.push({ date: anniv, jours: j }); }
   }
-  /* Congés pris après le point de départ (ceux d'avant sont dans le solde repris) ;
-     un congé à cheval est compté au prorata de ses jours postérieurs. */
+  /* Congés pris (y compris ceux notés pour mémoire, antérieurs au logiciel) */
   const conges = abs.filter((a) => a.type === "conge_paye" && a.dateDebut <= fin && a.dateFin >= depart);
   const joursApres = (a) => {
     const jo = Number(a.joursOuvrables) || 0;
@@ -1316,18 +1314,18 @@ export function soldeConges({ emp, det, contracts, absences, adjustments, params
   const ajustements = r2((adjustments || []).filter((x) => x.employeeId === emp.id && x.dateEffet <= fin && x.dateEffet >= depart).reduce((t, x) => t + (Number(x.jours) || 0), 0));
   const regles = regles0;
   const retours = abs.filter((a) => a.type === "conge_paye" && a.dateFin < today).map((a) => plusJours(a.dateFin, 1));
-  if (reprise?.dernierRetour) retours.push(reprise.dernierRetour);
   const dernierRetour = retours.sort().pop() || debut;
   const droitOuvert = fin >= plusMois(debut, regles.ouverture_mois);
   const echeance = plusMois(dernierRetour, (regles.ouverture_mois || 12) + (regles.prise_dans_mois || 12));
-  const repris = reprise ? r2(reprise.solde) : 0;
-  const solde = r2(repris + acquisBase + majorations + ajustements - pris);
+  const repris = 0;
+  const solde = r2(acquisBase + majorations + ajustements - pris);
   /* Droit d'une année pleine, pour signaler un cumul de plusieurs années */
   const droitAnnuel = r2(12 * acq);
-  /* Ancien salarié sans historique repris ni congé enregistré : le solde serait surévalué */
-  const historiqueManquant = !reprise && !abs.some((a) => a.type === "conge_paye") && !(adjustments || []).some((x) => x.employeeId === emp.id)
+  /* Salarié présent depuis plus d'un an sans aucun congé enregistré : ses congés
+     antérieurs au logiciel restent à noter au calendrier */
+  const historiqueManquant = !abs.some((a) => a.type === "conge_paye") && !(adjustments || []).some((x) => x.employeeId === emp.id)
     && dureeEntre(debut, today).mois >= 12;
-  return { debut, depart, reprise, repris, moisEffectifs: r2(moisEffectifs), acquisBase, majorations, lignesMaj, ajustements, pris, solde, droitOuvert,
+  return { debut, depart, repris, moisEffectifs: r2(moisEffectifs), acquisBase, majorations, lignesMaj, ajustements, pris, solde, droitOuvert,
     ouverture: plusMois(debut, regles.ouverture_mois || 12), dernierRetour, echeance, enRetard: droitOuvert && today > echeance && solde >= 1,
     droitAnnuel, cumulExcessif: droitAnnuel > 0 && solde > droitAnnuel * 1.5, historiqueManquant };
 }
@@ -1444,7 +1442,7 @@ export function calcBulletin({ emp, det, contract, period, params, scale, settin
   if (!jc) { anomalies.push({ niveau: "bloquant", texte: "Le contrat ne couvre aucun jour de ce mois." }); return out; }
   const d1 = maxIso(debutM, debutC), d2 = minIso(finM, finC || finM);
   /* Absences validées du mois : jours retirés du salaire (le congé payé est réglé par l'allocation) */
-  const absMois = absences.filter((a) => a.employeeId === emp.id && a.statut === "valide" && a.dateDebut <= d2 && a.dateFin >= d1);
+  const absMois = absences.filter((a) => a.employeeId === emp.id && a.statut === "valide" && !a.anterieur && a.dateDebut <= d2 && a.dateFin >= d1);
   let deduction = 0; const detailsAbs = [];
   const mat = pval(params, "MATERNITE", finM);
   const maladiePar = maladieMaintien({ emp, contract, absences, params, annee: period.annee, jusqua: d1 });
@@ -1490,7 +1488,7 @@ export function calcBulletin({ emp, det, contract, period, params, scale, settin
   const totalHS = Object.values(v.heuresSup || {}).reduce((t, x) => t + (Number(x) || 0), 0);
   if (plafHS && totalHS > plafHS.hebdo * 5) anomalies.push({ niveau: "orange", texte: `${totalHS} heures supplémentaires dans le mois : vérifiez les plafonds (${plafHS.hebdo} h par semaine, ${plafHS.annuel} h par an).` });
   /* Allocation de congé (CCI art. 71) : congés commençant dans le mois */
-  const conges = absences.filter((a) => a.employeeId === emp.id && a.statut === "valide" && a.type === "conge_paye" && a.dateDebut >= debutM && a.dateDebut <= finM);
+  const conges = absences.filter((a) => a.employeeId === emp.id && a.statut === "valide" && a.type === "conge_paye" && !a.anterieur && a.dateDebut >= debutM && a.dateDebut <= finM);
   const joursAlloc = v.allocationJours !== undefined && v.allocationJours !== "" ? Number(v.allocationJours) : conges.reduce((t, a) => t + joursCalendaires(a.dateDebut, a.dateFin), 0);
   if (joursAlloc > 0 || (v.allocationMontant !== undefined && v.allocationMontant !== "")) {
     const smm = salaireMoyen12(historique, conges[0]?.dateDebut || debutM, remunerationReference({ emp, contract, elements, params, scale, date: finM }));
@@ -1707,7 +1705,7 @@ export function calcSortie({ emp, det, contract, t, params, scale, payslips = []
   /* Rupture pendant ou autour du congé (CCI art. 36) */
   const ag = pval(params, "AGGRAVATION_PREAVIS_CONGE", date);
   if (ag && licenc && t.dateNotification) {
-    const pres = absences.some((a) => a.employeeId === emp.id && a.statut === "valide" && a.type === "conge_paye"
+    const pres = absences.some((a) => a.employeeId === emp.id && a.statut === "valide" && a.type === "conge_paye" && !a.anterieur
       && plusJours(a.dateDebut, -ag.jours_avant_apres) <= t.dateNotification && t.dateNotification <= plusJours(a.dateFin, ag.jours_avant_apres));
     if (pres) { const m = contract?.modePaiement === "mois" ? ag.mois_mensuel : ag.mois_horaire; add("3510", "Indemnité supplémentaire (rupture autour du congé)", mensuel * m, true, `${m} mois de salaire (CCI, art. 36)`);
       alertes.push({ niveau: "orange", texte: "Licenciement notifié pendant le congé ou dans les 15 jours avant ou après : indemnité supplémentaire due (CCI, art. 36)." }); }
@@ -2024,7 +2022,7 @@ function EmployeeModal({ initial, initialDet, employees, members, departments, o
 }
 
 /* Contrat : création ou correction d'une erreur de saisie */
-function ContractModal({ initial, emp, params, scale, autres = [], onSave, onClose }) {
+function ContractModal({ initial, emp, params, scale, autres = [], onSave, onClose, embauche = null }) {
   const today = todayIso();
   const [f, setF] = useState(() => {
     const base = { type: "CDI", dateDebut: emp.dateEmbauche || today, dateFin: "", motifCdd: "", objet: "", categorie: 1, echelon: "", qualification: "employe_mensuel",
@@ -2076,6 +2074,8 @@ function ContractModal({ initial, emp, params, scale, autres = [], onSave, onClo
   const submit = async () => {
     setErr("");
     if (!f.dateDebut) return setErr("Indiquez la date de début.");
+    if (embauche && !["CDI", "CDD"].includes(f.type)) return setErr("L'embauche se fait en CDI ou en CDD.");
+    if (embauche && f.dateDebut <= embauche.stage.dateDebut) return setErr("Le contrat de travail commence après le début du stage.");
     if (f.type === "CDD" && (!f.dateFin || !(f.motifCdd || "").trim())) return setErr("Un CDD exige un motif et une date de fin.");
     if (f.dateFin && f.dateFin < f.dateDebut) return setErr("La date de fin précède la date de début.");
     if (stage && !f.dateFin) return setErr("Une convention de stage doit fixer sa date de fin (Code du travail, art. 13.14).");
@@ -2097,11 +2097,17 @@ function ContractModal({ initial, emp, params, scale, autres = [], onSave, onClo
   };
 
   return (
-    <Modal title={f.id ? "Corriger le contrat" : `Nouveau contrat — ${nomComplet(emp)}`} onClose={() => onClose()} wide>
+    <Modal title={embauche ? `Embauche à l'issue du stage — ${nomComplet(emp)}` : f.id ? "Corriger le contrat" : `Nouveau contrat — ${nomComplet(emp)}`} onClose={() => onClose()} wide>
+      {embauche && <WarnBox tone="info">
+        La convention de stage (du {fmt(embauche.stage.dateDebut)}{embauche.stage.dateFin ? ` au ${fmt(embauche.stage.dateFin)}` : ""}) prend fin la veille du contrat de travail et reste dans l'historique du dossier.
+        Le stagiaire devient salarié : congés payés, bulletins de paie et registre d'employeur à compter de la date de début.
+        <label className="flex items-start gap-2 mt-2 text-sm" style={{ color: "var(--ink)" }}><input type="checkbox" className="mt-0.5" checked={!!f.repriseAnciennete} onChange={(e) => set("repriseAnciennete", e.target.checked)} />
+          <span>Compter la durée du stage dans l'ancienneté <span className="text-xs" style={{ color: "var(--muted)" }}>(avantage accordé par l'entreprise : le Code du travail ne l'impose pas ; l'ancienneté et les congés partent alors du {fmt(embauche.stage.dateDebut)})</span></span></label>
+      </WarnBox>}
       {f.id && <WarnBox tone="info">« Corriger » sert aux erreurs de saisie (la correction est tracée au journal). Pour une évolution — augmentation, changement de poste, d'horaire… — utilisez « Avenant » : elle sera inscrite au fascicule 2 du registre.</WarnBox>}
       <div className="grid sm:grid-cols-3 gap-x-3">
         <Field label="Type de contrat"><select className={inputCls} style={inputStyle} value={f.type} onChange={(e) => set("type", e.target.value)}>
-          {Object.entries(CONTRACT_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+          {Object.entries(CONTRACT_TYPES).filter(([k]) => !embauche || ["CDI", "CDD"].includes(k)).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
         <Field label="Date de début *"><input type="date" className={inputCls} style={inputStyle} value={f.dateDebut} onChange={(e) => set("dateDebut", e.target.value)} /></Field>
         <Field label={f.type === "CDD" || stage ? "Date de fin *" : "Date de fin (le cas échéant)"} hint={duree?.libelle ? `Durée : ${duree.libelle}` : undefined}>
           <input type="date" className={inputCls} style={inputStyle} value={f.dateFin} onChange={(e) => set("dateFin", e.target.value)} /></Field>
@@ -2372,11 +2378,34 @@ export function decouperNom(name) {
   return { nom: (w[0] || "").toUpperCase(), prenoms: w.slice(1).join(" ") };
 }
 const contratActif = (contracts, empId) => contracts.find((c) => c.employeeId === empId && c.statut === "actif") || null;
+/* ══ STAGIAIRES ══
+   Le stagiaire n'est pas un salarié (Code du travail, art. 13.17) : pas de congé
+   payé, pas de bulletin de paie, pas de sanction disciplinaire de salarié, pas
+   d'accès au module RH. Sa nature se lit sur son contrat en cours (à défaut, le
+   dernier) : une convention de stage. */
+export function contratCourant(contracts, empId) {
+  return contratActif(contracts || [], empId) || [...(contracts || [])].filter((c) => c.employeeId === empId && c.statut !== "annule")
+    .sort((a, b) => (a.dateDebut < b.dateDebut ? 1 : -1))[0] || null;
+}
+export function estStagiaire(emp, contracts) { return !!emp && contratCourant(contracts, emp.id)?.type === "stage"; }
+/* A déjà été lié par un contrat de travail (et figure donc au registre d'employeur) */
+export const aEteSalarie = (emp, contracts) => (contracts || []).some((c) => c.employeeId === emp.id && c.statut !== "annule" && c.type !== "stage");
+export const TYPES_ABSENCE_STAGIAIRE = ["absence_autorisee", "absence_exceptionnelle", "maladie", "accident_travail", "formation", "autre"];
+export const TYPES_DEMANDE_STAGIAIRE = ["absence_autorisee", "maladie", "autre"];
+const DOCS_RESERVES_SALARIES = ["ATTESTATION_TRAVAIL", "CERTIFICAT_TRAVAIL", "TITRE_CONGE", "ESSAI_CONFIRMATION", "ESSAI_RENOUVELLEMENT", "ESSAI_RUPTURE"];
+/* Priorité d'embauche du stagiaire jugé apte (Code du travail, art. 13.18) */
+function prioriteEmbauche(stage, params, today) {
+  if (!stage?.dateFin) return null;
+  const mois = Number(pval(params, "STAGE_QUALIFICATION", today)?.priorite_mois) || 6;
+  return { jusqua: plusMois(stage.dateFin, mois), mois };
+}
 const libChange = (k, v) => { const c = AVENANT_CHAMPS.find((x) => x.k === k); if (!c) return String(v ?? "—");
   return c.options ? c.options[v] || v || "—" : c.show ? c.show(v) : v === "" || v === null || v === undefined ? "—" : String(v); };
 
 function Dashboard({ hr, alerts, today, onAlert }) {
-  const actifs = hr.employees.filter((e) => e.statut === "actif");
+  const presents = hr.employees.filter((e) => e.statut === "actif");
+  const stagiaires = presents.filter((e) => estStagiaire(e, hr.contracts));
+  const actifs = presents.filter((e) => !estStagiaire(e, hr.contracts));
   const ctrs = actifs.map((e) => contratActif(hr.contracts, e.id)).filter(Boolean);
   const essais = ctrs.filter((c) => ["en_cours", "renouvele", "limite_depassee"].includes(essaiStatus(c, hr.params, today).etat)).length;
   const masse = ctrs.reduce((a, c) => a + remunerationMensuelle(c), 0);
@@ -2384,7 +2413,7 @@ function Dashboard({ hr, alerts, today, onAlert }) {
   return (
     <div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-        <StatCard icon={Users} label="Effectif actif" value={actifs.length} sub={`${ctrs.filter((c) => c.type === "CDI").length} CDI · ${ctrs.filter((c) => c.type === "CDD").length} CDD · ${ctrs.filter((c) => !["CDI", "CDD"].includes(c.type)).length} autres`} />
+        <StatCard icon={Users} label="Effectif salarié" value={actifs.length} sub={`${ctrs.filter((c) => c.type === "CDI").length} CDI · ${ctrs.filter((c) => c.type === "CDD").length} CDD${ctrs.filter((c) => !["CDI", "CDD"].includes(c.type)).length ? ` · ${ctrs.filter((c) => !["CDI", "CDD"].includes(c.type)).length} autre(s)` : ""} — ${stagiaires.length} stagiaire(s) en plus`} />
         <StatCard icon={FileSignature} label="Périodes d'essai en cours" value={essais} tint="#2E78A8" />
         <StatCard icon={Landmark} label="Rémunérations mensuelles convenues" value={fcfa(masse)} sub="Salaire catégoriel + sursalaire, hors primes et charges" tint="#4F9E2A" />
         <StatCard icon={ShieldAlert} label="Alertes urgentes" value={rouges} sub={`${alerts.length} alerte(s) au total`} tint="#D81F26" />
@@ -2414,26 +2443,28 @@ function EmployeeList({ hr, members, alerts, onOpen, onNew }) {
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={sortis} onChange={(e) => setSortis(e.target.checked)} /> Afficher les sortis</label>
         <button onClick={() => onNew({})} className="kb-btn kb-btn-primary"><UserPlus size={16} /> Nouveau dossier</button>
       </div>
-      <SectionCard title={`Salariés (${liste.length})`} icon={Users} pad={false}>
-        {liste.length === 0 ? <EmptyState icon={Users} title="Aucun dossier" sub="Créez le premier dossier salarié." /> : (
+      {[["salaries", `Salariés (${liste.filter((e) => !estStagiaire(e, hr.contracts)).length})`, Users, liste.filter((e) => !estStagiaire(e, hr.contracts))],
+        ["stagiaires", `Stagiaires (${liste.filter((e) => estStagiaire(e, hr.contracts)).length})`, GraduationCap, liste.filter((e) => estStagiaire(e, hr.contracts))]].map(([k, titre, Icon, rows]) => (
+        (k === "salaries" || rows.length > 0) && <SectionCard key={k} title={titre} icon={Icon} pad={false}>
+        {rows.length === 0 ? <EmptyState icon={Users} title="Aucun dossier" sub="Créez le premier dossier salarié." /> : (
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead><tr className="text-left text-xs" style={{ color: "var(--muted)", background: "#F8FAFC" }}>
-              <th className="px-3 py-2">Matricule</th><th className="px-3 py-2">Nom et prénoms</th><th className="px-3 py-2">Emploi</th>
-              <th className="px-3 py-2">Contrat</th><th className="px-3 py-2">Ancienneté</th><th className="px-3 py-2">Situation</th><th className="px-3 py-2"></th></tr></thead>
-            <tbody>{liste.map((e) => { const c = contratActif(hr.contracts, e.id); const n = nb(e.id); const s = EMP_STATUS[e.statut];
+              <th className="px-3 py-2">Matricule</th><th className="px-3 py-2">Nom et prénoms</th><th className="px-3 py-2">{k === "stagiaires" ? "Objet du stage" : "Emploi"}</th>
+              <th className="px-3 py-2">{k === "stagiaires" ? "Convention" : "Contrat"}</th><th className="px-3 py-2">{k === "stagiaires" ? "Fin du stage" : "Ancienneté"}</th><th className="px-3 py-2">Situation</th><th className="px-3 py-2"></th></tr></thead>
+            <tbody>{rows.map((e) => { const c = contratCourant(hr.contracts, e.id); const n = nb(e.id); const st = EMP_STATUS[e.statut];
               return (
                 <tr key={e.id} onClick={() => onOpen(e.id)} className="border-t cursor-pointer hover:bg-slate-50" style={{ borderColor: "var(--line)" }}>
                   <td className="px-3 py-2 font-mono text-xs">{e.matricule}</td>
-                  <td className="px-3 py-2 font-medium">{nomComplet(e)}</td>
-                  <td className="px-3 py-2">{e.poste || "—"}</td>
-                  <td className="px-3 py-2">{c ? `${CONTRACT_TYPES[c.type]}${c.type === "CDD" && c.dateFin ? ` → ${fmt(c.dateFin)}` : ""}` : <span className="text-red-600">Aucun</span>}</td>
-                  <td className="px-3 py-2 whitespace-nowrap">{libAnciennete(ancienneteMois(e.dateEmbauche, e.dateSortie || today))}</td>
-                  <td className="px-3 py-2"><Chip color={s.color} dot>{s.label}</Chip></td>
+                  <td className="px-3 py-2 font-medium">{nomComplet(e)}{k === "stagiaires" && <span className="ml-1.5"><Chip color="#7C3AED" bg="#F3EEFF">Stagiaire</Chip></span>}</td>
+                  <td className="px-3 py-2">{(k === "stagiaires" ? c?.objet || e.poste : e.poste) || "—"}</td>
+                  <td className="px-3 py-2">{c ? (k === "stagiaires" ? `du ${fmt(c.dateDebut)}${c.dateFin ? ` au ${fmt(c.dateFin)}` : ""}` : `${CONTRACT_TYPES[c.type]}${c.type === "CDD" && c.dateFin ? ` → ${fmt(c.dateFin)}` : ""}`) : <span className="text-red-600">Aucun</span>}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">{k === "stagiaires" ? (c?.dateFin ? fmt(c.dateFin) : "—") : libAnciennete(ancienneteMois(e.dateEmbauche, e.dateSortie || today))}</td>
+                  <td className="px-3 py-2"><Chip color={st.color} dot>{st.label}</Chip></td>
                   <td className="px-3 py-2 text-right">{n > 0 && <Chip color="#B5171D" bg="#FDF2F2">{n} alerte{n > 1 ? "s" : ""}</Chip>}</td>
                 </tr>); })}</tbody>
           </table></div>
         )}
-      </SectionCard>
+      </SectionCard>))}
       {sansDossier.length > 0 && (
         <SectionCard title={`Comptes de l'application sans dossier RH (${sansDossier.length})`} icon={UserRound}>
           <div className="flex flex-wrap gap-2">{sansDossier.map((m) => (
@@ -2461,6 +2492,10 @@ function EmployeeDetail({ emp, hr, members, departments, admin, alerts, today, o
   const compte = members.find((m) => m.id === emp.userId);
   const s = EMP_STATUS[emp.statut];
   const cu = det?.contactUrgence || {};
+  const stagiaire = estStagiaire(emp, hr.contracts);
+  const stage = stagiaire ? contratCourant(hr.contracts, emp.id) : null;
+  const priorite = stage ? prioriteEmbauche(stage, hr.params, today) : null;
+  const peutEmbaucher = stagiaire && (emp.statut !== "sorti" || (priorite && today <= priorite.jusqua));
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -2474,17 +2509,36 @@ function EmployeeDetail({ emp, hr, members, departments, admin, alerts, today, o
       <div className="bg-white rounded-xl border p-4 mb-4 flex flex-wrap items-center gap-3" style={{ borderColor: "var(--line)" }}>
         <span className="w-11 h-11 rounded-full flex items-center justify-center text-white font-semibold" style={{ background: "var(--brass)" }}>{(emp.nom[0] || "?") + (emp.prenoms[0] || "")}</span>
         <div className="min-w-0 flex-1"><p className="font-semibold text-lg leading-tight">{nomComplet(emp)}</p>
-          <p className="text-sm" style={{ color: "var(--muted)" }}>{emp.matricule} · {emp.poste || "Emploi non renseigné"} · {libAnciennete(anc)} d'ancienneté</p></div>
+          <p className="text-sm" style={{ color: "var(--muted)" }}>{emp.matricule} · {emp.poste || (stagiaire ? "Stage" : "Emploi non renseigné")}{stagiaire ? ` · stage du ${fmt(stage.dateDebut)}${stage.dateFin ? ` au ${fmt(stage.dateFin)}` : ""}` : ` · ${libAnciennete(anc)} d'ancienneté`}</p></div>
+        {stagiaire && <Chip color="#7C3AED" bg="#F3EEFF">Stagiaire — non salarié</Chip>}
         <Chip color={s.color} dot>{s.label}</Chip>
       </div>
+      {stagiaire && (
+        <div className="rounded-xl border p-3 mb-4 flex flex-wrap items-center gap-3" style={{ borderColor: "#DDD0FB", background: "#FAF7FF" }}>
+          <GraduationCap size={18} style={{ color: "#7C3AED" }} />
+          <p className="text-sm flex-1 min-w-[16rem]" style={{ color: "#4C1D95" }}>
+            Stagiaire, non salarié (Code du travail, art. 13.17) : indemnité forfaitaire, ni congé payé, ni bulletin de paie, ni accès au module RH.
+            {priorite && <> Priorité d'embauche jusqu'au <b>{fmt(priorite.jusqua)}</b> s'il est jugé apte (art. 13.18).</>}</p>
+          {peutEmbaucher && <button onClick={() => on.embaucher(emp, stage)} className="kb-btn kb-btn-primary text-sm"><UserPlus size={14} /> Embaucher en CDI ou CDD</button>}
+        </div>
+      )}
       {mesAlertes.length > 0 && <div className="space-y-2 mb-4">{mesAlertes.map((a) => <AlertRow key={a.id} a={a} onClick={() => {}} />)}</div>}
 
       <div className="grid lg:grid-cols-2 gap-4">
-        <SectionCard title="Contrat en cours" icon={FileSignature} action={c
-          ? <div className="flex gap-1.5"><button onClick={() => on.amend(c)} className="kb-btn kb-btn-primary text-xs"><Layers size={13} /> Avenant</button>
-              <button onClick={() => on.contract(c)} className="kb-btn kb-btn-ghost text-xs"><Pencil size={13} /> Corriger</button></div>
+        <SectionCard title={c?.type === "stage" ? "Convention de stage en cours" : "Contrat en cours"} icon={FileSignature} action={c
+          ? <div className="flex gap-1.5">{c.type !== "stage" && <button onClick={() => on.amend(c)} className="kb-btn kb-btn-primary text-xs"><Layers size={13} /> Avenant</button>}
+              <button onClick={() => on.contract(c)} className="kb-btn kb-btn-ghost text-xs"><Pencil size={13} /> {c.type === "stage" ? "Corriger ou prolonger" : "Corriger"}</button></div>
           : <button onClick={() => on.contract({})} className="kb-btn kb-btn-primary text-xs"><Plus size={13} /> Nouveau contrat</button>}>
-          {!c ? <EmptyState icon={FileSignature} title="Aucun contrat en cours" /> : (
+          {!c ? <EmptyState icon={FileSignature} title="Aucun contrat en cours" /> : c.type === "stage" ? (
+            <div className="grid grid-cols-2 gap-x-4">
+              <Info label="Période">du {fmt(c.dateDebut)}{c.dateFin ? ` au ${fmt(c.dateFin)}` : ""}</Info>
+              <Info label="Durée">{c.dateFin ? dureeEntre(c.dateDebut, c.dateFin).libelle : "à préciser (obligatoire)"}</Info>
+              <Info label="Indemnité forfaitaire mensuelle"><b>{fcfa(c.salaireBase)}</b> <span className="text-xs" style={{ color: "var(--muted)" }}>(art. 13.17 — ce n'est pas un salaire)</span></Info>
+              <Info label="Horaire">{nf(c.horaireHebdo)} h/semaine</Info>
+              <Info label="Lieu du stage">{c.lieuTravail}</Info>
+              <Info label="Objet du stage">{c.objet}</Info>
+            </div>
+          ) : (
             <div>
               <div className="grid grid-cols-2 gap-x-4">
                 <Info label="Type">{CONTRACT_TYPES[c.type]}{c.type === "CDD" ? ` — ${c.motifCdd}` : ""}</Info>
@@ -2569,6 +2623,7 @@ function EmployeeDetail({ emp, hr, members, departments, admin, alerts, today, o
 
 /* Congés, éléments de paie fixes et bulletins d'un salarié */
 function EmployeeSuivi({ emp, det, hr, today, on }) {
+  const stagiaire = estStagiaire(emp, hr.contracts);
   const solde = soldeConges({ emp, det, contracts: hr.contracts, absences: hr.absences, adjustments: hr.adjustments, params: hr.params, today });
   const abs = hr.absences.filter((a) => a.employeeId === emp.id).slice(0, 8);
   const elems = hr.elements.filter((e) => e.employeeId === emp.id);
@@ -2580,12 +2635,12 @@ function EmployeeSuivi({ emp, det, hr, today, on }) {
       <SectionCard title="Congés et absences" icon={CalendarDays} pad={false} action={<div className="flex gap-1.5">
         <button onClick={() => on.absence({ employeeId: emp.id })} className="kb-btn kb-btn-primary text-xs"><Plus size={13} /> Absence</button>
         {solde && <button onClick={() => on.adjust(emp)} className="kb-btn kb-btn-ghost text-xs">Ajuster le solde</button>}</div>}>
-        {solde ? <p className="text-sm px-4 pt-3">Solde de congés : <b>{fmt2(solde.solde)}</b> jours ouvrables <span className="text-xs" style={{ color: "var(--muted)" }}>({solde.reprise ? `repris au ${fmt(solde.reprise.date)} ${fmt2(solde.repris)} + ` : ""}acquis {fmt2(solde.acquisBase)} + majorations {fmt2(solde.majorations)} + ajustements {fmt2(solde.ajustements)} − pris {fmt2(solde.pris)})
+        {solde ? <p className="text-sm px-4 pt-3">Solde de congés : <b>{fmt2(solde.solde)}</b> jours ouvrables <span className="text-xs" style={{ color: "var(--muted)" }}>(acquis {fmt2(solde.acquisBase)} + majorations {fmt2(solde.majorations)} + ajustements {fmt2(solde.ajustements)} − pris {fmt2(solde.pris)})
           {solde.droitOuvert ? ` · à prendre avant le ${fmt(solde.echeance)}` : ` · droit ouvert le ${fmt(solde.ouverture)}`}</span></p>
-          : <p className="text-xs px-4 pt-3" style={{ color: "var(--muted)" }}>Pas de congé payé de salarié (aucun contrat de travail).</p>}
+          : <p className="text-xs px-4 pt-3" style={{ color: "var(--muted)" }}>{stagiaire ? "Stagiaire : pas de congé payé. Ses absences (autorisées, maladie…) se notent ici ; les jours de repos éventuels sont ceux prévus par la convention de stage." : "Pas de congé payé de salarié (aucun contrat de travail)."}</p>}
         <div className="mt-2"><AbsencesTable liste={abs} hr={hr} on={on} compact /></div>
       </SectionCard>
-      <div className="grid lg:grid-cols-2 gap-4">
+      {!stagiaire && <div className="grid lg:grid-cols-2 gap-4">
         <SectionCard title="Éléments de paie fixes" icon={Landmark} pad={false} action={<button onClick={() => on.element({}, emp)} className="kb-btn kb-btn-ghost text-xs"><Plus size={13} /> Ajouter</button>}>
           {elems.length === 0 ? <p className="text-xs px-4 py-3" style={{ color: "var(--muted)" }}>Aucun élément fixe (prime de responsabilité, indemnité de logement, remboursement de prêt…). Le salaire et le sursalaire viennent du contrat ; la prime de transport des réglages.</p>
             : <div className="divide-y" style={{ borderColor: "var(--line)" }}>{elems.map((x) => (
@@ -2603,7 +2658,7 @@ function EmployeeSuivi({ emp, det, hr, today, on }) {
                 <span className="flex-1 capitalize">{libPeriode(p)}</span><span className="tabular-nums">net {fcfa(b.netAPayer)}</span>
                 <Chip color={b.statut === "valide" ? "#4F9E2A" : b.statut === "annule" ? "#D81F26" : "#C58A1B"} dot>{b.statut === "valide" ? b.numero : b.statut === "annule" ? "Annulé" : "Brouillon"}</Chip></button>))}</div>}
         </SectionCard>
-      </div>
+      </div>}
     </>
   );
 }
@@ -2641,8 +2696,8 @@ function DocTable({ docs, employees, candidates = [], today, on, showEmployee })
 function RegistreTab({ hr, admin, on, today }) {
   return (
     <div>
-      <div className="grid sm:grid-cols-3 gap-3 mb-4">
-        {[["f1", "Fascicule 1", "Identité et emploi de chaque salarié", Users], ["f2", "Fascicule 2", "Contrats et leurs modifications", FileSignature], ["f3", "Fascicule 3", "Visas et observations de l'inspection", ClipboardList]].map(([k, t, sub, Icon]) => (
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        {[["f1", "Fascicule 1", "Identité et emploi de chaque salarié", Users], ["f2", "Fascicule 2", "Contrats et leurs modifications", FileSignature], ["f3", "Fascicule 3", "Visas et observations de l'inspection", ClipboardList], ["stagiaires", "Stagiaires", "Conventions de stage et suite donnée (hors registre)", GraduationCap]].map(([k, t, sub, Icon]) => (
           <button key={k} onClick={() => on.print(k)} className="bg-white rounded-xl border p-4 text-left hover:shadow-md transition-shadow" style={{ borderColor: "var(--line)" }}>
             <Icon size={18} style={{ color: "var(--brass)" }} /><p className="font-semibold mt-2">{t}</p><p className="text-xs" style={{ color: "var(--muted)" }}>{sub}</p>
             <p className="text-xs mt-2 font-medium flex items-center gap-1" style={{ color: "var(--brass)" }}><Printer size={12} /> Afficher et imprimer</p>
@@ -2667,11 +2722,14 @@ function RegistreTab({ hr, admin, on, today }) {
 }
 
 function RegistrePrint({ kind, hr, onBack }) {
-  const emps = [...hr.employees].sort((a, b) => (a.dateEmbauche === b.dateEmbauche ? (a.matricule < b.matricule ? -1 : 1) : a.dateEmbauche < b.dateEmbauche ? -1 : 1));
+  /* Registre d'employeur : les salariés seulement ; les stagiaires ont leur propre liste */
+  const tous = [...hr.employees].sort((a, b) => (a.dateEmbauche === b.dateEmbauche ? (a.matricule < b.matricule ? -1 : 1) : a.dateEmbauche < b.dateEmbauche ? -1 : 1));
+  const emps = tous.filter((e) => aEteSalarie(e, hr.contracts));
+  const stages = hr.contracts.filter((c) => c.type === "stage" && c.statut !== "annule").sort((a, b) => (a.dateDebut < b.dateDebut ? -1 : 1));
   const det = (id) => hr.details.find((d) => d.employeeId === id) || {};
   const dernier = (id) => hr.contracts.filter((c) => c.employeeId === id && c.statut !== "annule").sort((a, b) => (a.dateDebut < b.dateDebut ? 1 : -1))[0];
-  const titre = { f1: "Registre d'employeur — Fascicule 1", f2: "Registre d'employeur — Fascicule 2", f3: "Registre d'employeur — Fascicule 3" }[kind];
-  const sous = { f1: "Salariés de l'entreprise", f2: "Contrats de travail et modifications", f3: "Visas, mises en demeure et observations de l'inspection du travail" }[kind];
+  const titre = { f1: "Registre d'employeur — Fascicule 1", f2: "Registre d'employeur — Fascicule 2", f3: "Registre d'employeur — Fascicule 3", stagiaires: "Liste des stagiaires" }[kind];
+  const sous = { f1: "Salariés de l'entreprise", f2: "Contrats de travail et modifications", f3: "Visas, mises en demeure et observations de l'inspection du travail", stagiaires: "Conventions de stage (Code du travail, art. 13.14 à 13.20) — les stagiaires ne sont pas des salariés" }[kind];
   const th = "px-1.5 py-1 text-left font-semibold border";
   const td = "px-1.5 py-1 border align-top";
   const bc = { borderColor: "#C9D1DA" };
@@ -2701,7 +2759,7 @@ function RegistrePrint({ kind, hr, onBack }) {
           <table className="w-full text-[10px] mt-4 border-collapse">
             <thead><tr style={{ background: "#F1F3F5" }}>{["Date", "Événement", "Catégorie", "Qualification", "Salaire catégoriel", "Sursalaire", "Total", "Horaire", "Lieu de travail"].map((h) => <th key={h} className={th} style={bc}>{h}</th>)}</tr></thead>
             {emps.map((e) => {
-              const cs = hr.contracts.filter((c) => c.employeeId === e.id && c.statut !== "annule").sort((a, b) => (a.dateDebut < b.dateDebut ? -1 : 1));
+              const cs = hr.contracts.filter((c) => c.employeeId === e.id && c.statut !== "annule" && c.type !== "stage").sort((a, b) => (a.dateDebut < b.dateDebut ? -1 : 1));
               if (!cs.length) return null;
               return (
                 <tbody key={e.id}>
@@ -2728,6 +2786,18 @@ function RegistrePrint({ kind, hr, onBack }) {
           </table>
         )}
         {kind === "f3" && hr.visas.length === 0 && <p className="text-sm text-center py-6" style={{ color: "var(--muted)" }}>Aucune inscription.</p>}
+        {kind === "stagiaires" && (
+          <table className="w-full text-[10px] mt-4 border-collapse">
+            <thead><tr style={{ background: "#F1F3F5" }}>{["Matricule", "Nom et prénoms", "Objet du stage", "Début", "Fin", "Indemnité mensuelle", "Lieu", "Suite donnée"].map((h) => <th key={h} className={th} style={bc}>{h}</th>)}</tr></thead>
+            <tbody>{stages.map((c) => { const e = hr.employees.find((x) => x.id === c.employeeId); const suite = hr.contracts.find((x) => x.employeeId === c.employeeId && x.type !== "stage" && x.statut !== "annule" && x.dateDebut > c.dateDebut);
+              return (
+                <tr key={c.id}><td className={td} style={bc}>{e?.matricule}</td><td className={td} style={bc}>{nomComplet(e)}</td><td className={td} style={bc}>{c.objet || e?.poste}</td>
+                  <td className={td} style={bc}>{fmt(c.dateDebut)}</td><td className={td} style={bc}>{c.dateFin ? fmt(c.dateFin) : ""}</td>
+                  <td className={`${td} text-right tabular-nums`} style={bc}>{fcfa(c.salaireBase)}</td><td className={td} style={bc}>{c.lieuTravail}</td>
+                  <td className={td} style={bc}>{suite ? `Embauché(e) en ${suite.type} le ${fmt(suite.dateDebut)}` : c.statut === "actif" ? "Stage en cours" : "Fin de stage"}</td></tr>); })}</tbody>
+          </table>
+        )}
+        {kind === "stagiaires" && stages.length === 0 && <p className="text-sm text-center py-6" style={{ color: "var(--muted)" }}>Aucune convention de stage.</p>}
       </PrintPage>
     </div>
   );
@@ -2859,19 +2929,39 @@ function AuditTab({ hr, members }) {
    9 bis. DOCUMENTS RH — édition, impression, modèles, réglages
    ══════════════════════════════════════════════════════════════════════ */
 const DOC_CSS = `
-.rh-doc{font-family:Calibri,'Segoe UI',Arial,sans-serif;font-size:13.5px;line-height:1.55;color:#111827}
-.rh-doc h1.rh-titre{text-align:center;font-size:17px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;margin:4px 0 14px}
-.rh-doc h2.rh-art{font-size:13.5px;font-weight:700;margin:13px 0 4px;page-break-after:avoid;break-after:avoid}
-.rh-doc p{margin:0 0 6px;text-align:justify}
-.rh-doc p.rh-centre{text-align:center;margin:10px 0}
-.rh-doc p.rh-droite{text-align:right;margin:6px 0 12px}
-.rh-doc ul{margin:2px 0 8px 22px;list-style:disc}
-.rh-doc li{margin:1px 0;text-align:justify}
+/* ══ Présentation des documents RH : sobre, lisible, « corporate » ══
+   Police à empattements pour le corps (contrats, attestations, courriers),
+   alinéa de 1 cm, texte justifié avec césure, titres d'articles en petites
+   capitales, listes à tirets, blocs de signature gardés avec la fin du texte. */
+.rh-doc{font-family:Cambria,'Book Antiqua','Palatino Linotype',Georgia,'Times New Roman',serif;font-size:14.5px;line-height:1.5;color:#1A1C20;
+  hyphens:auto;-webkit-hyphens:auto;font-kerning:normal;font-variant-ligatures:common-ligatures;orphans:3;widows:3;
+  text-rendering:optimizeLegibility;padding:0 4px}
+.rh-doc strong{font-weight:700;color:#111}
+.rh-doc h1.rh-titre{font-size:17.5px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;text-align:center;line-height:1.35;
+  margin:6px 0 20px;padding:9px 0 8px;border-top:1.5px solid #1A1C20;border-bottom:1.5px solid #1A1C20;color:#111}
+.rh-doc h2.rh-art{font-size:14.5px;font-weight:700;font-variant:small-caps;letter-spacing:.035em;margin:16px 0 6px;padding-bottom:2px;
+  border-bottom:.5px solid #C9CDD3;color:#111;page-break-after:avoid;break-after:avoid}
+.rh-doc h2.rh-art + p, .rh-doc h2.rh-art + ul{page-break-before:avoid;break-before:avoid}
+.rh-doc p{margin:0 0 7px;text-align:justify;text-indent:1cm}
+.rh-doc p.rh-label{text-indent:0;margin:12px 0 4px}
+.rh-doc p.rh-suite{text-indent:0}
+.rh-doc p.rh-centre{text-align:center;text-indent:0;margin:12px 0 14px;font-variant:small-caps;letter-spacing:.06em;font-size:15px}
+.rh-doc p.rh-droite{text-align:right;text-indent:0;margin:16px 0 6px}
+.rh-doc ul{margin:2px 0 9px 1cm;padding:0;list-style:none}
+.rh-doc li{position:relative;margin:0 0 3px;padding-left:16px;text-align:justify}
+.rh-doc li::before{content:"\\2013";position:absolute;left:0}
 .rh-doc .rh-fin{page-break-inside:avoid;break-inside:avoid}
-.rh-doc table.rh-sign{width:100%;margin-top:20px;border-collapse:collapse;page-break-inside:avoid;break-inside:avoid}
-.rh-doc table.rh-sign td{width:50%;vertical-align:top;padding:4px 8px 72px;text-align:center;font-size:12.5px;border:none}
+.rh-doc table.rh-sign{width:100%;margin-top:22px;border-collapse:collapse;page-break-inside:avoid;break-inside:avoid}
+.rh-doc table.rh-sign td{width:50%;vertical-align:top;padding:4px 10px 84px;text-align:center;font-size:13.5px;line-height:1.45;border:none}
+.rh-doc table.rh-sign td strong{font-variant:small-caps;letter-spacing:.04em}
 .rh-doc .rh-manque{background:#FFF1B8;border-bottom:1px dashed #C58A1B;color:#8A6212}
-@media print{.rh-doc .rh-manque{background:none;border:none;color:inherit}}
+@media print{
+  .rh-doc{font-size:11pt;padding:0 8mm}
+  .rh-doc h1.rh-titre{font-size:13.5pt}
+  .rh-doc h2.rh-art,.rh-doc p.rh-centre{font-size:11pt}
+  .rh-doc table.rh-sign td{font-size:10.5pt}
+  .rh-doc .rh-manque{background:none;border:none;color:inherit}
+}
 `;
 function DocStyles() { return <style>{DOC_CSS}</style>; }
 
@@ -3011,7 +3101,7 @@ function DocumentEditor({ tpl, emp, contract, amendment, objet, doc, hr, actions
             : (
               <PrintPage className="bg-white rounded-xl border p-8 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
                 <PrintHead extra={<p className="text-[11px]" style={{ color: "var(--muted)" }}>Réf. {saved?.reference || "attribuée à l'enregistrement"}</p>} />
-                <div className="rh-doc mt-5" dangerouslySetInnerHTML={{ __html: sanitizeHtml(texte) }} />
+                <div className="rh-doc mt-5" lang="fr" dangerouslySetInnerHTML={{ __html: sanitizeHtml(texte) }} />
               </PrintPage>
             )}
         </div>
@@ -3203,7 +3293,10 @@ function Msgs({ msgs }) {
 }
 
 function AbsenceModal({ initial, hr, actions, me, today, onClose }) {
-  const [f, setF] = useState(() => ({ employeeId: "", type: "conge_paye", evenement: "", dateDebut: today, dateFin: today, remuneree: true, motif: "", justificatifId: "", notes: "", statut: "demande", ...initial }));
+  /* Stagiaire : la nature proposée par défaut est une absence autorisée */
+  const pourStagiaire = (x) => { const e = hr.employees.find((y) => y.id === x.employeeId);
+    return !x.id && e && estStagiaire(e, hr.contracts) && !TYPES_ABSENCE_STAGIAIRE.includes(x.type) ? { ...x, type: "absence_autorisee", remuneree: false, anterieur: false } : x; };
+  const [f, setF] = useState(() => pourStagiaire({ employeeId: "", type: "conge_paye", evenement: "", dateDebut: today, dateFin: today, remuneree: true, motif: "", justificatifId: "", notes: "", statut: "demande", ...initial }));
   const [nbOuvrables, setNb] = useState("");
   const [valider, setValider] = useState(false);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
@@ -3215,7 +3308,13 @@ function AbsenceModal({ initial, hr, actions, me, today, onClose }) {
   const jc = joursCalendaires(f.dateDebut, f.dateFin);
   const reprise = f.dateFin ? prochainJourOuvrable(f.dateFin, hr.holidays) : "";
   const solde = emp ? soldeConges({ emp, det, contracts: hr.contracts, absences: hr.absences, adjustments: hr.adjustments, params: hr.params, today: f.dateDebut || today }) : null;
-  const msgs = f.employeeId ? controleAbsence({ absence: { ...f, joursOuvrables: initial?.joursOuvrables }, emp, absences: hr.absences, params: hr.params, holidays: hr.holidays, solde, today }) : [];
+  const anterieur = f.type === "conge_paye" && !!f.anterieur;
+  const stagiaire = emp ? estStagiaire(emp, hr.contracts) : false;
+  const typesPermis = Object.keys(ABSENCE_TYPES).filter((k) => !stagiaire || TYPES_ABSENCE_STAGIAIRE.includes(k) || (f.id && k === f.type));
+  const msgs0 = f.employeeId ? controleAbsence({ absence: { ...f, joursOuvrables: initial?.joursOuvrables }, emp, absences: hr.absences, params: hr.params, holidays: hr.holidays, solde, today }) : [];
+  /* Congé antérieur : seuls les points bloquants (dates, chevauchement, embauche) comptent */
+  const msgs = [...(anterieur ? [...msgs0.filter((m) => m.niveau === "bloquant"), ...(f.dateFin >= today ? [{ niveau: "bloquant", texte: "Un congé antérieur au logiciel est déjà terminé : sa fin doit précéder aujourd'hui." }] : [])] : msgs0),
+    ...(stagiaire && !TYPES_ABSENCE_STAGIAIRE.includes(f.type) ? [{ niveau: "bloquant", texte: `${ABSENCE_TYPES[f.type]?.label} : réservé aux salariés. Un stagiaire n'est pas salarié (Code du travail, art. 13.17) ; notez une absence autorisée, une maladie ou une autre absence.` }] : [])];
   const bloquant = msgs.some((m) => m.niveau === "bloquant");
   const changeType = (t) => setF((x) => ({ ...x, type: t, remuneree: ABSENCE_TYPES[t]?.remuneree !== false }));
   const parNombre = (n) => { setNb(n); const k = Number(n); if (k > 0 && f.dateDebut) set("dateFin", finApresOuvrables(f.dateDebut, k, hr.holidays)); };
@@ -3226,18 +3325,19 @@ function AbsenceModal({ initial, hr, actions, me, today, onClose }) {
     if (!f.employeeId) return setErr("Choisissez le salarié.");
     if (bloquant) return setErr("Corrigez d'abord les points bloquants signalés.");
     setBusy(true);
-    const row = toAbs({ ...f, joursOuvrables: jo, joursCalendaires: jc, dateReprise: reprise, statut: valider ? "valide" : f.statut });
-    const r = await actions.saveRow("hr_absences", valider ? { ...row, decide_par: me.id, decide_le: new Date().toISOString() } : row, f.id,
-      f.id ? "Absence mise à jour" : valider ? "Absence enregistrée et validée" : "Demande enregistrée");
+    const ok = valider || anterieur;
+    const row = toAbs({ ...f, joursOuvrables: jo, joursCalendaires: jc, dateReprise: reprise, statut: ok ? "valide" : f.statut });
+    const r = await actions.saveRow("hr_absences", ok ? { ...row, decide_par: me.id, decide_le: new Date().toISOString() } : row, f.id,
+      anterieur ? "Congé antérieur noté au calendrier" : f.id ? "Absence mise à jour" : valider ? "Absence enregistrée et validée" : "Demande enregistrée");
     setBusy(false);
     if (r.error) setErr(r.error); else onClose(r);
   };
   return (
     <Modal title={f.id ? "Modifier l'absence" : "Nouvelle absence ou demande de congé"} onClose={() => onClose()} wide>
       <div className="grid sm:grid-cols-2 gap-x-3">
-        <EmpSelect employees={hr.employees} value={f.employeeId} onChange={(v) => set("employeeId", v)} disabled={!!f.id} />
-        <Field label="Nature de l'absence"><select className={inputCls} style={inputStyle} value={f.type} onChange={(e) => changeType(e.target.value)}>
-          {Object.entries(ABSENCE_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></Field>
+        <EmpSelect employees={hr.employees} value={f.employeeId} onChange={(v) => setF((x) => pourStagiaire({ ...x, employeeId: v }))} disabled={!!f.id} />
+        <Field label="Nature de l'absence" hint={stagiaire ? "Stagiaire : ni congé payé ni permission de salarié" : undefined}><select className={inputCls} style={inputStyle} value={f.type} onChange={(e) => changeType(e.target.value)}>
+          {typesPermis.map((k) => <option key={k} value={k}>{ABSENCE_TYPES[k].label}</option>)}</select></Field>
       </div>
       {f.type === "permission" && <Field label="Événement familial *"><select className={inputCls} style={inputStyle} value={f.evenement} onChange={(e) => choisirEvenement(e.target.value)}>
         <option value="">— Choisir —</option>{(perm?.evenements || []).map((x) => <option key={x.code} value={x.code}>{x.libelle} ({x.jours} j)</option>)}</select></Field>}
@@ -3247,7 +3347,11 @@ function AbsenceModal({ initial, hr, actions, me, today, onClose }) {
         <Field label="Dernier jour d'absence *"><input type="date" className={inputCls} style={inputStyle} value={f.dateFin} onChange={(e) => set("dateFin", e.target.value)} /></Field>
       </div>
       <p className="text-sm mb-3"><b>{jo}</b> jour(s) ouvrable(s) · {jc} jour(s) calendaire(s){reprise && <> · reprise le <b>{fmt(reprise)}</b></>}</p>
-      {f.type === "conge_paye" && solde && <p className="text-xs mb-3" style={{ color: "var(--muted)" }}>Solde de congés au {fmt(f.dateDebut)} : <b>{fmt2(solde.solde)}</b> jours ouvrables{!solde.droitOuvert && ` — droit de jouissance ouvert le ${fmt(solde.ouverture)}`}.</p>}
+      {f.type === "conge_paye" && !stagiaire && <label className="flex items-start gap-2 text-sm mb-3 p-2.5 rounded-lg" style={{ background: anterieur ? "#EFF6FF" : "#F8FAFC" }}>
+        <input type="checkbox" className="mt-0.5" checked={anterieur} onChange={(e) => set("anterieur", e.target.checked)} />
+        <span>Congé pris <b>avant la mise en service du logiciel</b> (pour mémoire)
+          <span className="block text-xs" style={{ color: "var(--muted)" }}>Noté au calendrier et déduit du solde, sans effet sur la paie ni document. Enregistré directement comme validé.</span></span></label>}
+      {f.type === "conge_paye" && solde && !anterieur && <p className="text-xs mb-3" style={{ color: "var(--muted)" }}>Solde de congés au {fmt(f.dateDebut)} : <b>{fmt2(solde.solde)}</b> jours ouvrables{!solde.droitOuvert && ` — droit de jouissance ouvert le ${fmt(solde.ouverture)}`}.</p>}
       <Msgs msgs={msgs} />
       <div className="grid sm:grid-cols-2 gap-x-3">
         <Field label="Motif ou précisions"><input className={inputCls} style={inputStyle} value={f.motif} onChange={(e) => set("motif", e.target.value)} /></Field>
@@ -3255,7 +3359,7 @@ function AbsenceModal({ initial, hr, actions, me, today, onClose }) {
           <option value="">— Aucun —</option>{docs.map((d) => <option key={d.id} value={d.id}>{HR_DOC_CATEGORIES[d.categorie]} — {d.libelle || d.fileName}</option>)}</select></Field>
       </div>
       {f.type === "autre" && <label className="flex items-center gap-2 text-sm mb-3"><input type="checkbox" checked={f.remuneree} onChange={(e) => set("remuneree", e.target.checked)} /> Absence rémunérée</label>}
-      {!f.id && <label className="flex items-center gap-2 text-sm mb-3"><input type="checkbox" checked={valider} onChange={(e) => setValider(e.target.checked)} /> Valider immédiatement</label>}
+      {!f.id && !anterieur && <label className="flex items-center gap-2 text-sm mb-3"><input type="checkbox" checked={valider} onChange={(e) => setValider(e.target.checked)} /> Valider immédiatement</label>}
       <ErrLine err={err} />
       <ModalFooter onClose={() => onClose()} onSubmit={submit} busy={busy} disabled={bloquant} />
     </Modal>
@@ -3279,59 +3383,6 @@ function AdjustModal({ emp, actions, today, onClose }) {
         <Field label="Date d'effet"><input type="date" className={inputCls} style={inputStyle} value={f.dateEffet} onChange={(e) => setF({ ...f, dateEffet: e.target.value })} /></Field>
       </div>
       <Field label="Motif *"><input className={inputCls} style={inputStyle} value={f.motif} onChange={(e) => setF({ ...f, motif: e.target.value })} placeholder="Ex. : reprise du solde du bulletin d'août 2026" /></Field>
-      <ErrLine err={err} />
-      <ModalFooter onClose={() => onClose()} onSubmit={go} busy={busy} />
-    </Modal>
-  );
-}
-
-/* Reprise de l'historique des congés : un tableau pour tous les salariés présents */
-function RepriseModal({ hr, emp, actions, today, onClose }) {
-  const salaries = (emp ? [emp] : hr.employees.filter((e) => e.statut !== "sorti"))
-    .filter((e) => hr.contracts.some((c) => c.employeeId === e.id && c.statut !== "annule" && c.type !== "stage"));
-  const [rows, setRows] = useState(() => salaries.map((e) => { const d = hr.details.find((x) => x.employeeId === e.id) || {};
-    return { employeeId: e.id, date: d.congesRepriseDate || "", solde: d.congesRepriseSolde === "" || d.congesRepriseSolde === undefined ? "" : String(d.congesRepriseSolde), retour: d.congesDernierRetour || "" }; }));
-  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
-  const set = (i, k, v) => setRows((p) => p.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
-  const apercu = (e, r) => soldeConges({ emp: e, det: { ...(hr.details.find((x) => x.employeeId === e.id) || {}), congesRepriseDate: r.date, congesRepriseSolde: r.solde, congesDernierRetour: r.retour },
-    contracts: hr.contracts, absences: hr.absences, adjustments: hr.adjustments, params: hr.params, today });
-  const go = async () => {
-    setErr("");
-    for (const [i, r] of rows.entries()) {
-      const e = salaries[i];
-      if (r.date && e.dateEmbauche && r.date < e.dateEmbauche) return setErr(`${nomComplet(e)} : la date de reprise précède l'embauche.`);
-      if (r.date && r.date > today) return setErr(`${nomComplet(e)} : la date de reprise est dans le futur.`);
-      if (r.retour && r.retour > today) return setErr(`${nomComplet(e)} : la date de retour du dernier congé est dans le futur.`);
-      if (r.solde !== "" && !isFinite(Number(String(r.solde).replace(",", ".")))) return setErr(`${nomComplet(e)} : solde invalide.`);
-      if (r.solde !== "" && !r.date && !r.retour) return setErr(`${nomComplet(e)} : indiquez la date à laquelle ce solde était dû.`);
-    }
-    setBusy(true); const res = await actions.saveReprises(rows); setBusy(false);
-    if (res.error) setErr(res.error); else onClose(res);
-  };
-  return (
-    <Modal title={emp ? `Historique des congés — ${nomComplet(emp)}` : "Reprendre l'historique des congés payés"} onClose={() => onClose()} wide>
-      <WarnBox tone="info">
-        Pour chaque salarié présent avant l'outil, indiquez <b>le nombre de jours de congé qui lui restaient dus à une date</b> (registre des congés, dernier bulletin, dernier titre de congé),
-        et <b>la date de retour de son dernier congé</b>. Les congés pris avant cette date sont ainsi déjà déduits ; l'outil calcule ensuite les droits acquis depuis le lendemain
-        (2,2 jours ouvrables par mois de service effectif et majorations), puis retire les congés enregistrés après.
-        <span className="block mt-1">Le salarié a pris tous ses droits lors de son dernier congé ? Indiquez seulement la date de retour et un solde de 0 : le calcul repart de ce jour-là.</span>
-      </WarnBox>
-      <div className="overflow-x-auto"><table className="w-full text-sm" style={{ minWidth: 900 }}>
-        <thead><tr className="text-left text-xs" style={{ color: "var(--muted)", background: "#F8FAFC" }}>
-          <th className="px-2 py-2">Salarié</th><th className="px-2 py-2">Solde arrêté au</th><th className="px-2 py-2">Jours restant dus à cette date</th>
-          <th className="px-2 py-2">Retour du dernier congé</th><th className="px-2 py-2 text-right">Solde aujourd'hui</th></tr></thead>
-        <tbody>{salaries.map((e, i) => { const r = rows[i]; const a = apercu(e, r);
-          return (
-            <tr key={e.id} className="border-t" style={{ borderColor: "var(--line)" }}>
-              <td className="px-2 py-2">{nomComplet(e)}<span className="block text-[11px]" style={{ color: "var(--muted)" }}>embauche {fmt(e.dateEmbauche)}</span></td>
-              <td className="px-2 py-2"><input type="date" aria-label={`Date du solde repris — ${nomComplet(e)}`} className={inputCls} style={inputStyle} value={r.date} max={today} onChange={(ev) => set(i, "date", ev.target.value)} />
-                {!r.date && r.retour && <span className="block text-[11px]" style={{ color: "var(--muted)" }}>par défaut : veille du retour</span>}</td>
-              <td className="px-2 py-2"><input type="number" step="0.5" aria-label={`Jours restant dus — ${nomComplet(e)}`} className={inputCls} style={inputStyle} value={r.solde} placeholder="0" onChange={(ev) => set(i, "solde", ev.target.value)} /></td>
-              <td className="px-2 py-2"><input type="date" aria-label={`Retour du dernier congé — ${nomComplet(e)}`} className={inputCls} style={inputStyle} value={r.retour} max={today} onChange={(ev) => set(i, "retour", ev.target.value)} /></td>
-              <td className="px-2 py-2 text-right tabular-nums font-semibold">{a ? `${fmt2(a.solde)} j` : "—"}
-                {a?.droitOuvert && a.echeance && <span className="block text-[11px] font-normal" style={{ color: a.enRetard ? "#B5171D" : "var(--muted)" }}>à prendre avant le {fmt(a.echeance)}</span>}</td>
-            </tr>); })}</tbody>
-      </table></div>
       <ErrLine err={err} />
       <ModalFooter onClose={() => onClose()} onSubmit={go} busy={busy} />
     </Modal>
@@ -3376,11 +3427,11 @@ function AbsencesTable({ liste, hr, on, compact }) {
             <td className="px-3 py-2"><span className="inline-block w-2 h-2 rounded-full mr-1.5" style={{ background: t?.color }} />{t?.label}{ev ? ` — ${ev.libelle}` : ""}{!a.remuneree && <span className="text-[11px] ml-1" style={{ color: "var(--muted)" }}>(non payée)</span>}</td>
             <td className="px-3 py-2 whitespace-nowrap">{fmt(a.dateDebut)} → {fmt(a.dateFin)}</td>
             <td className="px-3 py-2 whitespace-nowrap">{fmt2(a.joursOuvrables)} j ouvr.</td>
-            <td className="px-3 py-2"><Chip color={st.color} dot>{st.label}</Chip></td>
+            <td className="px-3 py-2"><Chip color={st.color} dot>{st.label}</Chip>{a.anterieur && <span className="block text-[10px] mt-0.5" style={{ color: "#1F5C82" }}>antérieur au logiciel</span>}</td>
             <td className="px-3 py-2 text-right whitespace-nowrap">
               {a.statut === "demande" && <><button onClick={() => on.decideAbsence(a, "valide")} className="kb-btn kb-btn-primary text-xs mr-1">Valider</button>
                 <button onClick={() => on.decideAbsence(a, "refuse")} className="kb-btn kb-btn-ghost text-xs mr-1">Refuser</button></>}
-              {a.statut === "valide" && ["conge_paye", "permission", "absence_autorisee", "absence_exceptionnelle", "formation", "autre"].includes(a.type) &&
+              {a.statut === "valide" && !a.anterieur && ["conge_paye", "permission", "absence_autorisee", "absence_exceptionnelle", "formation", "autre"].includes(a.type) &&
                 <button onClick={() => on.docAbsence(a)} className="p-1.5 rounded hover:bg-slate-100" aria-label="Éditer le document de l'absence" title={a.type === "conge_paye" ? "Titre de congé" : "Autorisation d'absence"}><FileText size={14} /></button>}
               {["demande", "valide"].includes(a.statut) && <button onClick={() => on.absence(a)} className="p-1.5 rounded hover:bg-slate-100" aria-label="Modifier l'absence"><Pencil size={14} /></button>}
               {["demande", "valide"].includes(a.statut) && <button onClick={() => on.decideAbsence(a, "annule")} className="p-1.5 rounded hover:bg-slate-100" aria-label="Annuler l'absence" title="Annuler" style={{ color: "#D81F26" }}><X size={14} /></button>}
@@ -3449,27 +3500,24 @@ function CongesTab({ hr, today, on, admin }) {
         const aReprendre = lignes.filter((x) => x.s.historiqueManquant);
         return (
         <SectionCard title="Soldes de congés payés" icon={CalendarDays} pad={false}
-          action={<button onClick={() => on.reprise()} className="kb-btn kb-btn-primary text-xs"><History size={13} /> Reprendre l'historique</button>}>
+          action={<button onClick={() => on.absence({ type: "conge_paye", anterieur: true })} className="kb-btn kb-btn-ghost text-xs"><History size={13} /> Noter un congé antérieur</button>}>
           <p className="text-xs px-4 pt-3" style={{ color: "var(--muted)" }}>Acquisition : {String(pval(hr.params, "CONGES_ACQUISITION", today)?.jours_par_mois ?? "—").replace(".", ",")} jours ouvrables par mois de service effectif, majorations d'ancienneté, d'enfants et de médaille à chaque année de service. Le congé doit être pris dans les 12 mois qui suivent l'ouverture du droit.
-            {" "}Pour un salarié présent avant l'outil, le calcul part du <b>solde repris</b> à une date donnée : les congés pris auparavant y sont déjà déduits.</p>
-          {aReprendre.length > 0 && <div className="px-4 pt-3"><WarnBox tone="orange">
-            <b>{aReprendre.length} salarié(s) sans historique</b> ({aReprendre.map((x) => nomComplet(x.e)).join(", ")}) : leur solde compte tous les mois depuis l'embauche, comme s'ils n'avaient jamais pris de congé.
-            {" "}Cliquez sur « Reprendre l'historique » et indiquez, pour chacun, le solde restant à une date (registre des congés, dernier bulletin) et la date de retour de son dernier congé.</WarnBox></div>}
+            {" "}Les congés pris avant la mise en service du logiciel se notent au calendrier (« Noter un congé antérieur ») : ils se déduisent du solde, sans effet sur la paie.</p>
+          {aReprendre.length > 0 && <div className="px-4 pt-3"><WarnBox tone="info">
+            <b>{aReprendre.length} salarié(s) présent(s) depuis plus d'un an sans congé enregistré</b> ({aReprendre.map((x) => nomComplet(x.e)).join(", ")}) : notez au calendrier les congés qu'ils ont déjà pris pour que leur solde soit exact.</WarnBox></div>}
           <div className="overflow-x-auto"><table className="w-full text-sm mt-2">
             <thead><tr className="text-left text-xs" style={{ color: "var(--muted)", background: "#F8FAFC" }}>
-              <th className="px-3 py-2">Salarié</th><th className="px-3 py-2 text-right" title="Solde restant dû à la date de reprise de l'historique">Solde repris</th><th className="px-3 py-2 text-right">Acquis depuis</th><th className="px-3 py-2 text-right">Majorations</th><th className="px-3 py-2 text-right">Ajustements</th>
+              <th className="px-3 py-2">Salarié</th><th className="px-3 py-2 text-right">Acquis</th><th className="px-3 py-2 text-right">Majorations</th><th className="px-3 py-2 text-right">Ajustements</th>
               <th className="px-3 py-2 text-right">Pris</th><th className="px-3 py-2 text-right">Solde</th><th className="px-3 py-2">Échéance de prise</th><th className="px-3 py-2"></th></tr></thead>
             <tbody>{lignes.map(({ e, s }) => (
                 <tr key={e.id} className="border-t" style={{ borderColor: "var(--line)" }}>
                   <td className="px-3 py-2">{nomComplet(e)}<span className="block text-[11px]" style={{ color: "var(--muted)" }}>embauché(e) le {fmt(s.debut)}</span></td>
-                  <td className="px-3 py-2 text-right tabular-nums">{s.reprise ? <>{fmt2(s.repris)}<span className="block text-[11px]" style={{ color: "var(--muted)" }}>au {fmt(s.reprise.date)}</span></>
-                    : s.historiqueManquant ? <Chip color="#C58A1B" bg="#FFF8EC">à reprendre</Chip> : <span style={{ color: "var(--muted)" }}>—</span>}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{fmt2(s.acquisBase)}</td><td className="px-3 py-2 text-right tabular-nums">{fmt2(s.majorations)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{fmt2(s.ajustements)}</td><td className="px-3 py-2 text-right tabular-nums">{fmt2(s.pris)}</td>
                   <td className="px-3 py-2 text-right tabular-nums font-semibold">{fmt2(s.solde)}
-                    {s.cumulExcessif && <span className="block text-[10px] font-normal" style={{ color: "#B7791F" }} title="Le solde dépasse une année et demie de droits : vérifiez la reprise de l'historique ou planifiez le congé">plus d'un an de droits</span>}</td>
+                    {s.cumulExcessif && <span className="block text-[10px] font-normal" style={{ color: "#B7791F" }} title="Le solde dépasse une année et demie de droits : notez les congés antérieurs ou planifiez le congé">plus d'un an de droits</span>}</td>
                   <td className="px-3 py-2 whitespace-nowrap">{!s.droitOuvert ? <span style={{ color: "var(--muted)" }}>droit ouvert le {fmt(s.ouverture)}</span> : s.enRetard ? <Chip color="#D81F26" bg="#FDF2F2">dépassée ({fmt(s.echeance)})</Chip> : fmt(s.echeance)}</td>
-                  <td className="px-3 py-2 text-right whitespace-nowrap"><button onClick={() => on.reprise(e)} className="kb-btn kb-btn-ghost text-xs mr-1">Historique</button><button onClick={() => on.adjust(e)} className="kb-btn kb-btn-ghost text-xs">Ajuster</button></td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap"><button onClick={() => on.absence({ employeeId: e.id, type: "conge_paye", anterieur: true })} className="kb-btn kb-btn-ghost text-xs mr-1" title="Noter un congé pris avant la mise en service du logiciel">Congé antérieur</button><button onClick={() => on.adjust(e)} className="kb-btn kb-btn-ghost text-xs">Ajuster</button></td>
                 </tr>))}</tbody>
           </table></div>
         </SectionCard>
@@ -3792,6 +3840,46 @@ function exporterCSV(period, slips, hr) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/* ══ Indemnités de stage du mois ══
+   Le stagiaire perçoit une indemnité forfaitaire (Code du travail, art. 13.17) :
+   ce n'est pas un salaire, elle ne figure ni au bulletin ni au livre de paie.
+   Elle est due au prorata des jours de stage du mois, absences non payées déduites. */
+export function indemnitesStage(hr, period) {
+  const d1 = debutDuMois(period.annee, period.mois), d2 = finDuMois(period.annee, period.mois);
+  return hr.contracts.filter((c) => c.type === "stage" && c.statut !== "annule" && c.dateDebut <= d2 && (!c.dateFin || c.dateFin >= d1)).map((c) => {
+    const emp = hr.employees.find((e) => e.id === c.employeeId);
+    const fin = [c.dateFin, emp?.dateSortie].filter(Boolean).sort()[0] || null;
+    const jours = joursBase30(d1, d2, c.dateDebut, fin);
+    const debut = maxIso(d1, c.dateDebut), finM = minIso(d2, fin || d2);
+    const absents = hr.absences.filter((a) => a.employeeId === c.employeeId && a.statut === "valide" && !a.remuneree && a.dateDebut <= finM && a.dateFin >= debut)
+      .reduce((t, a) => t + joursCalendaires(maxIso(a.dateDebut, debut), minIso(a.dateFin, finM)), 0);
+    const payes = Math.max(0, Math.min(jours, jours - absents));
+    return { contract: c, emp, jours, absents, payes, montant: Math.round((Number(c.salaireBase) || 0) * payes / 30) };
+  }).filter((x) => x.emp && x.jours > 0).sort((a, b) => nomComplet(a.emp).localeCompare(nomComplet(b.emp)));
+}
+function EtatIndemnitesStage({ period, hr }) {
+  const rows = indemnitesStage(hr, period);
+  const td = "px-2 py-1.5 border"; const bc = { borderColor: "#C9D1DA" };
+  return (
+    <div>
+      <PrintHead title="ÉTAT DES INDEMNITÉS DE STAGE" subtitle={`Mois de ${libPeriode(period)}`} />
+      <p className="text-[11px] mt-3 mb-2" style={{ color: "var(--muted)" }}>Indemnité forfaitaire due aux stagiaires (Code du travail, art. 13.17). Le stagiaire n'étant pas salarié, cette indemnité ne figure ni sur un bulletin de paie ni au livre de paie.</p>
+      <table className="w-full text-[11px] border-collapse">
+        <thead><tr style={{ background: "#F1F3F5" }}>{["Matricule", "Nom et prénoms", "Période de stage", "Indemnité mensuelle", "Jours de stage", "Absences non payées", "Montant dû", "Émargement"].map((h) => <th key={h} className={`${td} text-left font-semibold`} style={bc}>{h}</th>)}</tr></thead>
+        <tbody>{rows.map((r) => (
+          <tr key={r.contract.id}><td className={td} style={bc}>{r.emp.matricule}</td><td className={td} style={bc}>{nomComplet(r.emp)}</td>
+            <td className={`${td} whitespace-nowrap`} style={bc}>{fmt(r.contract.dateDebut)} → {r.contract.dateFin ? fmt(r.contract.dateFin) : "—"}</td>
+            <td className={`${td} text-right tabular-nums whitespace-nowrap`} style={bc}>{fcfa(r.contract.salaireBase)}</td><td className={`${td} text-right`} style={bc}>{r.jours}</td>
+            <td className={`${td} text-right`} style={bc}>{r.absents || "—"}</td><td className={`${td} text-right tabular-nums font-semibold whitespace-nowrap`} style={bc}>{fcfa(r.montant)}</td>
+            <td className={td} style={{ ...bc, minWidth: 110 }} /></tr>))}
+          <tr style={{ background: "#F8FAFC" }}><td colSpan={6} className={`${td} text-right font-semibold`} style={bc}>Total</td><td className={`${td} text-right tabular-nums font-bold whitespace-nowrap`} style={bc}>{fcfa(rows.reduce((t, r) => t + r.montant, 0))}</td><td className={td} style={bc} /></tr>
+        </tbody>
+      </table>
+      <div className="grid grid-cols-2 gap-8 mt-8 text-xs text-center"><div><p className="font-semibold">Le service du personnel</p><div className="h-14" /></div><div><p className="font-semibold">La Direction</p><div className="h-14" /></div></div>
+    </div>
+  );
+}
+
 function PaieTab({ hr, actions, admin, today, say, focus }) {
   const [periodId, setPeriodId] = useState(focus?.periodId || "");
   const [slipId, setSlipId] = useState(focus?.slipId || "");
@@ -3815,13 +3903,14 @@ function PaieTab({ hr, actions, admin, today, say, focus }) {
       <div>
         <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
           <button onClick={() => setImpression(null)} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
-          <div className="flex gap-2">{impression !== "bulletins" && <button onClick={() => exporterCSV(period, slips, hr)} className="kb-btn kb-btn-ghost text-sm">Exporter (Excel, CSV)</button>}
-            <button onClick={() => printSheet(impression === "bulletins" ? "portrait" : "landscape")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button></div>
+          <div className="flex gap-2">{!["bulletins", "stages"].includes(impression) && <button onClick={() => exporterCSV(period, slips, hr)} className="kb-btn kb-btn-ghost text-sm">Exporter (Excel, CSV)</button>}
+            <button onClick={() => printSheet(["bulletins", "stages"].includes(impression) ? "portrait" : "landscape")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button></div>
         </div>
         <PrintPage className="bg-white rounded-xl border p-5" style={{ borderColor: "var(--line)" }}>
           {impression === "bulletins" && liste.map((b, i) => <BulletinSheet key={b.id} slip={{ ...b, datePaiement: period.datePaiement, modePaiement: period.modePaiement }} period={period} settings={hr.settings} sautApres={i < liste.length - 1} />)}
           {impression === "livre" && <LivreDePaie period={period} slips={slips} hr={hr} />}
           {impression === "etat" && <EtatCharges period={period} slips={slips} hr={hr} />}
+          {impression === "stages" && <EtatIndemnitesStage period={period} hr={hr} />}
         </PrintPage>
       </div>
     );
@@ -3936,6 +4025,16 @@ function PaieTab({ hr, actions, admin, today, say, focus }) {
           </table></div>
         )}
       </SectionCard>
+      {(() => { const st = indemnitesStage(hr, period); if (!st.length) return null;
+        return (
+          <SectionCard title={`Indemnités de stage du mois (${st.length})`} icon={GraduationCap} pad={false}
+            action={<button onClick={() => setImpression("stages")} className="kb-btn kb-btn-ghost text-xs"><Printer size={13} /> État des indemnités</button>}>
+            <p className="text-xs px-4 pt-3" style={{ color: "var(--muted)" }}>Stagiaires : indemnité forfaitaire hors bulletin de paie (Code du travail, art. 13.17), au prorata des jours de stage, absences non payées déduites.</p>
+            <div className="divide-y mt-1" style={{ borderColor: "var(--line)" }}>{st.map((r) => (
+              <div key={r.contract.id} className="px-4 py-2 flex flex-wrap items-center gap-2 text-sm">
+                <span className="flex-1">{nomComplet(r.emp)} <span className="text-xs" style={{ color: "var(--muted)" }}>— {r.payes} jour(s) sur 30{r.absents ? `, ${r.absents} jour(s) d'absence non payée` : ""}</span></span>
+                <span className="tabular-nums font-semibold">{fcfa(r.montant)}</span></div>))}</div>
+          </SectionCard>); })()}
       {admin && period.statut === "ouverte" && !slips.some((b) => b.statut !== "brouillon") && slips.length === 0 &&
         <button onClick={async () => { const r = await actions.deleteRow("hr_pay_periods", period.id, "Paie supprimée"); if (r.error) setErr(r.error); else { say(r); setPeriodId(""); } }} className="kb-btn kb-btn-ghost text-sm mt-2" style={{ color: "#D81F26" }}><Trash2 size={14} /> Supprimer cette paie vide</button>}
     </div>
@@ -4675,7 +4774,9 @@ function useMonDossier(me) {
 }
 
 function DemandeModal({ initial, d, today, onClose }) {
-  const [f, setF] = useState(() => ({ type: "conge_paye", evenement: "", dateDebut: today, dateFin: today, motif: "", employeeId: d.emp.id, ...initial }));
+  const stagiaire = estStagiaire(d.emp, d.contracts);
+  const types = stagiaire ? TYPES_DEMANDE_STAGIAIRE : TYPES_DEMANDE;
+  const [f, setF] = useState(() => ({ type: types[0], evenement: "", dateDebut: today, dateFin: today, motif: "", employeeId: d.emp.id, ...initial }));
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const perm = pval(d.params, "PERMISSIONS_EXCEPTIONNELLES", f.dateDebut || today);
@@ -4699,7 +4800,7 @@ function DemandeModal({ initial, d, today, onClose }) {
   return (
     <Modal title={f.id ? "Modifier ma demande" : "Nouvelle demande d'absence"} onClose={() => onClose()}>
       <Field label="Je demande"><select className={inputCls} style={inputStyle} value={f.type} onChange={(e) => set("type", e.target.value)}>
-        {TYPES_DEMANDE.map((k) => <option key={k} value={k}>{LIB[k]}</option>)}</select></Field>
+        {types.map((k) => <option key={k} value={k}>{LIB[k]}</option>)}</select></Field>
       {f.type === "permission" && <Field label="Événement *"><select className={inputCls} style={inputStyle} value={f.evenement} onChange={(e) => choisirEvenement(e.target.value)}>
         <option value="">— Choisir —</option>{(perm?.evenements || []).map((x) => <option key={x.code} value={x.code}>{x.libelle} ({x.jours} jour{x.jours > 1 ? "s" : ""})</option>)}</select></Field>}
       <div className="grid sm:grid-cols-2 gap-x-3">
@@ -4733,6 +4834,7 @@ export function MonDossier({ me }) {
   const { emp } = d;
   const c = d.contracts.find((x) => x.statut === "actif") || [...d.contracts].sort((a, b) => (a.dateDebut < b.dateDebut ? 1 : -1))[0] || null;
   const solde = soldeConges({ emp, det: d.det, contracts: d.contracts, absences: d.absences, adjustments: d.adjustments, params: d.params, today });
+  const stagiaire = estStagiaire(emp, d.contracts);
   const slip = d.payslips.find((b) => b.id === bulletin);
   const per = slip ? d.periods.find((p) => p.id === slip.periodId) : null;
   if (slip && per) return (
@@ -4751,10 +4853,10 @@ export function MonDossier({ me }) {
         <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button></div>
       <PrintPage className="bg-white rounded-xl border p-8 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
         <PrintHead extra={doc.reference ? <p className="text-[11px]" style={{ color: "var(--muted)" }}>Réf. {doc.reference}</p> : null} />
-        <div className="rh-doc mt-5" dangerouslySetInnerHTML={{ __html: sanitizeHtml(doc.contenu) }} />
+        <div className="rh-doc mt-5" lang="fr" dangerouslySetInnerHTML={{ __html: sanitizeHtml(doc.contenu) }} />
       </PrintPage>
     </div>);
-  const onglets = [["conges", "Congés et demandes"], ["bulletins", `Bulletins (${d.payslips.length})`], ["documents", `Documents (${d.documents.length})`], ["infos", "Mes informations"]];
+  const onglets = [["conges", stagiaire ? "Absences et demandes" : "Congés et demandes"], ...(stagiaire && !d.payslips.length ? [] : [["bulletins", `Bulletins (${d.payslips.length})`]]), ["documents", `Documents (${d.documents.length})`], ["infos", "Mes informations"]];
   const ouvrir = async (x) => { const w = window.open("about:blank", "_blank"); say(await d.actions.ouvrirFichier(x, w)); };
   return (
     <div>
@@ -4763,7 +4865,7 @@ export function MonDossier({ me }) {
       <div className="bg-white rounded-xl border p-4 mb-4 grid sm:grid-cols-4 gap-3 text-sm" style={{ borderColor: "var(--line)" }}>
         <div><p className="text-xs" style={{ color: "var(--muted)" }}>Nom</p><p className="font-semibold">{nomComplet(emp)}</p><p className="text-xs">{emp.matricule}</p></div>
         <div><p className="text-xs" style={{ color: "var(--muted)" }}>Emploi</p><p className="font-medium">{emp.poste || "—"}</p></div>
-        <div><p className="text-xs" style={{ color: "var(--muted)" }}>Embauche</p><p className="font-medium">{fmt(emp.dateEmbauche)}</p><p className="text-xs">{libAnciennete(ancienneteMois(emp.dateEmbauche, emp.dateSortie || today))} d'ancienneté</p></div>
+        <div><p className="text-xs" style={{ color: "var(--muted)" }}>{stagiaire ? "Début du stage" : "Embauche"}</p><p className="font-medium">{fmt(stagiaire ? c?.dateDebut : emp.dateEmbauche)}</p><p className="text-xs">{libAnciennete(ancienneteMois(emp.dateEmbauche, emp.dateSortie || today))} d'ancienneté</p></div>
         <div><p className="text-xs" style={{ color: "var(--muted)" }}>Contrat</p><p className="font-medium">{c ? CONTRACT_TYPES[c.type] : "—"}</p>{c && <p className="text-xs">depuis le {fmt(c.dateDebut)}{c.dateFin ? ` jusqu'au ${fmt(c.dateFin)}` : ""}</p>}</div>
       </div>
       <div className="flex flex-wrap gap-1 mb-3">{onglets.map(([k, l]) => (
@@ -4771,7 +4873,8 @@ export function MonDossier({ me }) {
       {vue === "conges" && (
         <div>
           <div className="grid sm:grid-cols-3 gap-3 mb-4">
-            <StatCard icon={CalendarDays} label="Solde de congés" value={solde ? `${fmt2(solde.solde)} j` : "—"} sub={solde ? (solde.droitOuvert ? `À prendre avant le ${fmt(solde.echeance)}` : `Droit ouvert le ${fmt(solde.ouverture)}`) : "Pas de congé payé de salarié"} />
+            {stagiaire ? <StatCard icon={GraduationCap} label="Stage" value={c?.dateFin ? `fin le ${fmt(c.dateFin)}` : "en cours"} sub="Stagiaire : pas de congé payé ; vos absences se demandent ici" tint="#7C3AED" />
+            : <StatCard icon={CalendarDays} label="Solde de congés" value={solde ? `${fmt2(solde.solde)} j` : "—"} sub={solde ? (solde.droitOuvert ? `À prendre avant le ${fmt(solde.echeance)}` : `Droit ouvert le ${fmt(solde.ouverture)}`) : "Pas de congé payé de salarié"} />}
             <StatCard icon={ClipboardList} label="Demandes en attente" value={d.absences.filter((a) => a.statut === "demande").length} tint="#C58A1B" />
             <div className="flex items-center"><button onClick={() => setModal({})} className="kb-btn kb-btn-primary w-full justify-center"><Plus size={16} /> Faire une demande</button></div>
           </div>
@@ -4916,7 +5019,8 @@ function CommissionModal({ initial, hr, prospects, properties, actions, today, o
   const regles = hr.commissionRules.filter((r) => r.actif || r.id === f.ruleId);
   const regle = hr.commissionRules.find((r) => r.id === f.ruleId) || null;
   const calc = regle ? calculCommission(regle, f.assiette) : null;
-  const salaries = hr.employees.filter((e) => e.statut !== "sorti" || e.id === f.employeeId);
+  /* Les commissions sont versées sur le bulletin : réservées aux salariés */
+  const salaries = hr.employees.filter((e) => (e.statut !== "sorti" && !estStagiaire(e, hr.contracts)) || e.id === f.employeeId);
   const emp = hr.employees.find((e) => e.id === f.employeeId);
   const periode = hr.periods.find((p) => p.annee === Number(f.annee) && p.mois === Number(f.mois));
   const moisValide = periode?.statut === "validee";
@@ -5204,6 +5308,7 @@ export default function RH({ store, me, acces }) {
       body: <>Le dossier de <b>{nomComplet(emp)}</b> ({emp.matricule}), ses contrats, avenants, absences et documents seront supprimés définitivement. À réserver à un dossier créé par erreur : pour un départ, passez par l'onglet « Sorties ».</>,
       run: async () => { const r = await a.deleteEmployee(emp.id); if (!r.error) { setEmpId(null); say(r); } return r; } }),
     contract: (c) => setModal({ kind: "ctr", initial: c }),
+    embaucher: (e, stage) => setModal({ kind: "embauche", emp: e, stage }),
     amend: (c) => setModal({ kind: "amend", contract: c }),
     addDoc: (init) => setModal({ kind: "doc", initial: init }),
     editDoc: (d) => setModal({ kind: "doc", initial: d }),
@@ -5258,7 +5363,6 @@ export default function RH({ store, me, acces }) {
     },
     docAbsence: (abs) => editerObjet("absence", abs, empDe(abs.employeeId), contratA(contracts, abs.employeeId, abs.dateDebut)),
     adjust: (emp) => setModal({ kind: "adjust", emp }),
-    reprise: (emp) => setModal({ kind: "reprise", emp: emp || null }),
     holiday: (h) => setModal({ kind: "holiday", initial: h }),
     element: (x, emp) => setModal({ kind: "element", initial: x, emp }),
     gotoSlip: (b) => { setFocusPaie({ periodId: b.periodId, slipId: b.id, n: Date.now() }); aller("paie"); },
@@ -5344,6 +5448,11 @@ export default function RH({ store, me, acces }) {
 
       {modal?.kind === "emp" && <EmployeeModal initial={modal.initial} initialDet={modal.det} employees={employees} members={members} departments={departments}
         onSave={a.saveEmployee} onClose={async (r) => { const nouveau = !modal.initial?.id; const cand = modal.candidat; if (r?.id && cand) await apresEmbauche(r, cand); fermer(r); if (r?.id && nouveau) { setTab("salaries"); setEmpId(r.id); } }} />}
+      {modal?.kind === "embauche" && <ContractModal embauche={{ stage: modal.stage }} emp={modal.emp} params={params} scale={scale}
+        autres={contracts.filter((c) => c.employeeId === modal.emp.id)}
+        initial={{ type: "CDI", dateDebut: modal.stage.dateFin && modal.stage.dateFin >= today ? plusJours(modal.stage.dateFin, 1) : today,
+          lieuTravail: modal.stage.lieuTravail, horaireHebdo: modal.stage.horaireHebdo, repartition: modal.stage.repartition, objet: modal.emp.poste || "" }}
+        onSave={(f) => a.embaucherStagiaire(modal.emp, modal.stage, f)} onClose={fermer} />}
       {modal?.kind === "ctr" && modalEmp && <ContractModal initial={modal.initial} emp={modalEmp} params={params} scale={scale} autres={contracts.filter((c) => c.employeeId === modalEmp.id)} onSave={a.saveContract} onClose={fermer} />}
       {modal?.kind === "amend" && modalEmp && <AmendmentModal contract={modal.contract} documents={documents.filter((d) => d.employeeId === modalEmp.id)} onApply={a.applyAmendment} onClose={fermer} />}
       {modal?.kind === "doc" && <DocModal initial={modal.initial} employees={employees} onUpload={a.uploadDocument} onUpdate={a.updateDocument} onClose={fermer} />}
@@ -5356,7 +5465,6 @@ export default function RH({ store, me, acces }) {
       {modal?.kind === "sign" && <SignModal doc={modal.doc} onAttach={a.attachSigned} onClose={fermer} />}
       {modal?.kind === "absence" && <AbsenceModal initial={modal.initial} hr={hr} actions={a} me={me} today={today} onClose={fermer} />}
       {modal?.kind === "adjust" && <AdjustModal emp={modal.emp} actions={a} today={today} onClose={fermer} />}
-      {modal?.kind === "reprise" && <RepriseModal hr={hr} emp={modal.emp} actions={a} today={today} onClose={fermer} />}
       {modal?.kind === "holiday" && <HolidayModal initial={modal.initial} actions={a} onClose={fermer} />}
       {modal?.kind === "element" && <ElementModal initial={modal.initial} emp={modal.emp} actions={a} onClose={fermer} />}
       {modal?.kind === "discipline" && <DisciplineModal initial={modal.initial} hr={hr} actions={a} today={today} on={on} onClose={fermer} />}
