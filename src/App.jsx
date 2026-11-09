@@ -475,18 +475,204 @@ function retirerDoublons(lines) {
     if (!groupes.has(k)) groupes.set(k, []);
     groupes.get(k).push(i);
   });
-  const garder = new Set(); let retirees = 0, conflits = 0;
+  const garder = new Set(); const fusion = new Map(); let retirees = 0, conflits = 0;
   for (const idx of groupes.values()) {
     if (idx.length === 1) { garder.add(idx[0]); continue; }
     const payes = [...new Set(idx.map((i) => Number(lines[i].collected) || 0).filter((v) => v > 0))];
     if (payes.length > 1) { idx.forEach((i) => garder.add(i)); conflits += 1; continue; }
     const score = (l) => ((Number(l.collected) || 0) > 0 ? 100 : 0) + (l.paidAt ? 10 : 0) + (l.unitId ? 5 : 0) + ((l.comment || "").length ? 1 : 0);
     const best = idx.reduce((b, i) => (score(lines[i]) > score(lines[b]) ? i : b), idx[0]);
+    /* Les quittances portées par les lignes retirées restent attachées à la ligne gardée */
+    const vues = new Set(); const recus = [];
+    idx.forEach((i) => (Array.isArray(lines[i].receipts) ? lines[i].receipts : []).forEach((r) => { const k = `${r.doc}|${r.du}`; if (!vues.has(k)) { vues.add(k); recus.push(r); } }));
+    if (recus.length) fusion.set(best, recus);
     garder.add(best); retirees += idx.length - 1;
   }
-  return { lines: lines.filter((_, i) => garder.has(i)), retirees, conflits };
+  return { lines: lines.filter((_, i) => garder.has(i)).map((l) => { const i = lines.indexOf(l); return fusion.has(i) ? { ...l, receipts: fusion.get(i) } : l; }), retirees, conflits };
 }
 const sameLotLine = (a, b) => (a.unitId && b.unitId && a.unitId === b.unitId) || (normName(a.unitLabel) && normName(a.unitLabel) === normName(b.unitLabel));
+
+/* ══════════════════════════════════════════════════════════════════════
+   QUITTANCES ↔ TABLEAUX DE RECOUVREMENT
+   Une quittance validée (tampon PAYÉ) est l'unique preuve d'un paiement.
+   Chaque ligne mémorise, dans « receipts », la part de chaque quittance
+   qu'elle porte : { doc, ref, montant, du, nature, le }. Le report est
+   idempotent — relancé, il ne compte jamais deux fois la même quittance —
+   et réversible : annuler, refuser, modifier ou supprimer une quittance
+   retire sa part des tableaux (sauf tableau arrêté pour virement, intouchable).
+   ══════════════════════════════════════════════════════════════════════ */
+const quittanceActive = (d) => !!d && d.docType === "quittance" && d.approval === "approuve" && d.status !== "annule";
+const lineReceipts = (l) => (Array.isArray(l?.receipts) ? l.receipts : []);
+const sommeQuittances = (l) => lineReceipts(l).reduce((s, r) => s + (Number(r.montant) || 0), 0);
+/* Part du payé apportée par une avance « mois par mois » (elle a sa propre quittance d'avance) */
+const partAvanceMensuelle = (l) => { const [, amt, md] = String(l?.advanceRef || "").split(":"); return md === "mensuel" ? Number(amt) || 0 : 0; };
+const noteQuittance = (r) => (r.nature === "arriere" ? `Règlement arriéré ${periodLabel(r.du)} — quittance ${r.ref}` : `Quittance ${r.ref}`);
+/* Ventilation d'une quittance : pour chaque mois réglé, le tableau qui reçoit l'argent.
+   Un mois déjà écoulé au paiement est figé : le règlement va au mois d'encaissement,
+   en apurement d'arriéré. Un mois arrêté pour virement est sauté. Le dernier mois
+   reçoit l'arrondi, pour que la somme ventilée égale exactement la quittance. */
+function ventilerQuittance(doc, estFige = () => false) {
+  const mois = coveredMonths(doc?.periodIso ? doc.periodIso + "-01" : "", doc?.monthsCount || 1);
+  if (!mois.length) return { parts: [], futurs: [] };
+  const total = Math.round(Number(doc.total) || 0);
+  const base = Math.floor(total / mois.length);
+  const le = String(doc.fields?.paidOn || doc.date || "").slice(0, 10);
+  const moisPaiement = le.slice(0, 7) || mois[0];
+  const parts = [], futurs = [];
+  mois.forEach((du, i) => {
+    const montant = i === mois.length - 1 ? total - base * (mois.length - 1) : base;
+    if (du > moisPaiement) { futurs.push({ du, montant }); return; }
+    let m = du < moisPaiement ? moisPaiement : du; let arriere = du < moisPaiement;
+    const origine = m;
+    while (estFige(m, origine)) { m = periodAdd(m, 1); arriere = true; }
+    parts.push({ mois: m, origine, du, montant, nature: arriere ? "arriere" : "loyer", le });
+  });
+  return { parts, futurs };
+}
+/* Pose (ou retire, avec parts = []) la part d'une quittance sur une ligne */
+function poserQuittance(line, doc, parts) {
+  const toutes = lineReceipts(line);
+  const autres = toutes.filter((r) => r.doc !== doc.id);
+  const ancien = toutes.filter((r) => r.doc === doc.id).reduce((s, r) => s + (Number(r.montant) || 0), 0);
+  const nouvelles = parts.map((p) => ({ doc: doc.id, ref: doc.ref, montant: p.montant, du: p.du, nature: p.nature, le: p.le }));
+  const receipts = [...autres, ...nouvelles];
+  const somme = receipts.reduce((s, r) => s + (Number(r.montant) || 0), 0);
+  /* Le payé hors cette quittance (saisie antérieure : même argent) ne s'additionne pas à elle */
+  const horsQuittance = Math.max(0, (Number(line.collected) || 0) - ancien);
+  const collected = Math.max(horsQuittance, somme + partAvanceMensuelle(line));
+  const fragments = String(line.comment || "").split(" · ").map((x) => x.trim()).filter((x) => x && !(doc.ref && x.includes(doc.ref)));
+  const comment = [...fragments, ...nouvelles.map(noteQuittance)].join(" · ");
+  const dates = receipts.map((r) => r.le).filter(Boolean).sort();
+  const paidAt = dates.length ? dates[dates.length - 1] : (collected > 0 ? line.paidAt || null : null);
+  return { ...line, receipts, collected, comment, paidAt, vacant: parts.length ? false : line.vacant };
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   CONTRÔLE DU RECOUVREMENT
+   Confronte les tableaux (commercial et comptable) aux quittances et à la
+   fiche des lots (patrimoine, locataires). Rien n'est corrigé d'office :
+   chaque écart est signalé avec la marche à suivre.
+   ══════════════════════════════════════════════════════════════════════ */
+const NIVEAUX_CONTROLE = {
+  rouge: { label: "À corriger", color: "#B5171D", bg: "#FDECEC", ordre: 0 },
+  orange: { label: "À vérifier", color: "#B7791F", bg: "#FFF8EC", ordre: 1 },
+  info: { label: "Information", color: "#1F5C82", bg: "#EFF6FF", ordre: 2 },
+};
+function lotDeLigne(l, lots) {
+  return (l.unitId && lots.find((u) => u.id === l.unitId)) || lots.find((u) => cleDoublon(u.label) && cleDoublon(u.label) === cleDoublon(l.unitLabel)) || null;
+}
+function controleRecouvrement({ properties = [], units = [], rentPeriods = [], rentLines = [], documents = [], advances = [], today = isoDate(new Date()) }) {
+  const out = [];
+  const propById = Object.fromEntries(properties.map((p) => [p.id, p]));
+  const unitById = Object.fromEntries(units.map((u) => [u.id, u]));
+  const docById = Object.fromEntries(documents.map((d) => [d.id, d]));
+  const lignesDe = {};
+  rentLines.forEach((l) => { (lignesDe[l.periodId] = lignesDe[l.periodId] || []).push(l); });
+  Object.values(lignesDe).forEach((ls) => ls.sort((a, b) => (a.position ?? 0) - (b.position ?? 0)));
+  const groupes = {};
+  rentPeriods.forEach((p) => { (groupes[`${p.propertyId}|${p.scope}`] = groupes[`${p.propertyId}|${p.scope}`] || []).push(p); });
+  Object.values(groupes).forEach((g) => g.sort((a, b) => a.period.localeCompare(b.period)));
+  const scopeDe = Object.fromEntries(rentPeriods.map((p) => [p.id, p]));
+  const memeLigne = (a, b) => sameLotLine(a, b) && cleDoublon(a.tenantName) === cleDoublon(b.tenantName);
+
+  for (const g of Object.values(groupes)) {
+    g.forEach((p, k) => {
+      const prop = propById[p.propertyId];
+      const ls = lignesDe[p.id] || [];
+      const lots = units.filter((u) => u.propertyId === p.propertyId);
+      const dernier = k === g.length - 1;
+      const prev = k > 0 && g[k - 1].period === periodAdd(p.period, -1) ? (lignesDe[g[k - 1].id] || []) : null;
+      const base = { scope: p.scope, periodId: p.id, period: p.period, propertyId: p.propertyId, bien: prop?.name || "Bâtiment supprimé", locked: !!p.locked };
+      if (!prop) out.push({ ...base, code: "bien_inconnu", niveau: "rouge", titre: "Tableau d'un bâtiment absent du patrimoine", detail: "Le bâtiment a été supprimé : ce tableau n'est plus rattaché à rien." });
+      doublonsLignes(ls).forEach((j, i) => out.push({ ...base, code: "doublon", niveau: "rouge", nom: ls[i].tenantName, lot: ls[i].unitLabel, lineId: ls[i].id,
+        titre: `${ls[i].tenantName || "Lot vacant"} figure deux fois (${ls[i].unitLabel || "sans lot"})`, detail: `Doublon de la ligne ${j + 1} : loyers, paiements et arriérés sont comptés deux fois.` }));
+      ls.forEach((l) => {
+        const u = lotDeLigne(l, lots);
+        const ctx = { ...base, nom: l.tenantName || "", lot: l.unitLabel || "", lineId: l.id, unitId: u?.id || l.unitId || null };
+        if (isVacantLine(l)) {
+          if (dernier && u && (u.tenantName || "").trim() && u.status !== "vacant")
+            out.push({ ...ctx, code: "vacant_tableau", niveau: "orange", titre: `${u.label} : vacant au tableau, occupé au patrimoine`, detail: `La fiche du lot indique « ${u.tenantName} ». Mettez le tableau ou la fiche à jour.` });
+          return;
+        }
+        const nom = l.tenantName;
+        if (!u) out.push({ ...ctx, code: "lot_inconnu", niveau: "orange", titre: `${nom} : lot « ${l.unitLabel || "—"} » introuvable au patrimoine`,
+          detail: l.unitId && unitById[l.unitId] ? `Ce lot appartient au bâtiment « ${propById[unitById[l.unitId].propertyId]?.name || "?"} ».` : "Le lot a été renommé ou supprimé : rattachez la ligne au bon lot." });
+        else if (cleDoublon(u.tenantName) !== cleDoublon(nom) && (dernier || (u.leaseStart && p.period >= String(u.leaseStart).slice(0, 7))))
+          out.push({ ...ctx, code: "nom_fiche", niveau: "orange", titre: `${u.label} : nom différent de la fiche locataire`,
+            detail: `« ${nom} » au tableau, « ${(u.tenantName || "").trim() || "lot vacant"} » au patrimoine. Un seul des deux est juste.` });
+        if (!isPrepaidLine(l)) {
+          if (!(Number(l.expected) > 0)) out.push({ ...ctx, code: "loyer_nul", niveau: "rouge", titre: `${nom} : loyer du mois à 0`, detail: "Un lot occupé doit porter son loyer, ou être marqué « réglé d'avance »." });
+          else if (u && dernier && Number(u.rent) > 0 && lineMonths(l) === 1 && Math.abs(Number(u.rent) - Number(l.expected)) > 0.5)
+            out.push({ ...ctx, code: "loyer_fiche", niveau: "orange", titre: `${nom} : loyer différent de la fiche`, detail: `${fcfa(l.expected)} au tableau, ${fcfa(u.rent)} sur la fiche du lot ${u.label}.` });
+        }
+        const c = Number(l.collected) || 0;
+        if (c > 0 && !l.paidAt) out.push({ ...ctx, code: "date_manquante", niveau: "orange", titre: `${nom} : paiement sans date`, detail: `${fcfa(c)} payés : indiquez la date de paiement.` });
+        if (l.paidAt && String(l.paidAt).slice(0, 10) > today) out.push({ ...ctx, code: "date_future", niveau: "orange", titre: `${nom} : date de paiement dans le futur`, detail: `Payé le ${String(l.paidAt).slice(0, 10).split("-").reverse().join("/")}.` });
+        if (c > lineToCollect(l) + 0.5 && !isPrepaidLine(l))
+          out.push({ ...ctx, code: "trop_percu", niveau: "orange", titre: `${nom} : payé supérieur au dû`, detail: `${fcfa(c)} payés pour ${fcfa(lineToCollect(l))} à recouvrer (${fcfa(c - lineToCollect(l))} de trop) : avance à enregistrer ou erreur de saisie.` });
+        /* Quittances */
+        const rec = lineReceipts(l);
+        rec.forEach((r) => {
+          const d = docById[r.doc];
+          if (quittanceActive(d)) return;
+          const etat = !d ? "supprimée" : d.approval === "refuse" ? "refusée" : d.status === "annule" ? "annulée" : "non validée";
+          out.push({ ...ctx, code: "quittance_retiree", niveau: "rouge", docId: r.doc, ref: r.ref, titre: `${nom} : quittance ${r.ref} ${etat}, encore comptée`, detail: `${fcfa(r.montant)} restent comptés comme payés sans quittance valable.` });
+        });
+        let prouve = rec.reduce((s, r) => s + (Number(r.montant) || 0), 0) + partAvanceMensuelle(l);
+        /* Tableau arrêté avant ce contrôle : la quittance n'y est citée qu'en observation */
+        if (p.locked) documents.filter((d) => quittanceActive(d) && d.ref && d.propertyId === p.propertyId && String(l.comment || "").includes(d.ref) && !rec.some((r) => r.doc === d.id))
+          .forEach((d) => { prouve += Number(d.total) || 0; });
+        if (c > prouve + 0.5) out.push({ ...ctx, code: "sans_quittance", niveau: "orange", montant: c - prouve,
+          titre: `${nom} : ${fcfa(c - prouve)} payés sans quittance`, detail: `Payé ${fcfa(c)} ; quittance(s) : ${rec.length ? rec.map((r) => `${r.ref} (${fcfa(r.montant)})`).join(", ") : "aucune"}. Établissez la quittance ou corrigez le payé.` });
+        else if (prouve > c + 0.5) out.push({ ...ctx, code: "quittance_superieure", niveau: "rouge", titre: `${nom} : quittances supérieures au payé`, detail: `${fcfa(prouve)} quittancés pour ${fcfa(c)} portés au tableau.` });
+        /* Report d'arriéré : doit égaler le reste à payer du mois précédent */
+        if (prev && l.carriedArrears !== null && l.carriedArrears !== undefined) {
+          const m = prev.find((x) => memeLigne(x, l));
+          if (m && !isVacantLine(m) && Math.abs(lineDue(m) - lineCarried(l)) > 0.5)
+            out.push({ ...ctx, code: "report_incoherent", niveau: "rouge", titre: `${nom} : arriéré reporté inexact`, detail: `${fcfa(lineCarried(l))} reportés, alors que le reste à payer du mois précédent est de ${fcfa(lineDue(m))}. Lancez « Mettre à jour les reports d'arriérés »${p.locked ? " (tableau arrêté : déverrouillez-le d'abord)" : ""}.` });
+        }
+      });
+      if (dernier) lots.filter((u) => (u.tenantName || "").trim() && u.status !== "vacant").forEach((u) => {
+        if (!ls.some((l) => !isVacantLine(l) && lotDeLigne(l, lots)?.id === u.id))
+          out.push({ ...base, code: "absent_tableau", niveau: "orange", nom: u.tenantName, lot: u.label, unitId: u.id, titre: `${u.tenantName} (${u.label}) absent du tableau`, detail: "Locataire enregistré au patrimoine mais sans ligne ce mois-ci." });
+      });
+    });
+  }
+  /* Écart entre le suivi commercial et l'état comptable du même mois */
+  rentPeriods.filter((p) => p.scope === "comptable").forEach((pc) => {
+    const pm = rentPeriods.find((x) => x.scope === "commercial" && x.propertyId === pc.propertyId && x.period === pc.period);
+    if (!pm) return;
+    const lm = lignesDe[pm.id] || [];
+    (lignesDe[pc.id] || []).filter((l) => !isVacantLine(l)).forEach((l) => {
+      const m = lm.find((x) => memeLigne(x, l));
+      if (m && Math.abs((Number(m.collected) || 0) - (Number(l.collected) || 0)) > 0.5)
+        out.push({ scope: "comptable", periodId: pc.id, period: pc.period, propertyId: pc.propertyId, bien: propById[pc.propertyId]?.name || "", locked: !!pc.locked, lineId: l.id,
+          nom: l.tenantName, lot: l.unitLabel, code: "ecart_scopes", niveau: "orange", titre: `${l.tenantName} : payé différent entre suivi commercial et état comptable`,
+          detail: `${fcfa(m.collected)} au suivi commercial, ${fcfa(l.collected)} à l'état comptable.` });
+    });
+  });
+  /* Quittances */
+  documents.filter((d) => d.docType === "quittance").forEach((d) => {
+    const q = { scope: "quittances", docId: d.id, ref: d.ref, propertyId: d.propertyId, bien: propById[d.propertyId]?.name || "", period: d.periodIso || "", nom: d.clientName || "" };
+    if (d.approval === "en_attente") {
+      const jours = d.createdAt ? Math.floor((Date.now() - d.createdAt) / 86400000) : 0;
+      out.push({ ...q, code: "quittance_attente", niveau: jours > 3 ? "orange" : "info", titre: `Quittance ${d.ref} en attente de validation${jours > 0 ? ` depuis ${jours} jour(s)` : ""}`, detail: `${d.clientName || ""} — ${fcfa(d.total)} : le paiement ne sera reporté qu'après validation.` });
+      return;
+    }
+    if (!quittanceActive(d)) return;
+    if (!d.propertyId || !d.periodIso) { out.push({ ...q, code: "quittance_sans_mois", niveau: "orange", titre: `Quittance ${d.ref} sans bâtiment ou sans mois`, detail: "Elle ne peut pas être reportée au recouvrement : complétez-la." }); return; }
+    if (!d.unitId) out.push({ ...q, code: "quittance_sans_lot", niveau: "info", titre: `Quittance ${d.ref} non rattachée à un lot`, detail: "Le report se fait sur le nom du locataire : rattachez-la au lot pour éviter toute confusion." });
+    const lignesQ = rentLines.filter((l) => scopeDe[l.periodId]?.scope === "comptable" && lineReceipts(l).some((r) => r.doc === d.id));
+    let reporte = lignesQ.reduce((s, l) => s + lineReceipts(l).filter((r) => r.doc === d.id).reduce((a, r) => a + (Number(r.montant) || 0), 0), 0);
+    reporte += advances.filter((a) => a.receiptDocId === d.id).reduce((s, a) => s + (Number(a.amount) || 0), 0);
+    /* Reports antérieurs à ce contrôle, figés dans un tableau arrêté (mention dans l'observation) */
+    rentLines.filter((l) => { const p = scopeDe[l.periodId]; return p?.scope === "comptable" && p.locked && p.propertyId === d.propertyId && d.ref && String(l.comment || "").includes(d.ref) && !lineReceipts(l).some((r) => r.doc === d.id); })
+      .forEach((l) => { reporte += Math.min(Number(l.collected) || 0, Math.max(0, Number(d.total) - reporte)); });
+    if (reporte + 0.5 < Number(d.total))
+      out.push({ ...q, code: "quittance_non_reportee", niveau: "rouge", titre: `Quittance ${d.ref} non reportée à l'état comptable`, detail: `${d.clientName || ""} — ${fcfa(d.total)} quittancés${reporte ? `, ${fcfa(reporte)} seulement reportés` : ", rien de reporté"}.` });
+  });
+  return out.sort((a, b) => NIVEAUX_CONTROLE[a.niveau].ordre - NIVEAUX_CONTROLE[b.niveau].ordre || (a.bien || "").localeCompare(b.bien || "") || String(b.period).localeCompare(String(a.period)));
+}
 /* État attendu d'une ligne pour un mois donné, d'après les avances du lot */
 function advanceStateFor(unitId, period, advances) {
   const du = (advances || []).filter((a) => a.unitId === unitId);
@@ -928,14 +1114,21 @@ const LOGO_STAMP = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUAAAABUCAYAAA
 function paymentHistory(unit, { rentPeriods, rentLines, documents }) {
   if (!unit) return [];
   const months = {};
-  const sameUnit = (l) => l.unitId === unit.id
-    || (l.unitLabel || "").toLowerCase() === (unit.label || "").toLowerCase()
-    || (unit.tenantName && (l.tenantName || "").toLowerCase() === unit.tenantName.toLowerCase());
+  /* Ligne du lot ET du locataire actuel : la dette d'un ancien occupant du
+     même lot n'est jamais attribuée au nouveau. Depuis l'entrée du locataire
+     (date du bail), une ligne du lot lui revient même si le nom est mal saisi. */
+  const debutBail = unit.leaseStart ? String(unit.leaseStart).slice(0, 7) : "";
+  const memeLot = (l) => (l.unitId && l.unitId === unit.id) || (!l.unitId && cleDoublon(l.unitLabel) && cleDoublon(l.unitLabel) === cleDoublon(unit.label));
+  const sameUnit = (l, periode) => {
+    const nomOk = cleDoublon(unit.tenantName) && cleDoublon(l.tenantName) === cleDoublon(unit.tenantName);
+    if (memeLot(l)) return nomOk || (debutBail && periode >= debutBail);
+    return nomOk && !l.unitId;              // ancienne ligne sans lot : rattachée par le nom
+  };
 
   /* 1. Tableaux de recouvrement — l'état comptable prime sur le suivi commercial */
   ["commercial", "comptable"].forEach((scope) => {
     rentPeriods.filter((p) => p.propertyId === unit.propertyId && p.scope === scope).forEach((p) => {
-      const line = rentLines.find((l) => l.periodId === p.id && sameUnit(l));
+      const line = rentLines.find((l) => l.periodId === p.id && sameUnit(l, p.period));
       if (!line) return;
       if (isVacantLine(line)) { delete months[p.period]; return; }   // lot vacant ce mois-là
       /* Champs propres à la ligne du mois (instantané) */
@@ -958,24 +1151,19 @@ function paymentHistory(unit, { rentPeriods, rentLines, documents }) {
     });
   });
 
-  /* 2. Quittances émises — une quittance validée fait foi du paiement */
-  (documents || []).filter((d) => d.docType === "quittance" && d.periodIso
-    && (d.unitId === unit.id
-      || (unit.tenantName && (d.clientName || "").toLowerCase() === unit.tenantName.toLowerCase())))
+  /* 2. Quittances VALIDÉES (tampon PAYÉ, non annulées) — seules preuves de paiement.
+     Une quittance de plusieurs mois est répartie sur chacun d'eux. Un mois déjà
+     porté par un tableau n'est pas recompté : le tableau a reçu la quittance. */
+  (documents || []).filter((d) => quittanceActive(d) && d.periodIso
+    && (d.unitId === unit.id || (!d.unitId && cleDoublon(unit.tenantName) && cleDoublon(d.clientName) === cleDoublon(unit.tenantName))))
     .forEach((d) => {
-      const prev = months[d.periodIso];
-      /* Historique immuable : un mois porté par un tableau « instantané » reste
-         tel qu'il a été enregistré, même si l'arriéré est réglé plus tard. */
-      if (prev && prev.carried !== null && prev.carried !== undefined) return;
-      const collected = Math.max(Number(d.total) || 0, prev?.collected || 0);
-      months[d.periodIso] = {
-        period: d.periodIso,
-        expected: prev?.expected || unit.rent || Number(d.total) || 0,
-        collected,
-        paidAt: d.fields?.paidOn || d.date,
-        source: `Quittance ${d.ref}`,
-        comment: prev?.comment || "",
-      };
+      const mois = coveredMonths(d.periodIso + "-01", d.monthsCount || 1);
+      const base = Math.floor((Number(d.total) || 0) / mois.length);
+      mois.forEach((m, i) => {
+        if (months[m]) return;
+        const part = i === mois.length - 1 ? (Number(d.total) || 0) - base * (mois.length - 1) : base;
+        months[m] = { period: m, expected: unit.rent || part, collected: part, paidAt: d.fields?.paidOn || d.date, source: `Quittance ${d.ref}`, comment: "" };
+      });
     });
 
   return Object.values(months).sort((a, b) => a.period.localeCompare(b.period));
@@ -1062,8 +1250,8 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "34.0";
-const APP_BUILD = "2026-11-06";
+const APP_VERSION = "35.0";
+const APP_BUILD = "2026-11-09";
 
 /* ---- Papier à en-tête de l'agence ---- */
 const AGENCY = {
@@ -1391,6 +1579,20 @@ function quoteDeletionBlock(q, complaints) {
 }
 
 /* Lignes d'une seule période : jamais tronquées, et bien plus rapide */
+/* Ligne d'un tableau (forme de l'application) → ligne en base */
+function ligneVersBase(l, i) {
+  const vac = !!l.vacant || !((l.tenantName || "").trim());
+  return { id: l.id || null, unit_id: l.unitId || null, unit_label: l.unitLabel || "",
+    tenant_name: l.tenantName || "", tenant_phone: l.tenantPhone || "",
+    expected: vac ? 0 : (Number(l.expected) || 0), collected: vac ? 0 : (Number(l.collected) || 0),
+    paid_at: vac ? null : (l.paidAt || null), charges: vac ? 0 : (Number(l.charges) || 0),
+    comment: l.comment || "", position: i, vacant: vac,
+    months: Math.max(1, Number(l.months) || 1), prepaid: !!l.prepaid && !vac,
+    /* Instantané : les arriérés reportés sont figés dans la ligne du mois */
+    carried_arrears: vac ? 0 : Math.max(0, Number(l.carriedArrears) || 0),
+    advance_in: vac ? 0 : Math.max(0, Number(l.advanceIn) || 0), advance_ref: vac ? "" : (l.advanceRef || ""),
+    receipts: vac ? [] : (Array.isArray(l.receipts) ? l.receipts : []) };
+}
 async function fetchPeriodLines(periodId) {
   const { data } = await supabase.from("rent_lines").select("*").eq("period_id", periodId).order("position").order("id");
   return dedupById(data || []);
@@ -1432,7 +1634,7 @@ const mUnit    = (r) => ({ id: r.id, propertyId: r.property_id, label: r.label, 
 const mPeriod  = (r) => ({ id: r.id, propertyId: r.property_id, period: r.period, scope: r.scope, rate: Number(r.agency_rate), status: r.status, notes: r.notes, createdBy: r.created_by, createdAt: Date.parse(r.created_at),
   locked: !!r.locked, lockedAt: r.locked_at, lockedBy: r.locked_by, unlockLog: r.unlock_log || [] });
 const mRLine   = (r) => ({ id: r.id, periodId: r.period_id, unitId: r.unit_id, unitLabel: r.unit_label, tenantName: r.tenant_name, tenantPhone: r.tenant_phone, expected: Number(r.expected), collected: Number(r.collected), paidAt: r.paid_at, charges: Number(r.charges), comment: r.comment, position: r.position, vacant: !!r.vacant, months: Math.max(1, Number(r.months) || 1), prepaid: !!r.prepaid, carriedArrears: r.carried_arrears === null || r.carried_arrears === undefined ? null : Number(r.carried_arrears),
-  advanceIn: Number(r.advance_in) || 0, advanceRef: r.advance_ref || "" });
+  advanceIn: Number(r.advance_in) || 0, advanceRef: r.advance_ref || "", receipts: Array.isArray(r.receipts) ? r.receipts : [] });
 const mRCharge = (r) => ({ id: r.id, periodId: r.period_id, label: r.label, amount: Number(r.amount), observation: r.observation, position: r.position, kind: r.kind || "charge" });
 const mFormer   = (r) => ({ id: r.id, unitId: r.unit_id, propertyId: r.property_id, unitLabel: r.unit_label, name: r.name, phone: r.phone, email: r.email, leaseStart: r.lease_start, leaseEnd: r.lease_end, departureDate: r.departure_date, reason: r.reason, rent: Number(r.rent_amount) || 0, deposit: Number(r.deposit) || 0, depositRefund: Number(r.deposit_refund) || 0, balanceDue: Number(r.balance_due) || 0, notes: r.notes, archivedBy: r.archived_by });
 const mVisit = (r) => ({ id: r.id, ref: r.ref, propertyId: r.property_id, unitId: r.unit_id, visitDate: r.visit_date, startTime: r.start_time || "", endTime: r.end_time || "",
@@ -2395,30 +2597,24 @@ function useStore(userId) {
   const savePeriodContent = async (periodId, lines, charges) => {
     const verrou = (await supabase.from("rent_periods").select("*").eq("id", periodId).single()).data;
     if (verrou?.locked) return { error: `Le tableau de ${periodLabel(verrou.period)} est arrêté pour virement : déverrouillez-le d'abord.` };
-    await supabase.from("rent_lines").delete().eq("period_id", periodId);
-    await supabase.from("rent_charges").delete().eq("period_id", periodId);
-    const lPayload = lines.filter((l) => (l.tenantName || l.unitLabel || "").trim()).map((l, i) => {
-      const vac = !!l.vacant || !((l.tenantName || "").trim());
-      return { period_id: periodId, unit_id: l.unitId || null, unit_label: l.unitLabel || "",
-        tenant_name: l.tenantName || "", tenant_phone: l.tenantPhone || "",
-        expected: vac ? 0 : (Number(l.expected) || 0), collected: vac ? 0 : (Number(l.collected) || 0),
-        paid_at: vac ? null : (l.paidAt || null), charges: vac ? 0 : (Number(l.charges) || 0),
-        comment: l.comment || "", position: i, vacant: vac,
-        months: Math.max(1, Number(l.months) || 1), prepaid: !!l.prepaid && !vac,
-        /* Instantané : les arriérés reportés sont figés dans la ligne du mois */
-        carried_arrears: vac ? 0 : Math.max(0, Number(l.carriedArrears) || 0),
-        advance_in: vac ? 0 : Math.max(0, Number(l.advanceIn) || 0), advance_ref: vac ? "" : (l.advanceRef || "") };
-    });
+    const gardees = lines.filter((l) => (l.tenantName || l.unitLabel || "").trim());
+    /* Un payé ne peut descendre sous les quittances qu'il porte */
+    for (const l of gardees) {
+      const q = sommeQuittances(l) + partAvanceMensuelle(l);
+      if (!isVacantLine(l) && (Number(l.collected) || 0) + 0.5 < q)
+        return { error: `${l.tenantName} : le payé (${fcfa(l.collected)}) est inférieur aux quittances qu'il porte (${lineReceipts(l).map((r) => r.ref).join(", ")} : ${fcfa(q)}). Annulez la quittance ou corrigez le montant.` };
+      if (isVacantLine(l) && lineReceipts(l).length)
+        return { error: `${l.unitLabel || "Un lot"} : ce lot porte la quittance ${lineReceipts(l)[0].ref} et ne peut pas être marqué vacant.` };
+    }
+    const ids = new Set();
+    const lPayload = gardees.map((l, i) => { const r = ligneVersBase(l, i); if (r.id && ids.has(r.id)) r.id = null; if (r.id) ids.add(r.id); return r; });
     const cPayload = charges.filter((c) => (c.label || "").trim()).map((c, i) => ({
-      period_id: periodId, label: c.label, amount: Number(c.amount) || 0,
-      observation: c.observation || "", position: i, kind: c.kind || "charge" }));
-    let err = null;
-    if (lPayload.length) { const { error } = await supabase.from("rent_lines").insert(lPayload); err = err || error; }
-    if (cPayload.length) { const { error } = await supabase.from("rent_charges").insert(cPayload); err = err || error; }
-    /* Contrôle : la base doit contenir exactement les lignes envoyées.
-       Sans cela, une troncature ou un refus passerait inaperçu. */
-    const enBase = await fetchPeriodLines(periodId);
-    if (!err && enBase.length !== lPayload.length) {
+      label: c.label, amount: Number(c.amount) || 0, observation: c.observation || "", position: i, kind: c.kind || "charge" }));
+    /* Enregistrement d'un seul tenant : tout ou rien (aucune ligne perdue en cas d'échec) */
+    const { data: n, error: errRpc } = await supabase.rpc("rent_enregistrer_tableau", { p_period: periodId, p_lignes: lPayload, p_charges: cPayload });
+    let err = errRpc ? { message: /rent_enregistrer_tableau/.test(errRpc.message) ? "Mise à jour de la base requise : exécutez migration-v35.sql dans Supabase, puis réessayez. Rien n'a été modifié." : errRpc.message } : null;
+    const enBase = err ? [] : await fetchPeriodLines(periodId);
+    if (!err && (enBase.length !== lPayload.length || n !== lPayload.length)) {
       err = { message: `Enregistrement incomplet : ${enBase.length} ligne(s) enregistrée(s) sur ${lPayload.length}. Réessayez ; si le problème persiste, signalez-le.` };
     }
     const [l, c] = await Promise.all([
@@ -2809,130 +3005,138 @@ function useStore(userId) {
      Le montant est inscrit sur la ligne du locataire pour le mois quittancé.
      La saisie manuelle reste possible : on n'écrase jamais un encaissement
      déjà supérieur, et le tableau demeure entièrement modifiable. */
-  const applyReceiptToRent = async (doc) => {
-    if (!doc?.periodIso || !doc.propertyId) return { skipped: "période ou bien non précisé" };
-    const mois = coveredMonths(doc.periodIso + "-01", doc.monthsCount || 1);
+  /* ══ REPORT D'UNE QUITTANCE DANS LES TABLEAUX (comptable et commercial) ══
+     Idempotent et réversible : la part déjà posée par cette quittance est
+     d'abord retirée de toutes les lignes ouvertes, puis la ventilation
+     actuelle est posée. Un tableau arrêté pour virement n'est jamais touché. */
+  const syncQuittance = async (doc, { retirer = false } = {}) => {
+    if (!doc?.id) return { skipped: "quittance inconnue" };
+    const actif = !retirer && quittanceActive(doc) && !!doc.propertyId && !!doc.periodIso;
+    /* Lignes qui portent déjà cette quittance */
+    const { data: dejaRows, error: e0 } = await supabase.from("rent_lines").select("*").contains("receipts", [{ doc: doc.id }]);
+    if (e0) return { error: /receipts/.test(e0.message) ? "Le report des quittances n'est pas encore installé : exécutez migration-v35.sql dans Supabase." : e0.message };
+    const deja = (dejaRows || []).map(mRLine);
+    const biens = [...new Set([doc.propertyId, ...deja.map((l) => rentPeriods.find((p) => p.id === l.periodId)?.propertyId)].filter(Boolean))];
+    let periodes = [];
+    for (const b of biens) { const { data } = await supabase.from("rent_periods").select("*").eq("property_id", b); periodes = periodes.concat((data || []).map(mPeriod)); }
+    const perById = Object.fromEntries(periodes.map((p) => [p.id, p]));
+    for (const l of deja) if (!perById[l.periodId]) { const { data } = await supabase.from("rent_periods").select("*").eq("id", l.periodId).maybeSingle(); if (data) { const p = mPeriod(data); periodes.push(p); perById[p.id] = p; } }
+    const figees = []; const touches = {}; let done = 0; const crees = [];
     const unit = units.find((u) => u.id === doc.unitId);
-    const paidOn = doc.fields?.paidOn || doc.date;
-    /* Une quittance de plusieurs mois se répartit sur chaque mois concerné */
-    const parMois = Math.round(Number(doc.total) / mois.length);
-    let done = 0; const manquants = []; const crees = [];
-    /* HISTORIQUE IMMUABLE : un mois déjà écoulé au moment du paiement est figé.
-       Le règlement d'un ancien loyer est porté sur le tableau du mois où
-       l'argent est encaissé, où il réduit les arriérés reportés. */
-    const moisPaiement = String(paidOn || isoDate(new Date())).slice(0, 7);
-
-    const futurs = [];            // mois payés d'avance → enregistrés comme avance
-    const touches = [];
-    for (const mDu of mois) {
-      if (mDu > moisPaiement) { futurs.push(mDu); continue; }
-      let surArriere = mDu < moisPaiement;
-      let m = surArriere ? moisPaiement : mDu;
-      /* Mois arrêté pour virement : il est figé. Le paiement est porté sur le
-         premier mois suivant encore ouvert, comme règlement d'arriéré. */
-      while (rentPeriods.some((p) => p.propertyId === doc.propertyId && p.period === m && p.scope === "comptable" && p.locked)) {
-        m = periodAdd(m, 1); surArriere = true;
+    const cible = {};                                 // lineId -> { line, parts }
+    const noter = (bien, sc, m) => { const k = `${bien}|${sc}`; if (!touches[k] || m < touches[k]) touches[k] = m; };
+    const voulues = new Set();                        // parts voulues : portée|mois d'origine|mois dû
+    /* Parts déjà acquises dans un tableau arrêté (ou mention d'un ancien report) */
+    const acquise = (sc, mois, du) => deja.some((l) => { const p = perById[l.periodId]; return p?.locked && p.scope === sc && p.period === mois && lineReceipts(l).some((r) => r.doc === doc.id && r.du === du); });
+    const trouverLigne = (lignes) => lignes.find((l) => doc.unitId && l.unitId === doc.unitId)
+      || lignes.find((l) => unit && cleDoublon(unit.label) && cleDoublon(l.unitLabel) === cleDoublon(unit.label) && (!cleDoublon(doc.clientName) || cleDoublon(l.tenantName) === cleDoublon(doc.clientName) || !cleDoublon(l.tenantName)))
+      || lignes.find((l) => cleDoublon(doc.clientName) && cleDoublon(l.tenantName) === cleDoublon(doc.clientName));
+    let futurs = [];
+    if (actif) {
+      for (const sc of ["comptable", "commercial"]) {
+        const fige = (m) => periodes.some((p) => p.propertyId === doc.propertyId && p.scope === sc && p.period === m && p.locked);
+        const v = ventilerQuittance(doc, fige);
+        if (sc === "comptable") futurs = v.futurs;
+        v.parts.forEach((x) => voulues.add(`${sc}|${x.origine}|${x.du}`));
+        for (const part of v.parts) {
+          /* Mois d'origine arrêté et portant déjà cette quittance : rien à refaire */
+          if (part.origine !== part.mois && (acquise(sc, part.origine, part.du) || (await mentionFigee(sc, part.origine)))) continue;
+          if (acquise(sc, part.mois, part.du)) continue;
+          let period = periodes.find((p) => p.propertyId === doc.propertyId && p.scope === sc && p.period === part.mois);
+          if (!period) {
+            if (sc === "commercial") continue;          // le suivi commercial n'est jamais créé d'office
+            const prop = properties.find((p) => p.id === doc.propertyId);
+            const ins = await supabase.from("rent_periods").insert({ property_id: doc.propertyId, period: part.mois, scope: "comptable",
+              agency_rate: prop?.feeRate ?? 0.10, status: "brouillon", created_by: userId }).select().single();
+            if (ins.error || !ins.data) { figees.push(`Tableau de ${periodLabel(part.mois)} impossible à créer : ${ins.error?.message || "refus"}`); continue; }
+            period = mPeriod(ins.data); periodes.push(period); perById[period.id] = period; crees.push(part.mois);
+            const seed = seedPeriod({ period, rentPeriods, rentLines, rentCharges, units, advances: rentAdvances });
+            if (seed.lines.length || seed.charges.length) {
+              const r = await supabase.rpc("rent_enregistrer_tableau", { p_period: period.id,
+                p_lignes: seed.lines.map((l, k) => ligneVersBase(l, k)), p_charges: seed.charges.map((c, k) => ({ label: c.label, amount: Number(c.amount) || 0, observation: c.observation || "", kind: c.kind || "charge", position: k })) });
+              if (r.error) { figees.push(`Tableau de ${periodLabel(part.mois)} : ${r.error.message}`); continue; }
+            }
+            setRentPeriods((p) => [period, ...p.filter((x) => x.id !== period.id)]);
+          }
+          if (period.locked) { figees.push(`${RENT_SCOPE[sc].label} de ${periodLabel(period.period)} arrêté pour virement`); continue; }
+          const lignes = (await fetchPeriodLines(period.id)).map(mRLine);
+          let line = Object.values(cible).map((x) => x.line).find((x) => x.periodId === period.id && trouverLigne([x])) || trouverLigne(lignes);
+          if (!line) {
+            const ins = await supabase.from("rent_lines").insert({ period_id: period.id, unit_id: doc.unitId || null, unit_label: unit?.label || "",
+              tenant_name: doc.clientName || unit?.tenantName || "", tenant_phone: doc.clientPhone || "", expected: Number(unit?.rent) || part.montant,
+              carried_arrears: part.nature === "arriere" ? part.montant : 0, collected: 0, charges: 0, comment: "", position: 999, vacant: false, receipts: [] }).select().single();
+            if (ins.error) { figees.push(`${periodLabel(part.mois)} : ${ins.error.message}`); continue; }
+            line = mRLine(ins.data);
+          }
+          (cible[line.id] = cible[line.id] || { line, parts: [] }).parts.push(part);
+          noter(doc.propertyId, sc, period.period);
+        }
       }
-      touches.push(m);
-      let period = rentPeriods.find((p) => p.propertyId === doc.propertyId
-        && p.period === m && p.scope === "comptable");
-      if (!period) {
-        /* Première quittance du mois : l'état comptable est créé et amorcé
-           depuis le mois précédent, puis la quittance y est reportée. */
-        const prop = properties.find((p) => p.id === doc.propertyId);
-        const ins = await supabase.from("rent_periods").insert({
-          property_id: doc.propertyId, period: m, scope: "comptable",
-          agency_rate: prop?.feeRate ?? 0.10, status: "brouillon", created_by: userId,
-        }).select().single();
-        if (ins.error || !ins.data) { manquants.push(m); continue; }
-        period = mPeriod(ins.data);
-        const seed = seedPeriod({ period, rentPeriods, rentLines, rentCharges, units, advances: rentAdvances });
-        if (seed.lines.length) {
-          await supabase.from("rent_lines").insert(seed.lines.map((l, i) => ({
-            period_id: period.id, unit_id: l.unitId || null, unit_label: l.unitLabel || "",
-            tenant_name: l.tenantName || "", tenant_phone: l.tenantPhone || "",
-            expected: Number(l.expected) || 0, collected: Number(l.collected) || 0,
-            paid_at: l.paidAt || null, charges: Number(l.charges) || 0, comment: l.comment || "",
-            position: i, vacant: !!l.vacant, months: l.months || 1, prepaid: !!l.prepaid,
-            carried_arrears: l.vacant ? 0 : Math.max(0, Number(l.carriedArrears) || 0),
-            advance_in: Number(l.advanceIn) || 0, advance_ref: l.advanceRef || "" })));
-        }
-        if (seed.charges.length) {
-          await supabase.from("rent_charges").insert(seed.charges.map((c, i) => ({
-            period_id: period.id, label: c.label, amount: Number(c.amount) || 0,
-            observation: c.observation || "", kind: c.kind || "charge", position: i })));
-        }
-        const fresh = await fetchAll("rent_lines", { col: "position" });
-        if (fresh.data) setRentLines(fresh.data.map(mRLine));
-        setRentPeriods((p) => [period, ...p]);
-        crees.push(m);
-      }
-      const lignesPeriode = (await fetchPeriodLines(period.id)).map(mRLine);
-      /* Ligne du locataire : par lot d'abord, puis par nom — sans jamais
-         confondre deux lignes sans lot, ni créer une seconde ligne pour lui. */
-      const line = lignesPeriode.find((l) => doc.unitId && l.unitId === doc.unitId)
-          || lignesPeriode.find((l) => unit && cleDoublon(unit.label) && cleDoublon(l.unitLabel) === cleDoublon(unit.label))
-          || lignesPeriode.find((l) => cleDoublon(doc.clientName) && cleDoublon(l.tenantName) === cleDoublon(doc.clientName));
-      const montant = line ? Math.max(Number(line.expected) || 0, parMois) : parMois;
-
-      if (surArriere) {
-        /* Règlement d'arriéré : il S'AJOUTE au payé du mois en cours.
-           Garde-fou : une même quittance n'est jamais comptée deux fois. */
-        const marque = `${doc.ref} (${mDu})`;
-        if (line && (line.comment || "").includes(marque)) { done += 1; continue; }
-        const note = `Règlement arriéré ${periodLabel(mDu)} — quittance ${marque}`;
-        if (line) {
-          const { error } = await supabase.from("rent_lines").update({
-            collected: (Number(line.collected) || 0) + parMois, paid_at: paidOn,
-            comment: [line.comment, note].filter(Boolean).join(" · "), vacant: false }).eq("id", line.id);
-          if (!error) done += 1;
-        } else {
-          const { error } = await supabase.from("rent_lines").insert({
-            period_id: period.id, unit_id: doc.unitId || null, unit_label: unit?.label || "",
-            tenant_name: doc.clientName || "", tenant_phone: doc.clientPhone || "",
-            expected: unit?.rent || 0, carried_arrears: parMois, collected: parMois, paid_at: paidOn,
-            charges: 0, comment: note, position: 999, vacant: false });
-          if (!error) done += 1;
-        }
+    }
+    async function mentionFigee(sc, mois) {
+      const p = periodes.find((x) => x.propertyId === doc.propertyId && x.scope === sc && x.period === mois && x.locked);
+      if (!p || !doc.ref) return false;
+      return (await fetchPeriodLines(p.id)).some((l) => String(l.comment || "").includes(doc.ref));
+    }
+    /* Lignes ouvertes qui portaient la quittance et n'en reçoivent plus */
+    for (const l of deja) {
+      const p = perById[l.periodId];
+      if (p?.locked) {
+        const perimees = lineReceipts(l).filter((r) => r.doc === doc.id && !voulues.has(`${p.scope}|${p.period}|${r.du}`));
+        if (perimees.length) figees.push(`${RENT_SCOPE[p.scope]?.label || ""} de ${periodLabel(p.period)} arrêté pour virement : la quittance ${doc.ref} y reste comptée (${fcfa(perimees.reduce((t, r) => t + (Number(r.montant) || 0), 0))})`);
         continue;
       }
-
-      if (line) {
-        if ((Number(line.collected) || 0) >= montant) { done += 1; continue; }
-        const { error } = await supabase.from("rent_lines")
-          .update({ collected: montant, paid_at: paidOn, comment: `Quittance ${doc.ref}`, vacant: false })
-          .eq("id", line.id);
-        if (!error) done += 1;
-      } else {
-        const { error } = await supabase.from("rent_lines").insert({
-          period_id: period.id, unit_id: doc.unitId || null,
-          unit_label: unit?.label || "", tenant_name: doc.clientName || "",
-          tenant_phone: doc.clientPhone || "", expected: unit?.rent || parMois,
-          carried_arrears: 0, collected: parMois, paid_at: paidOn, charges: 0,
-          comment: `Quittance ${doc.ref}`, position: 999, vacant: false,
-        });
-        if (!error) done += 1;
-      }
+      if (!cible[l.id]) cible[l.id] = { line: l, parts: [] };
+      if (p) noter(p.propertyId, p.scope, p.period);
     }
-    /* Mois futurs : ils ne se « paient » pas dans un tableau qui n'existe pas
-       encore. Ils sont enregistrés comme AVANCE, appliquée automatiquement
-       aux tableaux existants et à ceux qui seront créés. */
-    if (futurs.length && doc.unitId) {
+    for (const { line, parts } of Object.values(cible)) {
+      const n = poserQuittance(line, doc, parts);
+      const { error } = await supabase.from("rent_lines").update({ receipts: n.receipts, collected: n.collected, comment: n.comment,
+        paid_at: n.paidAt || null, vacant: !!n.vacant }).eq("id", line.id);
+      if (error) figees.push(error.message); else if (parts.length) done += parts.length;
+    }
+    /* Mois futurs : avance liée à la quittance (créée, mise à jour ou retirée) */
+    const { data: advRows } = await supabase.from("rent_advances").select("*").eq("receipt_doc_id", doc.id);
+    const avance = (advRows || []).map(mAdvance)[0];
+    if (actif && futurs.length && doc.unitId) {
       const prop = properties.find((p) => p.id === doc.propertyId);
       const own = owners.find((o) => o.id === prop?.ownerId);
-      const ra = await saveAdvance({ unitId: doc.unitId, propertyId: doc.propertyId, tenantName: doc.clientName || "",
-        amount: parMois * futurs.length, monthsCount: futurs.length, startPeriod: futurs[0], paidAt: String(paidOn).slice(0, 10),
-        mode: own?.advanceMode || "immediat", receiptDocId: doc.id, notes: `Quittance ${doc.ref}` });
-      if (!ra.error || /déjà donné lieu/.test(ra.error)) done += futurs.length;
+      const montant = futurs.reduce((t, f) => t + f.montant, 0);
+      if (!avance || avance.amount !== montant || avance.monthsCount !== futurs.length || avance.startPeriod !== futurs[0].du) {
+        const ra = await saveAdvance({ id: avance?.id, unitId: doc.unitId, propertyId: doc.propertyId, tenantName: doc.clientName || "", amount: montant, monthsCount: futurs.length,
+          startPeriod: futurs[0].du, paidAt: String(doc.fields?.paidOn || doc.date).slice(0, 10), mode: avance?.mode || own?.advanceMode || "immediat", receiptDocId: doc.id, notes: `Quittance ${doc.ref}` });
+        if (ra.error) figees.push(ra.error);
+      }
+      done += futurs.length;
+    } else if (avance) await deleteAdvance(avance);
+    for (const [k, depuis] of Object.entries(touches)) { const [bien, sc] = k.split("|"); await cascadeFrom(bien, sc, depuis); }
+    const { data } = await fetchAll("rent_lines", { col: "position" });
+    if (data) setRentLines(data.map(mRLine));
+    const res = { ok: true, months: done, created: crees };
+    if (figees.length) res.warning = [...new Set(figees)].join(" ; ");
+    return res;
+  };
+  /* Compatibilité : ancien nom de l'action */
+  const applyReceiptToRent = (doc) => syncQuittance(doc);
+  /* Rapprochement général : toutes les quittances validées sont (re)portées,
+     et les parts de quittances refusées, annulées ou supprimées sont retirées. */
+  const rapprocherQuittances = async () => {
+    const { data: docs } = await fetchAll("documents", { col: "doc_date", asc: true });
+    const tous = (docs || []).map(mDoc).filter((d) => d.docType === "quittance");
+    const actifs = new Set(tous.filter(quittanceActive).map((d) => d.id));
+    let reportees = 0, retirees = 0; const alertes = [];
+    for (const d of tous.filter(quittanceActive)) {
+      const r = await syncQuittance(d);
+      if (r.error) return r;
+      if (r.months) reportees += 1;
+      if (r.warning) alertes.push(`${d.ref} : ${r.warning}`);
     }
-    if (done) {
-      if (touches.length) await cascadeFrom(doc.propertyId, "comptable", touches.sort()[0]);
-      const { data } = await fetchAll("rent_lines", { col: "position" });
-      if (data) setRentLines(data.map(mRLine));
-    }
-    if (!done) return { skipped: `report impossible pour ${mois.join(", ")}` };
-    if (manquants.length) return { ok: true, skipped: `report impossible pour : ${manquants.join(", ")}` };
-    return { ok: true, months: done, created: crees };
+    const { data: lignes } = await fetchAll("rent_lines", { col: "position" });
+    const orphelins = new Map();
+    (lignes || []).map(mRLine).forEach((l) => lineReceipts(l).forEach((r) => { if (!actifs.has(r.doc)) orphelins.set(r.doc, { id: r.doc, ref: r.ref, docType: "quittance" }); }));
+    for (const d of orphelins.values()) { const r = await syncQuittance(d, { retirer: true }); if (!r.error) retirees += 1; if (r.warning) alertes.push(`${d.ref} : ${r.warning}`); }
+    return { message: `${reportees} quittance(s) rapprochée(s) des tableaux${retirees ? `, ${retirees} quittance(s) retirée(s) (refusées, annulées ou supprimées)` : ""}.`
+      + (alertes.length ? `\n\nNon modifiable :\n${alertes.slice(0, 12).join("\n")}` : "") };
   };
 
   /* Validation d'une quittance par un administrateur */
@@ -2947,9 +3151,10 @@ function useStore(userId) {
     setDocuments((p) => p.map((d) => (d.id === id ? { ...d, ...(approve
       ? { approval: "approuve", paidStamp: true, approvedBy: userId, approvalNote: note }
       : { approval: "refuse", paidStamp: false, approvedBy: userId, approvalNote: note }) } : d)));
-    const { error } = await supabase.from("documents").update(row).eq("id", id);
+    const { data: maj, error } = await supabase.from("documents").update(row).eq("id", id).select().single();
     if (error) return { error: error.message };
-    if (approve && doc?.docType === "quittance") return await applyReceiptToRent(doc);
+    /* Validée : le paiement est porté aux tableaux. Refusée : toute part déjà portée est retirée. */
+    if (doc?.docType === "quittance") return await syncQuittance(maj ? mDoc(maj) : { ...doc, approval: approve ? "approuve" : "refuse" }, { retirer: !approve });
     return {};
   };
 
@@ -3024,14 +3229,25 @@ function useStore(userId) {
       stamped_by: f.approval === "approuve" && f.paidStamp ? userId : null,
       stamped_at: f.approval === "approuve" && f.paidStamp ? new Date().toISOString() : null,
     };
+    let saved = null;
     if (f.id) {
-      const { error } = await supabase.from("documents").update(row).eq("id", f.id);
-      if (!error) setDocuments((p) => p.map((d) => (d.id === f.id ? { ...d, ...f, total } : d)));
-      return { error: error?.message, id: f.id };
+      const { data, error } = await supabase.from("documents").update(row).eq("id", f.id).select().single();
+      if (error) return { error: error.message, id: f.id };
+      saved = mDoc(data);
+      setDocuments((p) => p.map((d) => (d.id === f.id ? saved : d)));
+    } else {
+      const { data, error } = await supabase.from("documents").insert({ ...row, created_by: userId }).select().single();
+      if (error) return { error: error.message };
+      saved = mDoc(data);
+      setDocuments((p) => p.some((x) => x.id === data.id) ? p : [saved, ...p]);
     }
-    const { data, error } = await supabase.from("documents").insert({ ...row, created_by: userId }).select().single();
-    if (data) setDocuments((p) => p.some((x) => x.id === data.id) ? p : [mDoc(data), ...p]);
-    return { error: error?.message, id: data?.id };
+    /* Quittance : le recouvrement suit toujours la quittance telle qu'enregistrée
+       (validée → reportée ; modifiée → report corrigé ; non validée → rien de compté). */
+    if (saved.docType === "quittance") {
+      const r = await syncQuittance(saved);
+      if (r.error || r.warning) return { id: saved.id, warning: r.error || r.warning };
+    }
+    return { id: saved.id };
   };
   /* Proforma acceptée → document définitif (nouveau numéro DE / PS / FA).
      La proforma est conservée, marquée « convertie », pour la traçabilité. */
@@ -3056,10 +3272,34 @@ function useStore(userId) {
   const setDocumentStatus = async (id, status) => {
     const dd = documents.find((x) => x.id === id);
     if (status === "regle" && isProforma(dd)) return { error: "Une proforma ne peut pas être réglée : convertissez-la d'abord en document définitif." };
+    if (dd?.docType === "quittance" && status === "annule") {
+      const bloque = await quittanceFigee(dd);
+      if (bloque) return { error: `La quittance ${dd.ref} est comptée dans ${bloque}, arrêté pour virement : déverrouillez-le avant de l'annuler.` };
+    }
+    const { error } = await supabase.from("documents").update({ status }).eq("id", id);
+    if (error) return { error: error.message };
     setDocuments((p) => p.map((d) => (d.id === id ? { ...d, status } : d)));
-    await supabase.from("documents").update({ status }).eq("id", id);
+    if (dd?.docType === "quittance") { const r = await syncQuittance({ ...dd, status }); if (r.error || r.warning) return { error: r.error || r.warning }; }
+    return {};
+  };
+  /* Tableau arrêté pour virement qui compte cette quittance (sinon null) */
+  const quittanceFigee = async (d) => {
+    const { data } = await supabase.from("rent_lines").select("*").contains("receipts", [{ doc: d.id }]);
+    for (const l of (data || []).map(mRLine)) {
+      /* État du verrou lu en base, pas à l'écran (un autre poste a pu arrêter le tableau) */
+      const { data: pr } = await supabase.from("rent_periods").select("*").eq("id", l.periodId).maybeSingle();
+      if (pr?.locked) return `le tableau ${RENT_SCOPE[pr.scope]?.label.toLowerCase() || ""} de ${periodLabel(pr.period)}`;
+    }
+    return null;
   };
   const deleteDocument = async (id) => {
+    const dd = documents.find((x) => x.id === id);
+    if (dd?.docType === "quittance") {
+      const bloque = await quittanceFigee(dd);
+      if (bloque) return { error: `La quittance ${dd.ref} est comptée dans ${bloque}, arrêté pour virement : déverrouillez-le avant de la supprimer.` };
+      const r = await syncQuittance(dd, { retirer: true });
+      if (r.error) return { error: r.error };
+    }
     const { error } = await supabase.from("documents").delete().eq("id", id);
     if (!error) setDocuments((p) => p.filter((d) => d.id !== id));
     return { error: error?.message };
@@ -3084,7 +3324,7 @@ function useStore(userId) {
       savePeriod, deletePeriod, savePeriodContent, setPeriodStatus,
       saveRequest, decideRequest, deleteRequest,
       saveTaxRecord, deleteTaxRecord, saveComplaint, deleteComplaint, uploadAttachment,
-      uploadFolderFile, deleteFolderFile, approveDocument, applyReceiptToRent,
+      uploadFolderFile, deleteFolderFile, approveDocument, applyReceiptToRent, syncQuittance, rapprocherQuittances,
       saveCashEntry, deleteCashEntry, createHandover, answerHandover,
       applyAdvanceToPeriods, archiveTenant, deleteFormerTenant,
       saveAdvance, deleteAdvance, syncAdvancesForUnit, cascadeFrom, recalcAllCarried, lockPeriod, unlockPeriod,
@@ -4215,11 +4455,11 @@ function Documents({ store, me }) {
                     <button onClick={async () => {
                       const r = await actions.approveDocument(d.id, true);
                       if (r?.error) alert(r.error);
-                      else if (r?.skipped) alert(`Quittance validée. Report dans le recouvrement non effectué : ${r.skipped}.`);
+                      else if (r?.skipped || r?.warning) alert(`Quittance validée. Report dans le recouvrement : ${r.skipped || r.warning}.`);
                     }} className="kb-btn text-xs px-2.5 py-1.5" style={{ background: "#4F9E2A", color: "#fff" }}><ThumbsUp size={13} /> Valider</button>
                     <button onClick={async () => {
                       const note = prompt("Motif du refus :", "");
-                      if (note !== null) await actions.approveDocument(d.id, false, note);
+                      if (note !== null) { const r = await actions.approveDocument(d.id, false, note); if (r?.error || r?.warning) alert(r.error || r.warning); }
                     }} className="kb-btn text-xs px-2.5 py-1.5" style={{ background: "#fff", color: "#D81F26", border: "1px solid #D81F2655" }}><ThumbsDown size={13} /> Refuser</button>
                   </> : <Chip color="#C58A1B" dot>en attente</Chip>}
                 </div>
@@ -4281,7 +4521,7 @@ function Documents({ store, me }) {
                   <div className="flex gap-1">
                     <button onClick={() => setSheetId(d.id)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Imprimer / PDF"><Printer size={14} /></button>
                     <button onClick={() => setModal(d)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Modifier"><Pencil size={14} /></button>
-                    {sup && <button onClick={async () => { if (confirm(`Supprimer le document ${d.ref} ?`)) await actions.deleteDocument(d.id); }} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>}
+                    {sup && <button onClick={async () => { if (confirm(`Supprimer le document ${d.ref} ?`)) { const r = await actions.deleteDocument(d.id); if (r?.error) alert(r.error); } }} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>}
                   </div>
                 </div>
               </div>
@@ -6036,22 +6276,29 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
   const [keepRate, setKeepRate] = useState(false);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
 
-  /* Pré-remplissage depuis les lots du bâtiment */
+  /* Synchronisation avec les lots du bâtiment : ajoute les lots manquants,
+     met à jour le rattachement des lignes existantes, sans jamais effacer un
+     paiement, un arriéré ou une quittance déjà portés. */
+  const [infoLots, setInfoLots] = useState("");
   const loadFromUnits = () => {
     const us = units.filter((u) => u.propertyId === period.propertyId);
     if (!us.length) { setErr("Aucun lot enregistré pour ce bâtiment. Ajoutez-les dans Patrimoine."); return; }
-    setLines(us.map((u) => {
+    let ajouts = 0, rattaches = 0;
+    const res = lines.map((l) => {
+      const u = lotDeLigne(l, us);
+      if (u && !l.unitId) { rattaches += 1; return { ...l, unitId: u.id, unitLabel: l.unitLabel || u.label }; }
+      return l;
+    });
+    us.forEach((u) => {
+      if (res.some((l) => lotDeLigne(l, us)?.id === u.id)) return;
       const vacant = u.status === "vacant" || !(u.tenantName || "").trim();
-      const base = { unitId: u.id, unitLabel: u.label, tenantName: u.tenantName || "", tenantPhone: u.tenantPhone || "",
-        expected: vacant ? 0 : (u.rent || 0), collected: 0, paidAt: "", charges: 0,
-        vacant, comment: vacant ? "Lot vacant" : "" };
-      if (vacant) return base;
-      const rank = advanceRank(u, period.period);
-      if (!rank) return base;
-      return { ...base, collected: base.expected, paidAt: (u.advanceStart || u.leaseStart || "").slice(0, 10),
-        comment: `Avance versée à l'entrée (mois ${rank}/${u.advanceMonths})` };
-    }));
-    setErr("");
+      ajouts += 1;
+      res.push({ unitId: u.id, unitLabel: u.label, tenantName: vacant ? "" : u.tenantName || "", tenantPhone: u.tenantPhone || "",
+        expected: vacant ? 0 : (u.rent || 0), collected: 0, paidAt: "", charges: 0, carriedArrears: 0, receipts: [],
+        vacant, prepaid: false, months: 1, comment: vacant ? "Lot vacant" : "" });
+    });
+    setLines(res); setErr("");
+    setInfoLots(ajouts || rattaches ? `${ajouts} lot(s) ajouté(s), ${rattaches} ligne(s) rattachée(s) à leur lot. Les paiements déjà saisis sont conservés.` : "Tous les lots du bâtiment figurent déjà au tableau.");
   };
 
   const setLine = (i, k, v) => setLines((p) => p.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
@@ -6122,6 +6369,7 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
         </div>
       )}
       {infoDoublons && <p className="text-xs mb-3" style={{ color: "#3d7d20" }}><Check size={12} className="inline mb-0.5" /> {infoDoublons}</p>}
+      {infoLots && <p className="text-xs mb-3" style={{ color: "#1F5C82" }}><Check size={12} className="inline mb-0.5" /> {infoLots}</p>}
 
       {/* Tableau des locataires — chaque ligne est un instantané du mois */}
       <div className="overflow-x-auto -mx-1 mb-2">
@@ -6172,6 +6420,15 @@ function PeriodEditor({ period, property, owner, units, lines0, charges0, seed, 
                 <td className="px-1 py-1">
                   <input disabled={readOnly || vacant} type="number" min={0} step={5000} className="w-full px-2 py-1.5 rounded border text-xs text-right" style={inputStyle} value={vacant ? 0 : l.collected} onChange={(e) => setLine(i, "collected", e.target.value)} />
                   {Number(l.advanceIn) > 0 && <div className="text-[9px] text-right font-semibold" style={{ color: "#2E78A8" }} title="Avance encaissée ce mois et reversée au propriétaire">+ avance {fcfa(l.advanceIn)}</div>}
+                  {!vacant && (() => {
+                    const q = sommeQuittances(l) + partAvanceMensuelle(l); const c = Number(l.collected) || 0;
+                    const refs = lineReceipts(l).map((r) => r.ref).join(", ");
+                    if (!lineReceipts(l).length && c <= partAvanceMensuelle(l)) return null;
+                    const ecart = Math.abs(c - q) > 0.5;
+                    return <div className="text-[9px] text-right font-semibold" style={{ color: ecart ? "#B5171D" : "#3d7d20" }}
+                      title={lineReceipts(l).map((r) => `${r.ref} : ${fcfa(r.montant)}${r.nature === "arriere" ? ` (arriéré ${periodLabel(r.du)})` : ""}`).join("\n") || "Aucune quittance"}>
+                      {lineReceipts(l).length ? <>✓ {refs}</> : null}{ecart ? <> {c > q ? `· ${fcfa(c - q)} sans quittance` : `· quittances ${fcfa(q)}`}</> : null}</div>;
+                  })()}
                 </td>
                 <td className="px-1 py-1"><input disabled={readOnly} type="date" className="w-full px-2 py-1.5 rounded border text-xs" style={inputStyle} value={l.paidAt || ""} onChange={(e) => setLine(i, "paidAt", e.target.value)} /></td>
                 <td className="px-2 py-1 text-right font-bold tabular-nums" style={{ color: reste > 0 ? "#D81F26" : "var(--muted)" }}>{vacant ? "—" : fcfa(reste)}</td>
@@ -6685,8 +6942,14 @@ function Recouvrement({ store, me, userId }) {
   const [sheetId, setSheetId] = useState(null);
   const [arrearsId, setArrearsId] = useState(null);
   const [creator, setCreator] = useState(false);
+  const [controle, setControle] = useState(false);
+  const [recu, setRecu] = useState(null);
 
   const propById = useMemo(() => Object.fromEntries(properties.map((p) => [p.id, p])), [properties]);
+  /* Contrôle permanent : tableaux ↔ quittances ↔ fiches des lots */
+  const anomalies = useMemo(() => controleRecouvrement({ properties, units, rentPeriods, rentLines, documents: store.documents || [], advances: store.rentAdvances || [] }),
+    [properties, units, rentPeriods, rentLines, store.documents, store.rentAdvances]);
+  const alertesDe = (pid) => anomalies.filter((a) => a.periodId === pid && a.niveau !== "info");
   const ownerById = useMemo(() => Object.fromEntries(owners.map((o) => [o.id, o])), [owners]);
   const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
 
@@ -6725,6 +6988,27 @@ function Recouvrement({ store, me, userId }) {
       author={me} onBack={() => setConsolidated(null)} />;
   }
 
+  const recuModal = recu && <ReceiptModal initial={recu.initial} unit={recu.unit} property={recu.property} owner={ownerById[recu.property?.ownerId]} isAdminUser={isAdmin(me.role)}
+    onSave={async (f) => { const r = await actions.saveDocument(f); if (r.warning) alert(`Quittance enregistrée. Report dans le recouvrement : ${r.warning}`); return r; }}
+    onClose={() => setRecu(null)} />;
+  if (controle && !editor) {
+    return <>
+      <ControleRecouvrement anomalies={anomalies} isAdminUser={isAdmin(me.role)} onBack={() => setControle(false)}
+        onOpenPeriod={(pid) => { const p = rentPeriods.find((x) => x.id === pid); if (p) setEditor({ period: p, readOnly: !canEditPeriod(p) || p.locked }); }}
+        onEtablir={(a) => {
+          const l = rentLines.find((x) => x.id === a.lineId); const u = units.find((x) => x.id === (l?.unitId || a.unitId)) || null;
+          const prop = propById[a.propertyId];
+          setRecu({ unit: u || { tenantName: l?.tenantName, tenantPhone: l?.tenantPhone, rent: l?.expected, label: l?.unitLabel }, property: prop,
+            initial: { clientName: l?.tenantName || "", unitId: u?.id || "", periodIso: a.period, monthsCount: 1,
+              fields: { mode: "Espèces", paidOn: String(l?.paidAt || "").slice(0, 10) || isoDate(new Date()), dueOn: "" },
+              lines: [{ label: "Loyer", qty: 1, unit: "mois", price: Math.round(a.montant || 0) }] } });
+        }}
+        onReporter={(a) => { const d = (store.documents || []).find((x) => x.id === a.docId); return actions.syncQuittance(d || { id: a.docId, ref: a.ref, docType: "quittance" }, { retirer: !d || a.code === "quittance_retiree" }); }}
+        onRapprocher={actions.rapprocherQuittances} />
+      {recuModal}
+    </>;
+  }
+
   const sheet = rentPeriods.find((p) => p.id === sheetId);
   if (sheet) {
     return <PeriodSheet period={sheet} property={propById[sheet.propertyId]} owner={ownerById[propById[sheet.propertyId]?.ownerId]}
@@ -6746,10 +7030,11 @@ function Recouvrement({ store, me, userId }) {
   /* Consolidé du mois affiché */
   const global = list.reduce((acc, p) => {
     const t = periodTotals(rentLines.filter((l) => l.periodId === p.id), rentCharges.filter((c) => c.periodId === p.id), p.rate);
-    return { expected: acc.expected + t.expected, collected: acc.collected + t.collected,
+    return { expected: acc.expected + t.expected, collected: acc.collected + t.collected, toCollect: acc.toCollect + t.toCollect, advanceIn: acc.advanceIn + t.advanceIn,
       arrears: acc.arrears + t.arrears, fee: acc.fee + t.fee };
-  }, { expected: 0, collected: 0, arrears: 0, fee: 0 });
-  const globalRate = global.expected > 0 ? (global.collected / global.expected) * 100 : 0;
+  }, { expected: 0, collected: 0, toCollect: 0, advanceIn: 0, arrears: 0, fee: 0 });
+  /* Même règle que chaque tableau : sommes dues (loyers + arriérés reportés), hors avances futures */
+  const globalRate = global.toCollect > 0 ? Math.min(100, ((global.collected - global.advanceIn) / global.toCollect) * 100) : 0;
 
   const periodOptions = [...new Set(rentPeriods.map((p) => p.period))].sort().reverse();
 
@@ -6768,6 +7053,9 @@ function Recouvrement({ store, me, userId }) {
               <RefreshCw size={14} /> Mettre à jour les reports d'arriérés
             </button>
           )}
+          {(() => { const n = anomalies.filter((a) => a.niveau === "rouge").length, o = anomalies.filter((a) => a.niveau === "orange").length;
+            return <button onClick={() => setControle(true)} className="kb-btn text-sm" style={{ background: n ? "#B5171D" : o ? "#B7791F" : "#3d7d20", color: "#fff" }}
+              title="Confronte les tableaux aux quittances et à la fiche des lots"><ShieldCheck size={14} /> Contrôle{n + o ? ` : ${n ? `${n} à corriger` : ""}${n && o ? ", " : ""}${o ? `${o} à vérifier` : ""}` : " : tout concorde"}</button>; })()}
           <button onClick={() => setCreator(true)} className="kb-btn kb-btn-primary"><Plus size={16} /> Nouveau tableau</button>
         </div>
       </div>
@@ -6844,6 +7132,7 @@ function Recouvrement({ store, me, userId }) {
                     {p.locked && <Chip color="#1A1C20" bg="#E5E7EB"><Lock size={10} /> Arrêté pour virement{p.lockedAt ? ` le ${fr(p.lockedAt, { day: "2-digit", month: "2-digit", year: "numeric" })}` : ""}{p.lockedBy && memberById[p.lockedBy] ? ` par ${memberById[p.lockedBy].name}` : ""}</Chip>}
                     {!mine && !p.locked && <Chip color="#94A3B8"><Lock size={10} /> lecture</Chip>}
                     {doublonsLignes(lines).size > 0 && <Chip color="#8A4B00" bg="#FFF4E5"><AlertTriangle size={10} /> {doublonsLignes(lines).size} ligne(s) en double — à corriger</Chip>}
+                    {alertesDe(p.id).length > 0 && <button onClick={() => setControle(true)} title={alertesDe(p.id).map((a) => a.titre).join("\n")}><Chip color="#B5171D" bg="#FDECEC"><ShieldAlert size={10} /> {alertesDe(p.id).length} écart(s) au contrôle</Chip></button>}
                     {(p.unlockLog || []).length > 0 && <span className="text-[10px]" style={{ color: "#B7791F" }} title={(p.unlockLog || []).map((x) => `${fr(x.at, { day: "2-digit", month: "2-digit" })} — ${memberById[x.by]?.name || "?"} : ${x.reason}`).join("\n")}>déverrouillé {p.unlockLog.length} fois</span>}
                   </div>
                   <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>
@@ -6903,6 +7192,7 @@ function Recouvrement({ store, me, userId }) {
         sub="Créez le tableau du mois pour un bâtiment."
         action={<button onClick={() => setCreator(true)} className="kb-btn kb-btn-primary"><Plus size={15} /> Nouveau tableau</button>} />}
 
+      {recuModal}
       {creator && <CreatorModal properties={properties} scope={isAdmin(me.role) ? scope : "commercial"} existing={rentPeriods} isAdminUser={isAdmin(me.role)}
         onCreate={async (f) => { const r = await actions.savePeriod(f); if (!r.error && r.id) { setCreator(false); const np = { ...f, id: r.id, createdBy: userId }; setEditor({ period: np, readOnly: false }); } return r; }}
         onClose={() => setCreator(false)} />}
@@ -6925,6 +7215,69 @@ function Recouvrement({ store, me, userId }) {
           return await actions.savePeriodContent(p.id, lines, charges);
         }}
         onClose={() => setEditor(null)} />}
+    </div>
+  );
+}
+
+
+/* ══ Écran « Contrôle du recouvrement » ══ */
+const PORTEE_CONTROLE = { commercial: "Suivi commercial", comptable: "État comptable", quittances: "Quittances" };
+function ControleRecouvrement({ anomalies, isAdminUser, onBack, onOpenPeriod, onEtablir, onReporter, onRapprocher }) {
+  const [niveau, setNiveau] = useState("tous");
+  const [portee, setPortee] = useState("toutes");
+  const [q, setQ] = useState("");
+  const [busy, setBusy] = useState(false);
+  const liste = anomalies.filter((a) => (niveau === "tous" || a.niveau === niveau) && (portee === "toutes" || a.scope === portee)
+    && (!q.trim() || `${a.bien} ${a.nom || ""} ${a.lot || ""} ${a.titre} ${a.ref || ""}`.toLowerCase().includes(q.trim().toLowerCase())));
+  const compte = (n) => anomalies.filter((a) => a.niveau === n).length;
+  const groupes = [...new Set(liste.map((a) => a.bien || "Sans bâtiment"))];
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+        <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Tableaux de recouvrement</button>
+        {isAdminUser && <button disabled={busy} onClick={async () => { setBusy(true); const r = await onRapprocher(); setBusy(false); alert(r?.error || r?.message); }}
+          className="kb-btn kb-btn-primary text-sm" title="Reporte toutes les quittances validées et retire celles qui ont été refusées, annulées ou supprimées">
+          <RefreshCw size={14} /> {busy ? "Rapprochement en cours…" : "Rapprocher quittances et tableaux"}</button>}
+      </div>
+      <h1 className="text-xl font-bold">Contrôle du recouvrement</h1>
+      <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>Chaque tableau est confronté aux quittances, à la fiche des lots (patrimoine) et au mois précédent. Rien n'est corrigé d'office : chaque ligne indique quoi vérifier.</p>
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        {Object.entries(NIVEAUX_CONTROLE).map(([k, v]) => (
+          <button key={k} onClick={() => setNiveau(niveau === k ? "tous" : k)} className="rounded-xl border p-3 text-left" style={{ borderColor: niveau === k ? v.color : "var(--line)", background: niveau === k ? v.bg : "#fff" }}>
+            <p className="text-2xl font-bold tabular-nums" style={{ color: v.color }}>{compte(k)}</p>
+            <p className="text-xs" style={{ color: "var(--muted)" }}>{v.label}</p>
+          </button>))}
+      </div>
+      <div className="flex flex-wrap gap-2 mb-4">
+        <select aria-label="Portée du contrôle" value={portee} onChange={(e) => setPortee(e.target.value)} className="px-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle}>
+          <option value="toutes">Tous les tableaux et quittances</option>
+          {Object.entries(PORTEE_CONTROLE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <div className="relative flex-1 min-w-[180px]">
+          <Search size={15} className="absolute left-2.5 top-2.5 text-slate-400" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Bâtiment, locataire, lot, quittance…" className="w-full pl-8 pr-3 py-2 rounded-lg border text-sm bg-white" style={inputStyle} />
+        </div>
+      </div>
+      {!liste.length ? <EmptyState icon={CheckCircle2} title={anomalies.length ? "Aucun écart pour ce filtre" : "Aucun écart détecté"} sub="Tableaux, quittances et fiches des lots concordent." /> : groupes.map((g) => (
+        <div key={g} className="bg-white rounded-xl border mb-3" style={{ borderColor: "var(--line)" }}>
+          <p className="px-4 py-2.5 text-sm font-semibold border-b" style={{ borderColor: "var(--line)" }}>{g} <span className="font-normal" style={{ color: "var(--muted)" }}>· {liste.filter((a) => (a.bien || "Sans bâtiment") === g).length} point(s)</span></p>
+          <div className="divide-y" style={{ borderColor: "var(--line)" }}>
+            {liste.filter((a) => (a.bien || "Sans bâtiment") === g).map((a, i) => { const nv = NIVEAUX_CONTROLE[a.niveau];
+              return (
+                <div key={i} className="px-4 py-2.5 flex items-start gap-3 flex-wrap">
+                  <span className="text-[10px] font-bold rounded-full px-2 py-0.5 mt-0.5 shrink-0" style={{ background: nv.bg, color: nv.color }}>{nv.label.toUpperCase()}</span>
+                  <div className="flex-1 min-w-[16rem]">
+                    <p className="text-sm font-medium">{a.titre}</p>
+                    <p className="text-xs" style={{ color: "var(--muted)" }}>{[PORTEE_CONTROLE[a.scope], a.period ? periodLabel(a.period) : "", a.locked ? "tableau arrêté pour virement" : ""].filter(Boolean).join(" · ")} — {a.detail}</p>
+                  </div>
+                  <div className="flex gap-1.5 shrink-0">
+                    {a.periodId && <button onClick={() => onOpenPeriod(a.periodId)} className="kb-btn kb-btn-ghost text-xs">Ouvrir le tableau</button>}
+                    {a.code === "sans_quittance" && <button onClick={() => onEtablir(a)} className="kb-btn kb-btn-ghost text-xs">Établir la quittance</button>}
+                    {isAdminUser && ["quittance_non_reportee", "quittance_retiree"].includes(a.code) && <button onClick={async () => { const r = await onReporter(a); alert(r?.error || r?.warning || "Report mis à jour."); }} className="kb-btn kb-btn-ghost text-xs">{a.code === "quittance_retiree" ? "Retirer du tableau" : "Reporter"}</button>}
+                  </div>
+                </div>); })}
+          </div>
+        </div>))}
     </div>
   );
 }
@@ -9261,9 +9614,9 @@ function Locataires({ store, me, userId }) {
                     <button onClick={async () => {
                       const r = await actions.approveDocument(d.id, true);
                       if (r?.error) alert(r.error);
-                      else if (r?.skipped) alert(`Quittance validée. Report dans le recouvrement non effectué : ${r.skipped}.`);
+                      else if (r?.skipped || r?.warning) alert(`Quittance validée. Report dans le recouvrement : ${r.skipped || r.warning}.`);
                     }} className="kb-btn text-xs px-2.5 py-1.5" style={{ background: "#4F9E2A", color: "#fff" }}><ThumbsUp size={13} /> Valider</button>
-                    <button onClick={async () => { const n = prompt("Motif du refus :", ""); if (n !== null) await actions.approveDocument(d.id, false, n); }}
+                    <button onClick={async () => { const n = prompt("Motif du refus :", ""); if (n !== null) { const r = await actions.approveDocument(d.id, false, n); if (r?.error || r?.warning) alert(r.error || r.warning); } }}
                       className="kb-btn text-xs px-2.5 py-1.5" style={{ background: "#fff", color: "#D81F26", border: "1px solid #D81F2655" }}><ThumbsDown size={13} /> Refuser</button>
                   </>}
                 </div>
@@ -9471,7 +9824,7 @@ function Locataires({ store, me, userId }) {
                   {canEditReceipt(d) && <button onClick={() => setReceiptModal({ doc: d, unit: unitById[d.unitId], property: propById[d.propertyId] })} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400" title="Modifier la quittance"><Pencil size={14} /></button>}
                   {isAdmin(me.role) && (
                     <button onClick={async () => {
-                      if (!confirm(`Supprimer la quittance ${d.ref} (${d.clientName}, ${fcfa(d.total)}) ?\n\nSi elle avait été reportée dans un tableau de recouvrement, corrigez ce tableau manuellement.`)) return;
+                      if (!confirm(`Supprimer la quittance ${d.ref} (${d.clientName}, ${fcfa(d.total)}) ?\n\nSon paiement sera retiré des tableaux de recouvrement (si un tableau arrêté pour virement la compte, la suppression sera refusée).`)) return;
                       const r = await actions.deleteDocument(d.id);
                       if (r?.error) alert(r.error);
                     }} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500" title="Supprimer cette quittance (administrateur)"><Trash2 size={14} /></button>
@@ -9511,7 +9864,7 @@ function Locataires({ store, me, userId }) {
 
       {receiptModal && <ReceiptModal initial={receiptModal.doc} unit={receiptModal.unit} property={receiptModal.property}
         owner={ownerById[receiptModal.property?.ownerId]} isAdminUser={isAdmin(me.role)}
-        onSave={async (f) => { const r = await actions.saveDocument(f); if (!r.error && r.id) setSheetId(r.id); return r; }}
+        onSave={async (f) => { const r = await actions.saveDocument(f); if (r.warning) alert(`Quittance enregistrée. Report dans le recouvrement : ${r.warning}`); if (!r.error && r.id) setSheetId(r.id); return r; }}
         onClose={() => setReceiptModal(null)} />}
     </div>
   );
@@ -12553,7 +12906,7 @@ function Portefeuille({ store, me, userId }) {
 
           {receiptModal && <ReceiptModal unit={receiptModal.unit} property={receiptModal.property}
             owner={ownerById[receiptModal.property?.ownerId]} isAdminUser={isAdmin(me.role)}
-            onSave={async (f) => { const r = await actions.saveDocument(f); if (!r.error && r.id) setSheetId(r.id); return r; }}
+            onSave={async (f) => { const r = await actions.saveDocument(f); if (r.warning) alert(`Quittance enregistrée. Report dans le recouvrement : ${r.warning}`); if (!r.error && r.id) setSheetId(r.id); return r; }}
             onClose={() => setReceiptModal(null)} />}
 
           {myComplaints.length > 0 && (
@@ -13501,6 +13854,8 @@ export default function Root() {
 /* ====================== WORKSPACE ====================== */
 function Workspace({ userId }) {
   const store = useStore(userId);
+  /* Point d'accès réservé aux tests automatisés (inactif en production) */
+  if (typeof window !== "undefined" && window.__KB_TEST__) window.__KB_STORE__ = store;
   const { loading, departments, members, tasks, timeEntries, activeTimers, channels, channelMembers, messages,
     owners, properties, products, releases, releaseLines, quotes, units, requests, complaints, documents,
     cashEntries, handovers, formerTenants, prospects, prospected, weeklyReports, visits, folderFiles, rentPeriods, rentLines, actions } = store;
@@ -14152,4 +14507,5 @@ function Workspace({ userId }) {
 export { Modal, Field, Chip, StatCard, SectionCard, EmptyState, PrintPage, PrintHead, printSheet, fr, fcfa, isoDate, addDays, inputCls, inputStyle, MONTHS_FR,
   AGENCY, amountInWords, LetterEditor,
   /* outils du recouvrement et de l'impôt foncier (tests) */
-  fetchAll, doublonsLignes, retirerDoublons, seedPeriod, refCadastrale };
+  fetchAll, doublonsLignes, retirerDoublons, seedPeriod, refCadastrale,
+  ventilerQuittance, poserQuittance, controleRecouvrement, arrearsOf, paymentHistory, quittanceActive };
