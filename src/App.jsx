@@ -547,6 +547,32 @@ function poserQuittance(line, doc, parts) {
   return { ...line, receipts, collected, comment, paidAt, vacant: parts.length ? false : line.vacant };
 }
 
+/* Sort de chaque part d'une quittance selon les tableaux existants du bâtiment :
+   - « hors_suivi » : mois antérieur au premier tableau du bâtiment (ou bâtiment jamais suivi
+     et quittance ancienne) — rien n'est créé ni reporté, l'historique n'est pas réécrit ;
+   - « acquise_figee » : mois arrêté pour virement alors que l'argent était déjà encaissé
+     (payé au plus tard le jour de l'arrêté) — le tableau arrêté fait foi, rien n'est reporté
+     ailleurs (jamais de double compte) ;
+   - « a_reporter » : tableau ouvert, ou à créer ; un mois arrêté AVANT l'encaissement
+     (paiement tardif) est sauté vers le mois suivant, en règlement d'arriéré. */
+const RECENTE_JOURS = 62;
+function situationQuittance(doc, periodesBien, scope, maintenant = Date.now()) {
+  const tables = periodesBien.filter((p) => p.scope === scope);
+  const debut = periodesBien.map((p) => p.period).filter(Boolean).sort()[0] || null;
+  const recente = !!doc.createdAt && maintenant - doc.createdAt < RECENTE_JOURS * 86400000;
+  const le = String(doc.fields?.paidOn || doc.date || "").slice(0, 10);
+  const table = (m) => tables.find((p) => p.period === m);
+  const apresArret = (p) => !!p.lockedAt && !!le && le > String(p.lockedAt).slice(0, 10);
+  const v = ventilerQuittance(doc, (m) => { const p = table(m); return !!p?.locked && apresArret(p); });
+  const parts = v.parts.map((x) => {
+    const p = table(x.mois);
+    if ((debut && x.mois < debut) || (!debut && !recente)) return { ...x, sort: "hors_suivi", period: null };
+    if (p?.locked) return { ...x, sort: "acquise_figee", period: p };
+    return { ...x, sort: "a_reporter", period: p || null };
+  });
+  return { parts, futurs: v.futurs, debut };
+}
+
 /* ══════════════════════════════════════════════════════════════════════
    CONTRÔLE DU RECOUVREMENT
    Confronte les tableaux (commercial et comptable) aux quittances et à la
@@ -652,6 +678,7 @@ function controleRecouvrement({ properties = [], units = [], rentPeriods = [], r
     });
   });
   /* Quittances */
+  const horsSuiviParBien = {}; const dansArretes = {};
   documents.filter((d) => d.docType === "quittance").forEach((d) => {
     const q = { scope: "quittances", docId: d.id, ref: d.ref, propertyId: d.propertyId, bien: propById[d.propertyId]?.name || "", period: d.periodIso || "", nom: d.clientName || "" };
     if (d.approval === "en_attente") {
@@ -664,6 +691,21 @@ function controleRecouvrement({ properties = [], units = [], rentPeriods = [], r
     if (!d.unitId) out.push({ ...q, code: "quittance_sans_lot", niveau: "info", titre: `Quittance ${d.ref} non rattachée à un lot`, detail: "Le report se fait sur le nom du locataire : rattachez-la au lot pour éviter toute confusion." });
     const lignesQ = rentLines.filter((l) => scopeDe[l.periodId]?.scope === "comptable" && lineReceipts(l).some((r) => r.doc === d.id));
     let reporte = lignesQ.reduce((s, l) => s + lineReceipts(l).filter((r) => r.doc === d.id).reduce((a, r) => a + (Number(r.montant) || 0), 0), 0);
+    /* Parts d'une ancienne quittance : antérieures au suivi (rien à reporter) ou comprises dans un tableau arrêté */
+    const sit = situationQuittance(d, rentPeriods.filter((p) => p.propertyId === d.propertyId), "comptable", Date.parse(`${today}T12:00:00`));
+    sit.parts.forEach((x) => {
+      if (x.sort === "hors_suivi") { reporte += x.montant; (horsSuiviParBien[d.propertyId] = horsSuiviParBien[d.propertyId] || []).push(d.ref); }
+      if (x.sort === "acquise_figee" && !lineReceipts((lignesDe[x.period.id] || []).find((l) => lineReceipts(l).some((r) => r.doc === d.id))).length) {
+        reporte += x.montant;
+        const lots = units.filter((u) => u.propertyId === d.propertyId);
+        const ls = lignesDe[x.period.id] || [];
+        const ligne = (d.unitId && ls.find((l) => l.unitId === d.unitId)) || ls.find((l) => cleDoublon(d.clientName) && cleDoublon(l.tenantName) === cleDoublon(d.clientName))
+          || ls.find((l) => { const u = lotDeLigne(l, lots); return u && u.id === d.unitId; }) || null;
+        const k = `${x.period.id}|${ligne?.id || d.unitId || cleDoublon(d.clientName)}`;
+        const g = (dansArretes[k] = dansArretes[k] || { period: x.period, ligne, nom: d.clientName || ligne?.tenantName || "", refs: [], montant: 0 });
+        g.refs.push(d.ref); g.montant += x.montant;
+      }
+    });
     reporte += advances.filter((a) => a.receiptDocId === d.id).reduce((s, a) => s + (Number(a.amount) || 0), 0);
     /* Reports antérieurs à ce contrôle, figés dans un tableau arrêté (mention dans l'observation) */
     rentLines.filter((l) => { const p = scopeDe[l.periodId]; return p?.scope === "comptable" && p.locked && p.propertyId === d.propertyId && d.ref && String(l.comment || "").includes(d.ref) && !lineReceipts(l).some((r) => r.doc === d.id); })
@@ -671,6 +713,17 @@ function controleRecouvrement({ properties = [], units = [], rentPeriods = [], r
     if (reporte + 0.5 < Number(d.total))
       out.push({ ...q, code: "quittance_non_reportee", niveau: "rouge", titre: `Quittance ${d.ref} non reportée à l'état comptable`, detail: `${d.clientName || ""} — ${fcfa(d.total)} quittancés${reporte ? `, ${fcfa(reporte)} seulement reportés` : ", rien de reporté"}.` });
   });
+  /* Anciennes quittances comprises dans un tableau arrêté : le payé doit les couvrir */
+  Object.values(dansArretes).forEach((g) => {
+    const paye = Number(g.ligne?.collected) || 0;
+    if (paye + 0.5 < g.montant)
+      out.push({ scope: "comptable", periodId: g.period.id, period: g.period.period, propertyId: g.period.propertyId, bien: propById[g.period.propertyId]?.name || "", locked: true,
+        lineId: g.ligne?.id || null, nom: g.nom, lot: g.ligne?.unitLabel || "", code: "quittance_hors_arrete", niveau: "orange",
+        titre: `${g.nom} : ${g.refs.join(", ")} payée(s) avant l'arrêté de ${periodLabel(g.period.period)}, ${g.ligne ? `payé de ${fcfa(paye)} au tableau` : "absent du tableau"}`,
+        detail: `${fcfa(g.montant)} quittancés pour ce mois. Le tableau arrêté pour virement fait foi et n'est pas modifié d'office : si le paiement y manque, déverrouillez-le pour le corriger.` });
+  });
+  Object.entries(horsSuiviParBien).forEach(([pid, refs]) => out.push({ scope: "quittances", propertyId: pid, bien: propById[pid]?.name || "", period: "", code: "quittances_hors_suivi", niveau: "info",
+    titre: `${refs.length} quittance(s) antérieure(s) au début du suivi`, detail: `${refs.slice(0, 8).join(", ")}${refs.length > 8 ? "…" : ""} : mois sans tableau de recouvrement, non reportées (l'historique n'est pas réécrit).` }));
   return out.sort((a, b) => NIVEAUX_CONTROLE[a.niveau].ordre - NIVEAUX_CONTROLE[b.niveau].ordre || (a.bien || "").localeCompare(b.bien || "") || String(b.period).localeCompare(String(a.period)));
 }
 /* État attendu d'une ligne pour un mois donné, d'après les avances du lot */
@@ -1250,7 +1303,7 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "36.0";
+const APP_VERSION = "36.2";
 const APP_BUILD = "2026-11-09";
 
 /* ---- Papier à en-tête de l'agence ---- */
@@ -1580,6 +1633,8 @@ function quoteDeletionBlock(q, complaints) {
 
 /* Lignes d'une seule période : jamais tronquées, et bien plus rapide */
 /* Ligne d'un tableau (forme de l'application) → ligne en base */
+/* Lignes portant une quittance : filtre « contient » sur la colonne JSON receipts, en texte JSON */
+const filtreQuittance = (docId) => JSON.stringify([{ doc: docId }]);
 function ligneVersBase(l, i) {
   const vac = !!l.vacant || !((l.tenantName || "").trim());
   return { id: l.id || null, unit_id: l.unitId || null, unit_label: l.unitLabel || "",
@@ -3013,7 +3068,10 @@ function useStore(userId) {
     if (!doc?.id) return { skipped: "quittance inconnue" };
     const actif = !retirer && quittanceActive(doc) && !!doc.propertyId && !!doc.periodIso;
     /* Lignes qui portent déjà cette quittance */
-    const { data: dejaRows, error: e0 } = await supabase.from("rent_lines").select("*").contains("receipts", [{ doc: doc.id }]);
+    /* Filtre JSON : le tableau doit être transmis en texte JSON. Passé en tableau JavaScript,
+       supabase-js l'écrit comme un tableau PostgreSQL ({…}) et la base répond
+       « invalid input syntax for type json ». */
+    const { data: dejaRows, error: e0 } = await supabase.from("rent_lines").select("*").contains("receipts", filtreQuittance(doc.id));
     if (e0) return { error: /receipts/.test(e0.message) ? "Le report des quittances n'est pas encore installé : exécutez migration-v35.sql dans Supabase." : e0.message };
     const deja = (dejaRows || []).map(mRLine);
     const biens = [...new Set([doc.propertyId, ...deja.map((l) => rentPeriods.find((p) => p.id === l.periodId)?.propertyId)].filter(Boolean))];
@@ -3021,7 +3079,7 @@ function useStore(userId) {
     for (const b of biens) { const { data } = await supabase.from("rent_periods").select("*").eq("property_id", b); periodes = periodes.concat((data || []).map(mPeriod)); }
     const perById = Object.fromEntries(periodes.map((p) => [p.id, p]));
     for (const l of deja) if (!perById[l.periodId]) { const { data } = await supabase.from("rent_periods").select("*").eq("id", l.periodId).maybeSingle(); if (data) { const p = mPeriod(data); periodes.push(p); perById[p.id] = p; } }
-    const figees = []; const touches = {}; let done = 0; const crees = [];
+    const figees = []; const touches = {}; let done = 0; const crees = []; let horsSuivi = 0, dansArrete = 0;
     const unit = units.find((u) => u.id === doc.unitId);
     const cible = {};                                 // lineId -> { line, parts }
     const noter = (bien, sc, m) => { const k = `${bien}|${sc}`; if (!touches[k] || m < touches[k]) touches[k] = m; };
@@ -3034,11 +3092,13 @@ function useStore(userId) {
     let futurs = [];
     if (actif) {
       for (const sc of ["comptable", "commercial"]) {
-        const fige = (m) => periodes.some((p) => p.propertyId === doc.propertyId && p.scope === sc && p.period === m && p.locked);
-        const v = ventilerQuittance(doc, fige);
+        const v = situationQuittance(doc, periodes.filter((p) => p.propertyId === doc.propertyId), sc);
         if (sc === "comptable") futurs = v.futurs;
         v.parts.forEach((x) => voulues.add(`${sc}|${x.origine}|${x.du}`));
         for (const part of v.parts) {
+          /* Ancienne quittance : antérieure au suivi, ou déjà dans un tableau arrêté → rien n'est reporté ailleurs */
+          if (part.sort === "hors_suivi") { if (sc === "comptable") horsSuivi += 1; continue; }
+          if (part.sort === "acquise_figee") { if (sc === "comptable") dansArrete += 1; continue; }
           /* Mois d'origine arrêté et portant déjà cette quittance : rien à refaire */
           if (part.origine !== part.mois && (acquise(sc, part.origine, part.du) || (await mentionFigee(sc, part.origine)))) continue;
           if (acquise(sc, part.mois, part.du)) continue;
@@ -3112,7 +3172,7 @@ function useStore(userId) {
     for (const [k, depuis] of Object.entries(touches)) { const [bien, sc] = k.split("|"); await cascadeFrom(bien, sc, depuis); }
     const { data } = await fetchAll("rent_lines", { col: "position" });
     if (data) setRentLines(data.map(mRLine));
-    const res = { ok: true, months: done, created: crees };
+    const res = { ok: true, months: done, created: crees, horsSuivi, dansArrete };
     if (figees.length) res.warning = [...new Set(figees)].join(" ; ");
     return res;
   };
@@ -3124,11 +3184,13 @@ function useStore(userId) {
     const { data: docs } = await fetchAll("documents", { col: "doc_date", asc: true });
     const tous = (docs || []).map(mDoc).filter((d) => d.docType === "quittance");
     const actifs = new Set(tous.filter(quittanceActive).map((d) => d.id));
-    let reportees = 0, retirees = 0; const alertes = [];
+    let reportees = 0, retirees = 0, anterieures = 0, arretees = 0; const alertes = [];
     for (const d of tous.filter(quittanceActive)) {
       const r = await syncQuittance(d);
       if (r.error) return r;
       if (r.months) reportees += 1;
+      else if (r.dansArrete) arretees += 1;
+      else if (r.horsSuivi) anterieures += 1;
       if (r.warning) alertes.push(`${d.ref} : ${r.warning}`);
     }
     const { data: lignes } = await fetchAll("rent_lines", { col: "position" });
@@ -3136,6 +3198,8 @@ function useStore(userId) {
     (lignes || []).map(mRLine).forEach((l) => lineReceipts(l).forEach((r) => { if (!actifs.has(r.doc)) orphelins.set(r.doc, { id: r.doc, ref: r.ref, docType: "quittance" }); }));
     for (const d of orphelins.values()) { const r = await syncQuittance(d, { retirer: true }); if (!r.error) retirees += 1; if (r.warning) alertes.push(`${d.ref} : ${r.warning}`); }
     return { message: `${reportees} quittance(s) rapprochée(s) des tableaux${retirees ? `, ${retirees} quittance(s) retirée(s) (refusées, annulées ou supprimées)` : ""}.`
+      + (arretees ? `\n${arretees} quittance(s) déjà comprise(s) dans un tableau arrêté pour virement : laissée(s) telle(s) quelle(s), sans double compte.` : "")
+      + (anterieures ? `\n${anterieures} quittance(s) antérieure(s) au début du suivi du bâtiment : non reportée(s), l'historique n'est pas réécrit.` : "")
       + (alertes.length ? `\n\nNon modifiable :\n${alertes.slice(0, 12).join("\n")}` : "") };
   };
 
@@ -3152,9 +3216,20 @@ function useStore(userId) {
       ? { approval: "approuve", paidStamp: true, approvedBy: userId, approvalNote: note }
       : { approval: "refuse", paidStamp: false, approvedBy: userId, approvalNote: note }) } : d)));
     const { data: maj, error } = await supabase.from("documents").update(row).eq("id", id).select().single();
-    if (error) return { error: error.message };
+    if (error) { if (doc) setDocuments((p) => p.map((d) => (d.id === id ? doc : d))); return { error: error.message }; }
     /* Validée : le paiement est porté aux tableaux. Refusée : toute part déjà portée est retirée. */
-    if (doc?.docType === "quittance") return await syncQuittance(maj ? mDoc(maj) : { ...doc, approval: approve ? "approuve" : "refuse" }, { retirer: !approve });
+    if (doc?.docType === "quittance") {
+      const r = await syncQuittance(maj ? mDoc(maj) : { ...doc, approval: approve ? "approuve" : "refuse" }, { retirer: !approve });
+      if (r.error) {
+        /* Report impossible : la décision est annulée pour que quittance et tableaux restent d'accord */
+        const rb = await supabase.from("documents").update({ approval: doc.approval, paid_stamp: !!doc.paidStamp, approved_by: doc.approvedBy || null,
+          approved_at: doc.approvedAt || null, approval_note: doc.approvalNote || "", stamped_by: doc.stampedBy || null, stamped_at: doc.stampedAt || null }).eq("id", id);
+        if (rb.error) return { error: `Quittance ${doc.ref} ${approve ? "validée" : "refusée"}, mais le report dans le recouvrement a échoué (${r.error}). Terminez-le dans Recouvrement › Contrôle (« Reporter » ou « Rapprocher quittances et tableaux »).` };
+        setDocuments((p) => p.map((d) => (d.id === id ? doc : d)));
+        return { error: `${approve ? "Validation non enregistrée" : "Refus non enregistré"} : le report dans le recouvrement a échoué (${r.error}). La quittance reste en attente ; rien n'a été modifié.` };
+      }
+      return r;
+    }
     return {};
   };
 
@@ -3279,12 +3354,23 @@ function useStore(userId) {
     const { error } = await supabase.from("documents").update({ status }).eq("id", id);
     if (error) return { error: error.message };
     setDocuments((p) => p.map((d) => (d.id === id ? { ...d, status } : d)));
-    if (dd?.docType === "quittance") { const r = await syncQuittance({ ...dd, status }); if (r.error || r.warning) return { error: r.error || r.warning }; }
+    if (dd?.docType === "quittance") {
+      const r = await syncQuittance({ ...dd, status });
+      if (r.error) {
+        /* Report impossible : l'ancien statut est rétabli pour que quittance et tableaux restent d'accord */
+        await supabase.from("documents").update({ status: dd.status }).eq("id", id);
+        setDocuments((p) => p.map((d) => (d.id === id ? { ...d, status: dd.status } : d)));
+        return { error: `Statut non modifié : le report dans le recouvrement a échoué (${r.error}).` };
+      }
+      if (r.warning) return { error: r.warning };
+    }
     return {};
   };
   /* Tableau arrêté pour virement qui compte cette quittance (sinon null) */
   const quittanceFigee = async (d) => {
-    const { data } = await supabase.from("rent_lines").select("*").contains("receipts", [{ doc: d.id }]);
+    const { data, error } = await supabase.from("rent_lines").select("*").contains("receipts", filtreQuittance(d.id));
+    /* Lecture impossible : on refuse plutôt que de supposer qu'aucun tableau arrêté n'est concerné */
+    if (error) return `un tableau (vérification impossible : ${error.message})`;
     for (const l of (data || []).map(mRLine)) {
       /* État du verrou lu en base, pas à l'écran (un autre poste a pu arrêter le tableau) */
       const { data: pr } = await supabase.from("rent_periods").select("*").eq("id", l.periodId).maybeSingle();
