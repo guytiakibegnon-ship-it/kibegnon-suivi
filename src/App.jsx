@@ -13,6 +13,10 @@ import { supabase, AUTH_DOMAIN } from "./supabaseClient";
 /* Module Ressources humaines : chargé seulement à l'ouverture de l'onglet (fichier RH.jsx) */
 const RH = lazy(() => import("./RH.jsx"));
 const MonDossier = lazy(() => import("./RH.jsx").then((m) => ({ default: m.MonDossier })));
+/* Outils commerciaux (solvabilité, fiches par QR code, mandats, courriels) et formulaire public : chargés à la demande */
+const outil = (nom) => lazy(() => import("./Outils.jsx").then((m) => ({ default: m[nom] })));
+const Solvabilite = outil("Solvabilite"), Fiches = outil("Fiches"), Mandats = outil("Mandats"), Courriels = outil("Courriels");
+const FichePublique = lazy(() => import("./FichePublique.jsx"));
 
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -1303,8 +1307,8 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "36.2";
-const APP_BUILD = "2026-11-09";
+const APP_VERSION = "37.0";
+const APP_BUILD = "2026-11-12";
 
 /* ---- Papier à en-tête de l'agence ---- */
 const AGENCY = {
@@ -13932,6 +13936,9 @@ export default function Root() {
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => sub.subscription.unsubscribe();
   }, []);
+  /* Formulaire public de renseignements, ouvert par QR code : aucune connexion requise */
+  const fiche = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("fiche") : null;
+  if (fiche) return <Suspense fallback={<p style={{ padding: 24 }}>Chargement…</p>}><FichePublique kind={fiche} /></Suspense>;
   if (session === undefined) return <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg)" }}><p style={{ color: "var(--muted)" }}>Chargement…</p></div>;
   if (!session) return <><KbStyles /><Login /></>;
   return <><KbStyles /><Workspace userId={session.user.id} /></>;
@@ -13940,6 +13947,7 @@ export default function Root() {
 /* ====================== WORKSPACE ====================== */
 function Workspace({ userId }) {
   const store = useStore(userId);
+  const [outilPrefill, setOutilPrefill] = useState(null);   // données passées d'une fiche de renseignements à une étude ou à un mandat
   /* Point d'accès réservé aux tests automatisés (inactif en production) */
   if (typeof window !== "undefined" && window.__KB_TEST__) window.__KB_STORE__ = store;
   const { loading, departments, members, tasks, timeEntries, activeTimers, channels, channelMembers, messages,
@@ -14159,6 +14167,10 @@ function Workspace({ userId }) {
     { id: "plaintes", label: "Plaintes", icon: MessageCircleWarning, badge: openComplaints },
     { id: "devis", label: "Devis artisans", icon: FileText },
     { id: "documents", label: "Documents", icon: FileSignature },
+    { id: "mandats", label: "Mandats", icon: FileSignature },
+    { id: "solvabilite", label: "Solvabilité", icon: ShieldCheck },
+    { id: "fiches", label: "Fiches de renseignements", icon: ClipboardList },
+    { id: "courriels", label: "Courriels", icon: Mail },
     { id: "recouvrement", label: "Recouvrement", icon: Wallet },
     ...(isAdmin(me.role) ? [{ id: "caisse", label: "Caisse", icon: Banknote, badge: pendingHandovers }] : []),
     ...(canSupervise(me.role) || me.role === "comptable" ? [{ id: "impots", label: "Impôt foncier", icon: Landmark }] : []),
@@ -14175,10 +14187,10 @@ function Workspace({ userId }) {
 
   /* Menu latéral regroupé par domaine */
   const NAV_GROUPS = [
-    ["Pilotage", ["dashboard", "board", "planner", "messages", "notes", "time"]],
-    ["Gestion locative", ["patrimoine", "visites", "locataires", "plaintes", "devis"]],
+    ["Pilotage", ["dashboard", "board", "planner", "messages", "courriels", "notes", "time"]],
+    ["Gestion locative", ["patrimoine", "visites", "locataires", "plaintes", "devis", "mandats"]],
     ["Finances", ["recouvrement", "documents", "caisse", "impots"]],
-    ["Commercial", ["prospects", "nouveaux-biens", "rapport", "portefeuille"]],
+    ["Commercial", ["prospects", "solvabilite", "fiches", "nouveaux-biens", "rapport", "portefeuille"]],
     ["Logistique", ["transport", "produits"]],
     ["Ressources humaines", ["mon-dossier", "rh"]],
     ["Administration", ["team", "settings"]],
@@ -14327,6 +14339,14 @@ function Workspace({ userId }) {
         {view === "time" && TimeView()}
         {view === "team" && canSupervise(me.role) && Team()}
         {view === "settings" && isAdmin(me.role) && SettingsView()}
+        {["solvabilite", "fiches", "mandats", "courriels"].includes(view) && (
+          <Suspense fallback={<p className="text-sm py-10 text-center" style={{ color: "var(--muted)" }}>Chargement…</p>}>
+            {view === "solvabilite" && <Solvabilite store={store} me={me} prefill={outilPrefill?.type === "solvabilite" ? outilPrefill.data : null} onPrefillConsumed={() => setOutilPrefill(null)} />}
+            {view === "fiches" && <Fiches store={store} me={me} onEtude={(data) => { setOutilPrefill({ type: "solvabilite", data }); setView("solvabilite"); }} onMandat={(data) => { setOutilPrefill({ type: "mandat", data }); setView("mandats"); }} />}
+            {view === "mandats" && <Mandats store={store} me={me} prefill={outilPrefill?.type === "mandat" ? outilPrefill.data : null} onPrefillConsumed={() => setOutilPrefill(null)} />}
+            {view === "courriels" && <Courriels store={store} me={me} />}
+          </Suspense>
+        )}
         {view === "rh" && rhVisible && (
           <Suspense fallback={<p className="text-sm py-10 text-center" style={{ color: "var(--muted)" }}>Chargement du module Ressources humaines…</p>}>
             <RH store={store} me={me} acces={hrAcces} />
