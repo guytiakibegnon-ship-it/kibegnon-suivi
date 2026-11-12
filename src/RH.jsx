@@ -627,6 +627,13 @@ export function useHR(acces) {
       const r = f.id ? await one(supabase.from("hr_salary_scale").update(toScale(f)).eq("id", f.id)) : await one(supabase.from("hr_salary_scale").insert(toScale(f)));
       if (r.error) return r; await load(); return { message: "Grille mise à jour" };
     },
+    importScale: async (existantes) => {
+      const manquantes = grilleReference().filter((g) => !(existantes || []).some((r) => Number(r.categorie) === g.categorie && (r.echelon || "") === g.echelon));
+      if (!manquantes.length) return { message: "La grille contient déjà toutes les catégories de référence" };
+      const { error } = await supabase.from("hr_salary_scale").insert(manquantes.map(toScale));
+      if (error) return { error: error.message };
+      await load(); return { message: `${manquantes.length} ligne(s) ajoutée(s) à la grille, à confirmer sur l'arrêté officiel` };
+    },
     deleteScale: async (id) => {
       const { data, error } = await supabase.from("hr_salary_scale").delete().eq("id", id).select();
       if (error) return { error: error.message }; if (!data?.length) return { error: refuse };
@@ -1535,6 +1542,12 @@ export function calcBulletin({ emp, det, contract, period, params, scale, settin
   const plafT = Number(pval(params, "INDEMNITE_TRANSPORT", finM)?.plafond_exoneration) || 0;
   const plafProrata = Math.round(plafT * jp / 30);
   if (transport > plafProrata && plafT) gain("1950", "TRANSPORT (PART IMPOSABLE)", null, null, null, transport - plafProrata);
+  /* Prime de panier : exonérée dans la limite du plafond mensuel des Paramètres légaux (vide = sans plafond) */
+  const nbPaniers = Number(v.paniers) || 0; const pPanier = pval(params, "PRIME_PANIER", finM) || {};
+  const panierTotal = nbPaniers ? Math.round(nbPaniers * ((Number(pval(params, "SMIG_MENSUEL", finM)?.montant) || 0) / div) * (Number(pPanier.multiple_smig_horaire) || 0)) : 0;
+  const plafPanier = pPanier.plafond_exoneration === null || pPanier.plafond_exoneration === undefined || pPanier.plafond_exoneration === "" ? null : Number(pPanier.plafond_exoneration);
+  const panierExo = plafPanier === null ? panierTotal : Math.min(panierTotal, plafPanier);
+  if (panierTotal > panierExo) gain("1960", "PRIME DE PANIER (PART IMPOSABLE)", null, null, null, panierTotal - panierExo);
   /* Totaux soumis */
   const brut = lignes.filter((l) => l.soumis && l.gain).reduce((t, l) => t + l.gain, 0);
   out.brut = brut; out.imposable = brut;
@@ -1573,9 +1586,7 @@ export function calcBulletin({ emp, det, contract, period, params, scale, settin
   out.cotisationsPatronales += cmuPat;
   const indem = [];
   if (transport) indem.push({ code: RUB.transport, libelle: "PRIME DE TRANSPORT", nombre: jp, base: transportPlein, gain: Math.min(transport, plafT ? plafProrata : transport) });
-  const paniers = Number(v.paniers) || 0;
-  if (paniers) { const smigh = (Number(pval(params, "SMIG_MENSUEL", finM)?.montant) || 0) / div; const mult = Number(pval(params, "PRIME_PANIER", finM)?.multiple_smig_horaire) || 0;
-    indem.push({ code: RUB.panier, libelle: "PRIME DE PANIER", nombre: paniers, base: Math.round(smigh * mult), gain: Math.round(paniers * smigh * mult) }); }
+  if (nbPaniers && panierExo) indem.push({ code: RUB.panier, libelle: "PRIME DE PANIER", nombre: nbPaniers, base: Math.round(panierTotal / nbPaniers), gain: panierExo });
   fixes.filter((e) => e.nature === "indemnite").forEach((e, i) => indem.push({ code: String(7100 + i), libelle: e.libelle.toUpperCase(), nombre: e.prorata ? jp : null, base: Number(e.montant), gain: e.prorata ? prorata(Number(e.montant)) : Number(e.montant) }));
   lignes.filter((l) => l.section === "apres" && l.gain).forEach((l) => indem.push(l));
   for (let i = lignes.length - 1; i >= 0; i--) if (lignes[i].section === "apres" && lignes[i].gain) lignes.splice(i, 1);
@@ -1690,12 +1701,13 @@ export function parametresMoteur(params, date) {
     licenciement: lic?.tranches ? { ...ref.licenciement, ancienneteMinimaleAnnees: numOu(lic.anciennete_min_ans, 1),
       tranches: lic.tranches.map((t) => ({ jusquAnnee: t.jusqu_annee === null || t.jusqu_annee === undefined ? Infinity : Number(t.jusqu_annee), taux: Number(t.taux) / 100 })) } : ref.licenciement,
     gratification: grat ? { ...ref.gratification, coefficient: Number(grat.fraction_minimum_categoriel), prorataTemporis: grat.prorata !== false } : ref.gratification,
-    exonerations: { ...ref.exonerations, primeTransportPlafond: numOu(v("INDEMNITE_TRANSPORT")?.plafond_exoneration, ref.exonerations.primeTransportPlafond) },
+    exonerations: { ...ref.exonerations, primeTransportPlafond: numOu(v("INDEMNITE_TRANSPORT")?.plafond_exoneration, ref.exonerations.primeTransportPlafond),
+      primeDePanierPlafond: numOu(v("PRIME_PANIER")?.plafond_exoneration, Infinity) },
   };
 }
 
 /* Contre-calcul d'un bulletin par le moteur de référence, à partir des mêmes entrées */
-const CODES_RECALCULES = new Set(["100", "200", "1000", "1500", "1510", "1520", "1530", "1540", "1590", "1950"]);
+const CODES_RECALCULES = new Set(["100", "200", "1000", "1500", "1510", "1520", "1530", "1540", "1590", "1950", "1960"]);
 export function contreCalcul(args, res) {
   const { emp, det, contract, period, params, scale } = args;
   if (!contract || contract.type === "stage" || !res?.lignes?.length) return null;
@@ -1709,8 +1721,9 @@ export function contreCalcul(args, res) {
   const indemnites = [];
   if (transportTotal) indemnites.push({ code: RUB.transport, libelle: "Prime de transport", nature: "transport", montant: transportTotal,
     plafond: Math.round((pm.exonerations.primeTransportPlafond || 0) * jp / 30) });
-  L.filter((l) => l.section === "apres" && l.gain && l.code !== RUB.transport).forEach((l) => indemnites.push({ code: l.code, libelle: l.libelle, montant: l.gain,
-    nature: l.code === RUB.panier ? "panier" : "autre", plafond: Infinity }));
+  const panierTot = L.filter((l) => [RUB.panier, "1960"].includes(l.code)).reduce((t, l) => t + (l.gain || 0), 0);
+  if (panierTot) indemnites.push({ code: RUB.panier, libelle: "Prime de panier", nature: "panier", montant: panierTot, plafond: pm.exonerations.primeDePanierPlafond });
+  L.filter((l) => l.section === "apres" && l.gain && l.code !== RUB.transport && l.code !== RUB.panier).forEach((l) => indemnites.push({ code: l.code, libelle: l.libelle, montant: l.gain, nature: "autre", plafond: Infinity }));
   const entree = {
     params: pm, brouillon: true,
     salarie: {
@@ -1796,8 +1809,8 @@ export function ecartsParametres(params, date) {
   const libAnc = (a) => `${lireP(a.tauxApres2Ans)} après ${a.debutAns ?? 2} ans, +${lireP(a.tauxParAnneeSupplementaire)} par an, ${a.anneeMax} ans au plus`;
   add("Prime d'ancienneté", "PRIME_ANCIENNETE", libAnc(app.anciennete), libAnc(ref.anciennete));
   add("Prime de transport — plafond d'exonération", "INDEMNITE_TRANSPORT", lireF(app.exonerations.primeTransportPlafond), lireF(ref.exonerations.primeTransportPlafond), avec("INDEMNITE_TRANSPORT", { plafond_exoneration: ref.exonerations.primeTransportPlafond }));
-  lignes.push({ libelle: "Prime de panier — plafond d'exonération", code: "PRIME_PANIER", application: "exonérée sans plafond", moteur: lireF(ref.exonerations.primeDePanierPlafond), ecart: true, proposition: null, aValider: !!ref.exonerations.primeDePanier_aValider,
-    note: "Tant que ce plafond n'est pas confirmé sur texte, l'application garde l'exonération totale de la prime de panier." });
+  add("Prime de panier — plafond d'exonération mensuel", "PRIME_PANIER", lireF(app.exonerations.primeDePanierPlafond), lireF(ref.exonerations.primeDePanierPlafond), avec("PRIME_PANIER", { plafond_exoneration: ref.exonerations.primeDePanierPlafond }), !!ref.exonerations.primeDePanier_aValider,
+    "Plafond modifiable dans les paramètres ; vide = prime entièrement exonérée.");
   add("Gratification — fraction du minimum catégoriel", "GRATIFICATION", lireP(app.gratification.coefficient), lireP(ref.gratification.coefficient), avec("GRATIFICATION", { fraction_minimum_categoriel: ref.gratification.coefficient }), !!ref.gratification.aValider);
   const libLic = (l) => l.tranches.map((t) => `${lireP(t.taux)}${t.jusquAnnee === Infinity ? " au-delà" : ` jusqu'à ${t.jusquAnnee} ans`}`).join(" · ");
   add("Indemnité de licenciement", "INDEMNITE_LICENCIEMENT", libLic(app.licenciement), libLic(ref.licenciement));
@@ -2206,6 +2219,15 @@ function EmployeeModal({ initial, initialDet, employees, members, departments, o
 }
 
 /* Contrat : création ou correction d'une erreur de saisie */
+/* Catégories (1 à 11) et échelons (A, B, C) de la classification conventionnelle, complétés par ceux de la grille saisie */
+export const CATEGORIES_CONV = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+export const ECHELONS_CONV = ["A", "B", "C"];
+export const categoriesPossibles = (scale, actuelle) => [...new Set([...CATEGORIES_CONV, ...(scale || []).map((r) => Number(r.categorie)), Number(actuelle) || 1])].filter((c) => c >= 1).sort((a, b) => a - b);
+export const echelonsPossibles = (scale, categorie, actuel) => [...new Set([...ECHELONS_CONV, ...(scale || []).filter((r) => Number(r.categorie) === Number(categorie)).map((r) => r.echelon), actuel || ""])].filter(Boolean).sort();
+/* Grille de référence du moteur de paie (commerce, barème 2023) au format de la grille de l'application */
+export const grilleReference = () => GRILLES_CATEGORIELLES.commerce.categories.map((c) => { const m = /^(\d+)([A-Z]?)$/.exec(c.code) || [];
+  return { categorie: Number(m[1]), echelon: m[2] || "", libelle: "", qualification: c.cadre ? "cadre" : c.college === "maitrise" ? "maitrise" : "employe_mensuel", salaireMinimum: c.base,
+    secteur: GRILLES_CATEGORIELLES.commerce.libelle, dateEffet: GRILLES_CATEGORIELLES.commerce.dateEffet, dateFin: "", source: GRILLES_CATEGORIELLES.commerce.source, valide: false }; });
 function ContractModal({ initial, emp, params, scale, autres = [], onSave, onClose, embauche = null }) {
   const today = todayIso();
   const [f, setF] = useState(() => {
@@ -2300,9 +2322,10 @@ function ContractModal({ initial, emp, params, scale, autres = [], onSave, onClo
       <div className="grid sm:grid-cols-3 gap-x-3">
         <Field label="Qualification professionnelle"><select className={inputCls} style={inputStyle} value={f.qualification} onChange={(e) => changeQualif(e.target.value)}>
           {Object.entries(QUALIFICATIONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
-        <Field label="Catégorie *"><input type="number" min="1" className={inputCls} style={inputStyle} value={f.categorie} onChange={(e) => changeCat("categorie", e.target.value)} /></Field>
-        <Field label="Échelon"><input className={inputCls} style={inputStyle} list="rh-echelons" value={f.echelon} onChange={(e) => changeCat("echelon", e.target.value)} />
-          <datalist id="rh-echelons">{echelons.map((x) => <option key={x} value={x} />)}</datalist></Field>
+        <Field label="Catégorie *"><select className={inputCls} style={inputStyle} value={String(f.categorie)} onChange={(e) => changeCat("categorie", e.target.value)}>
+          {categoriesPossibles(scale, f.categorie).map((c) => <option key={c} value={c}>{c}</option>)}</select></Field>
+        <Field label="Échelon"><select className={inputCls} style={inputStyle} value={f.echelon || ""} onChange={(e) => changeCat("echelon", e.target.value)}>
+          <option value="">— sans échelon —</option>{echelonsPossibles(scale, f.categorie, f.echelon).map((x) => <option key={x} value={x}>{x}</option>)}</select></Field>
         <Field label="Mode de paiement"><select className={inputCls} style={inputStyle} value={f.modePaiement} onChange={(e) => set("modePaiement", e.target.value)}>
           {Object.entries(MODES_PAIEMENT).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
         {stage ? <Field label="Indemnité forfaitaire mensuelle (FCFA) *" hint="Le stagiaire n'est pas salarié (Code du travail, art. 13.17)">
@@ -2482,10 +2505,10 @@ function ParamModal({ mode, param, proposition, onNewVersion, onFix, onClose }) 
     if (r?.error) setErr(r.error); else onClose(r);
   };
   return (
-    <Modal title={`${mode === "new" ? "Nouvelle version" : "Corriger"} — ${param.libelle}`} onClose={() => onClose()} wide>
+    <Modal title={`${mode === "new" ? "Nouvelle valeur à partir d'une date" : "Modifier"} — ${param.libelle}`} onClose={() => onClose()} wide>
       {mode === "new"
         ? <WarnBox tone="info">La version actuelle reste appliquée jusqu'à la veille de la date d'effet ; les périodes passées ne sont jamais recalculées avec la nouvelle valeur.</WarnBox>
-        : <WarnBox>La correction remplace la valeur de la version en vigueur depuis le {fmt(param.dateEffet)}, y compris pour les périodes passées. À réserver aux erreurs de saisie (tracé au journal).</WarnBox>}
+        : <WarnBox tone="info">La valeur est modifiée pour toute la période en vigueur depuis le {fmt(param.dateEffet)}. Les bulletins déjà validés ne changent pas ; les brouillons sont recalculés. Si le taux change à une date précise (nouveau texte), utilisez plutôt « Nouvelle valeur à partir d'une date ». Modification tracée au journal.</WarnBox>}
       {proposition && <WarnBox tone="info">Valeur proposée par le moteur de paie de référence. Vérifiez-la sur vos bordereaux ou le texte officiel avant d'enregistrer ; les bulletins validés ne sont jamais recalculés.</WarnBox>}
       {mode === "new" && <Field label="Date d'effet *"><input type="date" className={inputCls} style={inputStyle} value={dateEffet} onChange={(e) => setDateEffet(e.target.value)} /></Field>}
       <div className="flex justify-between items-center mb-2"><p className="text-sm font-semibold">Valeur</p>
@@ -2514,8 +2537,10 @@ function ScaleModal({ initial, onSave, onClose }) {
   return (
     <Modal title={f.id ? "Modifier une ligne de la grille" : "Nouvelle ligne de la grille"} onClose={() => onClose()}>
       <div className="grid sm:grid-cols-2 gap-x-3">
-        <Field label="Catégorie *"><input type="number" min="1" className={inputCls} style={inputStyle} value={f.categorie} onChange={(e) => set("categorie", e.target.value)} /></Field>
-        <Field label="Échelon"><input className={inputCls} style={inputStyle} value={f.echelon} onChange={(e) => set("echelon", e.target.value)} /></Field>
+        <Field label="Catégorie *"><select className={inputCls} style={inputStyle} value={String(f.categorie)} onChange={(e) => set("categorie", e.target.value)}>
+          <option value="">— choisir —</option>{categoriesPossibles([], f.categorie).map((c) => <option key={c} value={c}>{c}</option>)}</select></Field>
+        <Field label="Échelon"><select className={inputCls} style={inputStyle} value={f.echelon || ""} onChange={(e) => set("echelon", e.target.value)}>
+          <option value="">— sans échelon —</option>{echelonsPossibles([], f.categorie, f.echelon).map((x) => <option key={x} value={x}>{x}</option>)}</select></Field>
         <Field label="Qualification"><select className={inputCls} style={inputStyle} value={f.qualification} onChange={(e) => set("qualification", e.target.value)}>
           {Object.entries(QUALIFICATIONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
         <Field label="Salaire minimum mensuel (FCFA)" hint="Laisser vide si inconnu : la ligne sera signalée."><input type="number" min="0" className={inputCls} style={inputStyle} value={f.salaireMinimum} onChange={(e) => set("salaireMinimum", e.target.value)} /></Field>
@@ -3026,8 +3051,8 @@ function ParamsTab({ hr, admin, today, on }) {
                 {versions.length > 1 && <button onClick={() => setOuverts((x) => ({ ...x, [code]: !x[code] }))} className="kb-btn kb-btn-ghost text-xs">
                   {ouverts[code] ? <ChevronDown size={13} /> : <ChevronRight size={13} />} Historique ({versions.length} versions)</button>}
                 {admin && <>
-                  <button onClick={() => on.param("new", versions[0])} className="kb-btn kb-btn-ghost text-xs"><Plus size={13} /> Nouvelle version</button>
-                  <button onClick={() => on.param("fix", p)} className="kb-btn kb-btn-ghost text-xs"><Pencil size={13} /> Corriger</button>
+                  <button onClick={() => on.param("fix", p)} className="kb-btn kb-btn-primary text-xs"><Pencil size={13} /> Modifier la valeur</button>
+                  <button onClick={() => on.param("new", versions[0])} className="kb-btn kb-btn-ghost text-xs"><Plus size={13} /> Nouvelle valeur à partir d'une date</button>
                   {!p.valide && <button onClick={() => on.validate(p)} className="kb-btn kb-btn-primary text-xs"><Check size={13} /> Confirmer la valeur</button>}
                 </>}
               </div>
@@ -3048,7 +3073,9 @@ function GrilleTab({ hr, admin, on }) {
   const rows = [...hr.scale].sort((a, b) => a.categorie - b.categorie || (a.echelon < b.echelon ? -1 : a.echelon > b.echelon ? 1 : a.dateEffet < b.dateEffet ? 1 : -1));
   return (
     <SectionCard title="Grille des salaires minimums par catégorie" icon={Layers} pad={false}
-      action={admin && <button onClick={() => on.scale({})} className="kb-btn kb-btn-primary text-xs"><Plus size={13} /> Ajouter une ligne</button>}>
+      action={admin && <span className="flex gap-1.5">
+        <button onClick={() => on.importScale()} className="kb-btn kb-btn-ghost text-xs" title="Ajoute les catégories manquantes, à confirmer sur l'arrêté officiel"><Layers size={13} /> Charger la grille de référence (commerce 2023)</button>
+        <button onClick={() => on.scale({})} className="kb-btn kb-btn-primary text-xs"><Plus size={13} /> Ajouter une ligne</button></span>}>
       <p className="text-xs px-4 pt-3" style={{ color: "var(--muted)" }}>Catégorie et qualification sont deux informations distinctes. Les catégories sans montant restent signalées dans les alertes tant que la grille officielle n'est pas saisie.</p>
       {rows.length === 0 ? <EmptyState icon={Layers} title="Grille vide" /> : (
         <div className="overflow-x-auto"><table className="w-full text-sm mt-2">
@@ -3882,6 +3909,10 @@ function BulletinSheet({ slip, period, settings, sautApres }) {
         </tbody>
       </table>
       <p className="mt-1.5"><b>Net à payer :</b> {montantEnLettres(slip.netAPayer)}.</p>
+      <table className="w-full border-collapse mt-2" style={{ breakInside: "avoid", pageBreakInside: "avoid" }}><tbody><tr>
+        <td className="px-2 pt-1 align-top" style={{ ...box, width: "50%", height: 64 }}><p className="font-semibold">Signature de l'employeur</p><p style={{ color: "#5B6573" }}>{employeur.raisonSociale} — cachet et signature</p></td>
+        <td className="px-2 pt-1 align-top" style={{ ...box, width: "50%", height: 64 }}><p className="font-semibold">Signature de l'employé(e)</p><p style={{ color: "#5B6573" }}>{e.nom} — reçu mon bulletin de paie, le ……/……/…………</p></td>
+      </tr></tbody></table>
       <div className="mt-1.5 pt-1 text-[8.5px] leading-snug" style={{ color: "#4B5563", borderTop: "1px solid #D5DBE3" }}>
         <p>Bulletin individuel de paie délivré au moment du paiement (Code du travail, art. 32.5). Charges salariales : ITS (ordonnance n°2023-719), retraite CNPS, CMU ; charges patronales : retraite, prestations familiales et maternité, accidents du travail, CMU, contribution employeur, taxe d'apprentissage et taxe FPC.</p>
         <p>L'acceptation sans protestation ni réserve de ce bulletin ne vaut pas renonciation au paiement du salaire, des indemnités et accessoires dus (Code du travail, art. 32.6). L'action en paiement du salaire se prescrit par deux ans (art. 33.5) : conservez ce bulletin.</p>
@@ -3962,7 +3993,8 @@ function MoteurPaieCard({ hr, admin, on, today, onControleAnnuel }) {
             <td className="px-3 py-2" style={{ color: l.ecart ? "#8A6212" : undefined }}>{l.application}</td>
             <td className="px-3 py-2">{l.moteur}{l.aValider && <span className="block text-[10px]" style={{ color: "#B7791F" }}>valeur du moteur elle-même à valider</span>}{l.note && <span className="block text-[11px]" style={{ color: "var(--muted)" }}>{l.note}</span>}</td>
             <td className="px-3 py-2 text-right whitespace-nowrap">{!l.ecart ? <Chip color="#4F9E2A">identique</Chip>
-              : admin && l.proposition && l.param ? <button onClick={() => on.param("fix", l.param, l.proposition)} className="kb-btn kb-btn-ghost text-xs">Reprendre la valeur du moteur</button> : <Chip color="#8A6212">à arbitrer</Chip>}</td>
+              : admin && l.proposition && l.param ? <button onClick={() => on.param("fix", l.param, l.proposition)} className="kb-btn kb-btn-ghost text-xs">Reprendre la valeur du moteur</button> : <Chip color="#8A6212">à arbitrer</Chip>}
+              {admin && l.param && <button onClick={() => on.param("fix", l.param)} className="kb-btn kb-btn-ghost text-xs ml-1" aria-label={`Modifier ${l.libelle}`}><Pencil size={12} /> Modifier</button>}</td>
           </tr>))}
           {!vus.length && <tr><td colSpan={4} className="px-3 py-3 text-sm" style={{ color: "#4F9E2A" }}>Tous les paramètres de paie sont identiques à la référence du moteur.</td></tr>}</tbody>
       </table></div>
@@ -5780,6 +5812,7 @@ export default function RH({ store, me, acces }) {
     etatSolde: (abs) => setPrint({ kind: "solde-conges", absence: abs }),
     validate: async (p) => say(await a.validateParam(p, me.id)),
     scale: (r) => setModal({ kind: "scale", initial: r }),
+    importScale: async () => { const r = await a.importScale(hr.scale); say(r?.error ? { error: r.error } : r); },
     newDoc: (emp) => setModal({ kind: "choose-doc", emp }),
     fiche: (emp) => setFiche(emp.id),
     docAvenant: (amend, ctr) => {
