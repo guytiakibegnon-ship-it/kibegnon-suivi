@@ -203,8 +203,7 @@ export const PARAMS_PAIE = [
       prestationsFamiliales: 0.05,
       assuranceMaternite: 0.0075,
       accidentTravailDefaut: 0.02,        // fourchette légale 2 % à 5 %
-      plafondPF_AT: 70000,                // À CONFRONTER à l'appel de cotisation
-      plafondPF_AT_aValider: true,
+      plafondPF_AT: 75000,                // plafond aligné sur le SMIG depuis le 01/01/2023 (confirmé par l'entreprise)
     },
 
     /* --- CMU : forfait 1 000 F/personne couverte, réparti par moitié ------ */
