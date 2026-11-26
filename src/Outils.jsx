@@ -11,7 +11,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { AlertTriangle, ArrowLeft, Check, Copy, ExternalLink, FileSignature, Mail, Pencil, Plus, Printer, QrCode, RefreshCw, Search, Send, ShieldCheck, Trash2, UserPlus } from "lucide-react";
 import { supabase } from "./supabaseClient";
-import { Modal, Field, Chip, StatCard, SectionCard, EmptyState, PrintPage, PrintHead, printSheet, fcfa, inputCls, inputStyle, AGENCY, amountInWords, LOGO, LOGO_AGREMENT } from "./App.jsx";
+import { Modal, Field, Chip, StatCard, SectionCard, EmptyState, PrintPage, PrintHead, printSheet, fcfa, inputCls, inputStyle, AGENCY, amountInWords, LOGO, LOGO_AGREMENT, nomFichier } from "./App.jsx";
 import { evaluerSolvabilite, antecedentsAgence, STATUTS_PRO, HISTORIQUES, GARANTIES, PIECES_HAB, PIECES_PRO, VERDICTS } from "./solvabilite.js";
 import { FICHES } from "./fiches-def.js";
 import { MANDATS, defautsMandat, redigerMandat, blocsMandat, echeanceMandat, dateLongue } from "./mandats-modeles.js";
@@ -164,7 +164,7 @@ function EtudeSolvabilite({ initial, store, me, admin, onClose }) {
   if (apercu) return (
     <div>
       <Barre onBack={() => setApercu(false)}><button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button></Barre>
-      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl" style={{ borderColor: "var(--line)" }}><FicheSolvabilite f={f} r={r} bien={bien} auteur={me.name} /></PrintPage>
+      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl" style={{ borderColor: "var(--line)" }} nom={nomFichier(`Étude de solvabilité ${f.ref || ""}`, f.candidat, f.usage === "professionnel" ? "bail professionnel" : "bail d'habitation")}><FicheSolvabilite f={f} r={r} bien={bien} auteur={me.name} /></PrintPage>
     </div>
   );
   return (
@@ -187,18 +187,18 @@ function EtudeSolvabilite({ initial, store, me, admin, onClose }) {
               <Field label="Bâtiment demandé"><Sel value={f.propertyId} onChange={(v) => setF((x) => ({ ...x, propertyId: v, unitId: "" }))} vide="— hors patrimoine ou à préciser —" options={store.properties.map((p) => [p.id, p.name])} /></Field>
               {f.propertyId ? <Field label="Lot"><Sel value={f.unitId} onChange={choisirLot} vide="— choisir —" options={lots.map((u) => [u.id, `${u.label}${u.rent ? ` — ${fcfa(u.rent)}` : ""}`])} /></Field>
                 : <Field label="Bien (texte libre)"><Txt value={f.bienLibre} onChange={(v) => set("bienLibre", v)} placeholder="Ex. : 3 pièces, Angré 8e tranche" /></Field>}
-              <Field label="Loyer mensuel (FCFA) *"><Num value={f.loyer} onChange={(v) => set("loyer", v)} /></Field>
-              <Field label="Charges mensuelles (FCFA)"><Num value={f.charges} onChange={(v) => set("charges", v)} /></Field>
+              <Field label="Loyer mensuel (F CFA) *"><Num value={f.loyer} onChange={(v) => set("loyer", v)} /></Field>
+              <Field label="Charges mensuelles (F CFA)"><Num value={f.charges} onChange={(v) => set("charges", v)} /></Field>
             </div>
             {antecedents.map((a) => <Avis key={a.texte} tone="info">{a.texte}</Avis>)}
           </SectionCard>
           {!pro ? (
             <SectionCard title="Revenus et situation" icon={ShieldCheck}>
               <div className="grid sm:grid-cols-2 gap-x-3">
-                <Field label="Revenu net mensuel du candidat (FCFA)" hint="Salaire net, pension ou revenu moyen justifié"><Num value={f.revenu} onChange={(v) => set("revenu", v)} /></Field>
-                <Field label="Autres revenus réguliers (FCFA)"><Num value={f.autresRevenus} onChange={(v) => set("autresRevenus", v)} /></Field>
-                <Field label="Revenu du conjoint ou du colocataire signataire (FCFA)"><Num value={f.revenuConjoint} onChange={(v) => set("revenuConjoint", v)} /></Field>
-                <Field label="Crédits et autres engagements mensuels (FCFA)"><Num value={f.engagements} onChange={(v) => set("engagements", v)} /></Field>
+                <Field label="Revenu net mensuel du candidat (F CFA)" hint="Salaire net, pension ou revenu moyen justifié"><Num value={f.revenu} onChange={(v) => set("revenu", v)} /></Field>
+                <Field label="Autres revenus réguliers (F CFA)"><Num value={f.autresRevenus} onChange={(v) => set("autresRevenus", v)} /></Field>
+                <Field label="Revenu du conjoint ou du colocataire signataire (F CFA)"><Num value={f.revenuConjoint} onChange={(v) => set("revenuConjoint", v)} /></Field>
+                <Field label="Crédits et autres engagements mensuels (F CFA)"><Num value={f.engagements} onChange={(v) => set("engagements", v)} /></Field>
                 <Field label="Personnes au foyer" hint="Sert au calcul du reste pour vivre, pas à la note du candidat lui-même"><Num value={f.personnes} onChange={(v) => set("personnes", v)} /></Field>
                 <Field label="Activité"><Sel value={f.statut} onChange={(v) => set("statut", v)} options={STATUTS_PRO} /></Field>
                 <Field label="Ancienneté dans l'emploi ou l'activité (mois)"><Num value={f.ancienneteMois} onChange={(v) => set("ancienneteMois", v)} /></Field>
@@ -209,9 +209,9 @@ function EtudeSolvabilite({ initial, store, me, admin, onClose }) {
           ) : (
             <SectionCard title="Activité de l'entreprise" icon={ShieldCheck}>
               <div className="grid sm:grid-cols-2 gap-x-3">
-                <Field label="Chiffre d'affaires mensuel moyen (FCFA)"><Num value={f.ca} onChange={(v) => set("ca", v)} /></Field>
-                <Field label="Charges d'exploitation mensuelles, hors loyer (FCFA)" hint="Salaires, achats, impôts, électricité…"><Num value={f.chargesExploitation} onChange={(v) => set("chargesExploitation", v)} /></Field>
-                <Field label="Crédits et autres engagements mensuels (FCFA)"><Num value={f.engagements} onChange={(v) => set("engagements", v)} /></Field>
+                <Field label="Chiffre d'affaires mensuel moyen (F CFA)"><Num value={f.ca} onChange={(v) => set("ca", v)} /></Field>
+                <Field label="Charges d'exploitation mensuelles, hors loyer (F CFA)" hint="Salaires, achats, impôts, électricité…"><Num value={f.chargesExploitation} onChange={(v) => set("chargesExploitation", v)} /></Field>
+                <Field label="Crédits et autres engagements mensuels (F CFA)"><Num value={f.engagements} onChange={(v) => set("engagements", v)} /></Field>
                 <Field label="Ancienneté de l'activité (mois)"><Num value={f.ancienneteMois} onChange={(v) => set("ancienneteMois", v)} /></Field>
                 <Field label="Activité exercée"><Txt value={f.activite} onChange={(v) => set("activite", v)} /></Field>
                 <Field label="Dirigeant"><Txt value={f.dirigeant} onChange={(v) => set("dirigeant", v)} /></Field>
@@ -227,7 +227,7 @@ function EtudeSolvabilite({ initial, store, me, admin, onClose }) {
               <Field label="Passé locatif"><Sel value={f.historique} onChange={(v) => set("historique", v)} options={HISTORIQUES} /></Field>
               <Field label="Garantie proposée"><Sel value={f.garantie} onChange={(v) => set("garantie", v)} options={Object.entries(GARANTIES).filter(([k]) => pro || k !== "depot_renforce")} /></Field>
               {f.garantie === "garant" && <><Field label="Nom du garant"><Txt value={f.garantNom} onChange={(v) => set("garantNom", v)} /></Field>
-                <Field label="Revenu net mensuel du garant (FCFA)" hint="Justifié par ses bulletins de salaire"><Num value={f.garantRevenu} onChange={(v) => set("garantRevenu", v)} /></Field></>}
+                <Field label="Revenu net mensuel du garant (F CFA)" hint="Justifié par ses bulletins de salaire"><Num value={f.garantRevenu} onChange={(v) => set("garantRevenu", v)} /></Field></>}
             </div>
             <label className="flex items-start gap-2 text-sm mt-1"><input type="checkbox" className="mt-1" checked={!!f.consentement} onChange={(e) => set("consentement", e.target.checked)} />
               <span>Le candidat a donné son accord pour l'étude et la conservation de son dossier (loi n° 2013-450 sur la protection des données personnelles). *</span></label>
@@ -292,7 +292,7 @@ function AfficheQR({ kind }) {
       </ol>
       <p className="mt-4 text-[13px]">{def.intro}</p>
       <p className="mt-2 text-[12px] break-all" style={{ color: "#4B5563" }}>Sans appareil photo : {lienFiche(kind)}</p>
-      <p className="mt-6 text-[11px]" style={{ color: "#4B5563" }}>{AGENCY.name} — {AGENCY.agrement} — {AGENCY.address} — {AGENCY.tel}</p>
+      <p className="mt-6 text-[11px]" style={{ color: "#4B5563" }}>{AGENCY.name} — {AGENCY.agrement} — {AGENCY.address} — {AGENCY.telephones}</p>
     </div>
   );
 }
@@ -339,11 +339,11 @@ export function Fiches({ store, me, onEtude, onMandat }) {
   const copier = async (kind) => { try { await navigator.clipboard.writeText(lienFiche(kind)); setCopie(kind); setTimeout(() => setCopie(""), 2000); } catch { setToast(lienFiche(kind)); } };
   if (affiche) return (
     <div><Barre onBack={() => setAffiche(null)}><button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer l'affiche</button></Barre>
-      <PrintPage className="kb-affiche bg-white rounded-xl border p-8 max-w-2xl" style={{ borderColor: "var(--line)" }}><style>{"#print-area.kb-affiche .kb-foot, #print-area.kb-affiche .kb-foot-space { display: none !important; }"}</style><AfficheQR kind={affiche} /></PrintPage></div>
+      <PrintPage className="kb-affiche bg-white rounded-xl border p-8 max-w-2xl" style={{ borderColor: "var(--line)" }} nom={nomFichier("Affiche QR code", affiche === "locataire" ? "Fiche de renseignements locataire" : "Fiche de renseignements propriétaire")}><style>{"#print-area.kb-affiche .kb-foot, #print-area.kb-affiche .kb-foot-space { display: none !important; }"}</style><AfficheQR kind={affiche} /></PrintPage></div>
   );
   if (imprimer) return (
     <div><Barre onBack={() => setImprimer(null)}><button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button></Barre>
-      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl" style={{ borderColor: "var(--line)" }}><FicheRecue fiche={imprimer} /></PrintPage></div>
+      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl" style={{ borderColor: "var(--line)" }} nom={nomFichier(imprimer.kind === "locataire" ? "Fiche de renseignements locataire" : "Fiche de renseignements propriétaire", imprimer.full_name, String(imprimer.created_at || "").slice(0, 10).split("-").reverse().join("-"))}><FicheRecue fiche={imprimer} /></PrintPage></div>
   );
   const liste = rows.filter((r) => (!filtre.kind || r.kind === filtre.kind) && (!filtre.status || r.status === filtre.status));
   const prefillEtude = (f) => { const d = f.data || {}; return { usage: /prof/i.test(d.usage || "") ? "professionnel" : "habitation", candidat: f.full_name, telephone: f.phone, email: f.email, bienLibre: d.bien || "",
@@ -503,7 +503,7 @@ function EditeurMandat({ initial, store, admin, onClose }) {
   };
   if (apercu) return (
     <div><Barre onBack={() => setApercu(false)}><button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button></Barre>
-      <PrintPage className="bg-white rounded-xl border p-8 max-w-3xl" style={{ borderColor: "var(--line)" }}>
+      <PrintPage className="bg-white rounded-xl border p-8 max-w-3xl" style={{ borderColor: "var(--line)" }} nom={nomFichier(`${MANDATS[m.kind]?.label || "Mandat"} ${m.ref || ""}`, m.data?.nom || m.mandant)}>
         <PrintHead title="" subtitle={m.ref ? `Réf. ${m.ref}` : ""} /><TexteMandat texte={texte} /></PrintPage></div>
   );
   const societe = /soci|succession|indivision|association/i.test(d.civilite || "");
@@ -565,15 +565,15 @@ function EditeurMandat({ initial, store, admin, onClose }) {
                 <Field label="Préavis (mois)"><Num value={d.preavis} onChange={(v) => set("preavis", v)} /></Field>
                 <Field label="Honoraires (% des loyers)"><Txt value={d.honoraires} onChange={(v) => set("honoraires", v.replace(/[^\d.,]/g, "").replace(",", "."))} /></Field>
                 <Field label="Base"><Sel value={d.honorairesBase} onChange={(v) => set("honorairesBase", v)} options={["TTC", "hors taxes"]} /></Field>
-                <Field label="Déclaration foncière (FCFA)"><Num value={d.forfaitDeclaration} onChange={(v) => set("forfaitDeclaration", v)} /></Field>
+                <Field label="Déclaration foncière (F CFA)"><Num value={d.forfaitDeclaration} onChange={(v) => set("forfaitDeclaration", v)} /></Field>
                 <Field label="Réponse aux devis (jours)"><Num value={d.delaiDevis} onChange={(v) => set("delaiDevis", v)} /></Field>
-                <Field label="Plafond des travaux urgents (FCFA)" hint="Facultatif"><Num value={d.plafondUrgence} onChange={(v) => set("plafondUrgence", v)} /></Field>
+                <Field label="Plafond des travaux urgents (F CFA)" hint="Facultatif"><Num value={d.plafondUrgence} onChange={(v) => set("plafondUrgence", v)} /></Field>
                 <Field label="Reversement le … du mois"><Num value={d.jourReversement} onChange={(v) => set("jourReversement", v)} /></Field>
                 <Field label="Compte rendu"><Sel value={d.periodicite} onChange={(v) => set("periodicite", v)} options={["mensuellement", "trimestriellement"]} /></Field>
                 <Field label="Mode de reversement"><Sel value={d.modeReversement} onChange={(v) => set("modeReversement", v)} options={["virement bancaire", "chèque", "mobile money", "espèces contre reçu"]} /></Field>
                 <Field label="Impôt foncier retenu (%)"><Txt value={d.tauxFoncier} onChange={(v) => set("tauxFoncier", v.replace(/[^\d.,]/g, "").replace(",", "."))} /></Field>
               </> : <>
-                <Field label="Prix de vente (FCFA)"><Num value={d.prix} onChange={(v) => set("prix", v)} /></Field>
+                <Field label="Prix de vente (F CFA)"><Num value={d.prix} onChange={(v) => set("prix", v)} /></Field>
                 <Field label="Honoraires (% hors taxes)"><Txt value={d.honoraires} onChange={(v) => set("honoraires", v.replace(/[^\d.,]/g, "").replace(",", "."))} /></Field>
                 <Field label="Honoraires"><Sel value={d.fai === false ? "sus" : "inclus"} onChange={(v) => set("fai", v === "inclus")} options={{ inclus: "Inclus dans le prix", sus: "En sus, à la charge de l'acquéreur" }} /></Field>
                 <Field label="Durée (mois)"><Num value={d.duree} onChange={(v) => set("duree", v)} /></Field>
@@ -639,7 +639,7 @@ export function Courriels({ store, me }) {
   const choisi = personnes.find((p) => p.id === f.id);
   const choisir = (p) => setF((x) => ({ ...x, id: p.id, nom: p.nom, to: p.email }));
   const appliquerModele = (k) => setF((x) => ({ ...x, modele: k, objet: MODELES_MAIL[k].objet || x.objet, corps: MODELES_MAIL[k].corps || x.corps }));
-  const signature = `Cordialement,\n\n${me.name}\n${AGENCY.name} — ${AGENCY.agrement}\n${AGENCY.address}\n${AGENCY.tel}${monMail ? `\n${monMail}` : ""}`;
+  const signature = `Cordialement,\n\n${me.name}\n${AGENCY.name} — ${AGENCY.agrement}\n${AGENCY.address}\n${AGENCY.telephones}${monMail ? `\n${monMail}` : ""}`;
   const corpsComplet = `${f.kind === "tiers" ? "Bonjour," : `Bonjour ${f.nom || ""},`.replace(" ,", ",")}\n\n${f.corps.trim()}\n\n${signature}`;
   const enregistrerAdresse = async () => {
     if (!emailValide(f.to) || !choisi || choisi.email === f.to.trim()) return null;
