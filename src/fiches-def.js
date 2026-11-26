@@ -34,14 +34,14 @@ export const FICHES = {
         { k: "employeur", label: "Employeur ou nom de l'activité" },
         { k: "employeur_adresse", label: "Lieu de travail" },
         { k: "anciennete", label: "Depuis quand ? (année)" },
-        { k: "revenu", label: "Revenu mensuel net (FCFA)", type: "number", aide: "Salaire ou revenu moyen du mois." },
-        { k: "autres_revenus", label: "Autres revenus mensuels (FCFA)", type: "number" },
+        { k: "revenu", label: "Revenu mensuel net (F CFA)", type: "number", aide: "Salaire ou revenu moyen du mois." },
+        { k: "autres_revenus", label: "Autres revenus mensuels (F CFA)", type: "number" },
       ] },
       { titre: "Le logement ou le local", champs: [
         { k: "usage", label: "Usage du bail", type: "select", options: ["Habitation", "Professionnel (bureau, commerce)"] },
         { k: "bien", label: "Bien concerné (résidence, appartement, local)", large: true, aide: "Si vous êtes déjà locataire, indiquez votre résidence et votre porte." },
         { k: "personnes", label: "Nombre de personnes qui occuperont le logement", type: "number" },
-        { k: "loyer_souhaite", label: "Loyer mensuel prévu (FCFA)", type: "number" },
+        { k: "loyer_souhaite", label: "Loyer mensuel prévu (F CFA)", type: "number" },
       ] },
       { titre: "Personnes à contacter", champs: [
         { k: "urgence_nom", label: "Personne à prévenir en cas d'urgence" },
@@ -88,7 +88,7 @@ export const FICHES = {
       ] },
       { titre: "Votre projet", champs: [
         { k: "operation", label: "Vous souhaitez", type: "select", options: ["Confier la gestion locative", "Trouver un locataire", "Vendre le bien", "Un conseil"] },
-        { k: "montant", label: "Loyer ou prix souhaité (FCFA)", type: "number" },
+        { k: "montant", label: "Loyer ou prix souhaité (F CFA)", type: "number" },
         { k: "reversement", label: "Mode de reversement préféré", type: "select", options: ["Virement bancaire", "Chèque", "Mobile money", "Espèces contre reçu"] },
         { k: "banque", label: "Banque ou opérateur", aide: "Le relevé d'identité bancaire sera remis à l'agence lors de la signature." },
       ] },
