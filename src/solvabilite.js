@@ -12,7 +12,7 @@ const paliers = (valeur, grille, defaut = 0) => { for (const [seuil, pts] of gri
 const paliersMin = (valeur, grille, defaut = 0) => { for (const [seuil, pts] of grille) if (valeur >= seuil) return pts; return defaut; };
 const pc = (x) => `${(Math.round(x * 1000) / 10).toLocaleString("fr-FR")} %`;
 const esp = (t) => t.replace(new RegExp("[\\u202f\\u00a0]", "g"), " ");
-const F = (x) => `${esp(Math.round(x).toLocaleString("fr-FR"))} F`;
+const F = (x) => `${esp(Math.round(x).toLocaleString("fr-FR"))} F CFA`;
 
 export const STATUTS_PRO = {
   fonctionnaire: { label: "Fonctionnaire ou agent de l'État", points: 20 },
