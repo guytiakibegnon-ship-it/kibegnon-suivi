@@ -735,7 +735,7 @@ export function controlerBulletin(b, params = getParams(b.periode.au), { brouill
   const attendu = t.brutTotal - t.totalRetenues + t.totalExonere - t.avantagesNature;
   if (attendu !== t.netAPayer) {
     push('bloquant', 'NET_INCOHERENT',
-      `Le net (${fcfa(t.netAPayer)}) ne correspond pas au calcul (${fcfa(attendu)}).`);
+      `Le net (${fcfa(t.netAPayer)} F CFA) ne correspond pas au calcul (${fcfa(attendu)} F CFA).`);
   }
 
   /* Clé fiscale patronale : 2,80 % du brut pour un local */
@@ -754,19 +754,19 @@ export function controlerBulletin(b, params = getParams(b.periode.au), { brouill
   /* SMIG */
   if (b.salarie.salaireBase < params.smig) {
     push('bloquant', 'SOUS_SMIG',
-      `Salaire de base ${fcfa(b.salarie.salaireBase)} inférieur au SMIG (${fcfa(params.smig)}).`);
+      `Salaire de base ${fcfa(b.salarie.salaireBase)} F CFA inférieur au SMIG (${fcfa(params.smig)} F CFA).`);
   }
 
   /* Minimum conventionnel */
   if (b.salarie.salaireCategoriel && b.salarie.salaireBase < b.salarie.salaireCategoriel) {
     push('bloquant', 'SOUS_CATEGORIEL',
-      `Salaire de base ${fcfa(b.salarie.salaireBase)} inférieur au minimum de la catégorie ${b.salarie.categorieLibelle} (${fcfa(b.salarie.salaireCategoriel)}).`);
+      `Salaire de base ${fcfa(b.salarie.salaireBase)} F CFA inférieur au minimum de la catégorie ${b.salarie.categorieLibelle} (${fcfa(b.salarie.salaireCategoriel)} F CFA).`);
   }
 
   /* Structure base / sursalaire */
   if (b.salarie.sursalaire > b.salarie.salaireBase) {
     push('avertissement', 'SURSALAIRE_DOMINANT',
-      `Le sursalaire (${fcfa(b.salarie.sursalaire)}) dépasse le salaire de base : vérifier le classement catégoriel.`);
+      `Le sursalaire (${fcfa(b.salarie.sursalaire)} F CFA) dépasse le salaire de base : vérifier le classement catégoriel.`);
   }
 
   /* Heures supplémentaires */
