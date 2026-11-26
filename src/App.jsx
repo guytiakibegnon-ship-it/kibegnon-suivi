@@ -4,12 +4,13 @@
  *            Documents · Recouvrement · Transport · Produits · Messages · Temps
  *  Dépendances externes uniquement : react, lucide-react, recharts, ./supabaseClient
  * ==========================================================================*/
-import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense, createContext, useContext } from "react";
 import {
-  AlertTriangle, AlignCenter, AlignJustify, AlignLeft, AlignRight, Archive, ArchiveRestore, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, Banknote, BarChart3, Bell, BellOff, BellRing, Bold, Briefcase, Building2, CalendarClock, CalendarDays, CalendarOff, Camera, Car, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardCheck, ClipboardList, Clock, DoorClosed, DoorOpen, Download, Eraser, Eye, EyeOff, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Highlighter, Home, Image, Inbox, IndentDecrease, IndentIncrease, Italic, KeyRound, Landmark, Layers, LayoutDashboard, Link2, List, ListChecks, ListOrdered, Lock, LogOut, Mail, MapPin, Maximize2, Megaphone, Menu, MessageCircle, MessageCircleWarning, MessageSquare, Minimize2, Minus, Package, Palette, Paperclip, Pause, Pencil, Percent, Phone, PhoneIncoming, Play, Plus, Printer, Receipt, Redo2, RefreshCw, RotateCcw, Scale, Search, Send, Settings, ShieldAlert, ShieldCheck, SprayCan, Square, Stamp, Store, Strikethrough, Subscript, Superscript, Table2, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, Underline, Undo2, Unlock, Upload, UserPlus, UserRound, Users, Wallet, Wrench, X, Zap,
+  AlertTriangle, AlignCenter, AlignJustify, AlignLeft, AlignRight, Archive, ArchiveRestore, ArrowDownToLine, ArrowLeft, ArrowUpFromLine, AtSign, BadgeCheck, Banknote, BarChart3, Bell, BellOff, BellRing, Bold, Briefcase, Building2, CalendarCheck, CalendarClock, CalendarDays, CalendarOff, Camera, Car, CaseSensitive, Check, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardCheck, ClipboardList, Clock, DoorClosed, DoorOpen, Download, Eraser, Eye, EyeOff, FileDown, FileSignature, FileSpreadsheet, FileText, FileUp, Filter, FolderOpen, Hammer, Highlighter, Home, Image, Inbox, IndentDecrease, IndentIncrease, Italic, KeyRound, Landmark, Layers, LayoutDashboard, Link2, List, ListChecks, ListOrdered, Lock, LogOut, Mail, MapPin, Maximize2, Megaphone, Menu, MessageCircle, MessageCircleWarning, MessageSquare, Minimize2, Minus, Package, Palette, Paperclip, Pause, Pencil, Percent, Phone, PhoneIncoming, Play, Plus, Printer, Receipt, Redo2, RefreshCw, Replace, RotateCcw, Scale, Search, Send, Settings, Share2, ShieldAlert, ShieldCheck, SlidersHorizontal, Smartphone, SprayCan, Square, Stamp, Store, Strikethrough, Subscript, Superscript, Table2, ThumbsDown, ThumbsUp, Timer, Trash2, TrendingDown, TrendingUp, Underline, Undo2, Unlock, Upload, UserPlus, UserRound, Users, Wallet, Wand2, Wrench, X, Zap,
 } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { supabase, AUTH_DOMAIN } from "./supabaseClient";
+import { mBail, suiviBaux } from "./baux.js";
 /* Module Ressources humaines : chargé seulement à l'ouverture de l'onglet (fichier RH.jsx) */
 const RH = lazy(() => import("./RH.jsx"));
 const MonDossier = lazy(() => import("./RH.jsx").then((m) => ({ default: m.MonDossier })));
@@ -17,6 +18,19 @@ const MonDossier = lazy(() => import("./RH.jsx").then((m) => ({ default: m.MonDo
 const outil = (nom) => lazy(() => import("./Outils.jsx").then((m) => ({ default: m[nom] })));
 const Solvabilite = outil("Solvabilite"), Fiches = outil("Fiches"), Mandats = outil("Mandats"), Courriels = outil("Courriels");
 const FichePublique = lazy(() => import("./FichePublique.jsx"));
+/* Version 38 : registre des baux, fiches de visite avec les prospects, WhatsApp — chargés à la demande */
+const RegistreBaux = lazy(() => import("./Baux.jsx").then((m) => ({ default: m.RegistreBaux })));
+const BauxDuLot = lazy(() => import("./Baux.jsx").then((m) => ({ default: m.BauxDuLot })));
+const BonsVisite = lazy(() => import("./BonsVisite.jsx").then((m) => ({ default: m.BonsVisite })));
+const WhatsAppPage = lazy(() => import("./WhatsApp.jsx").then((m) => ({ default: m.WhatsAppPage })));
+const BoutonEnvoyerLazy = lazy(() => import("./WhatsApp.jsx").then((m) => ({ default: m.BoutonEnvoyer })));
+/* Données de la session (store, utilisateur) accessibles aux fiches de documents */
+const KbContexte = createContext(null);
+function BoutonEnvoyer({ doc }) {
+  const ctx = useContext(KbContexte);
+  if (!ctx || !doc) return null;
+  return <Suspense fallback={null}><BoutonEnvoyerLazy doc={doc} store={ctx.store} me={ctx.me} /></Suspense>;
+}
 
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -168,14 +182,14 @@ const DOC_TYPES = {
     proforma: true,
     nonRefundable: "Les frais de prestations de services de l'agence (frais d'agence, frais de dossier), une fois payés, ne sont pas remboursables.",
     color: "#2E78A8",
-    desc: "Somme à régler par le locataire à l'entrée dans les lieux (avance, caution, agence, frais).",
+    desc: "Somme à régler par le locataire à l'entrée dans les lieux : mois d'avance, caution (dépôt de garantie), agence et frais.",
     clientLabel: "Locataire entrant",
     preset: [
-      { label: "2 MOIS D'AVANCE", qty: 1, unit: "u", price: 0 },
-      { label: "CAUTION : 2 MOIS", qty: 1, unit: "u", price: 0 },
-      { label: "AGENCE : 1 MOIS", qty: 1, unit: "u", price: 0 },
-      { label: "ACHAT ET ENREGISTREMENT DE CONTRATS", qty: 1, unit: "u", price: 50000 },
-      { label: "FRAIS DE DOSSIER", qty: 1, unit: "u", price: 0 },
+      { code: "avance", label: "Mois d'avance", qty: 2, unit: "mois", price: 0 },
+      { code: "caution", label: "Caution (dépôt de garantie)", qty: 2, unit: "mois", price: 0 },
+      { code: "agence", label: "Frais d'agence", qty: 1, unit: "mois", price: 0 },
+      { label: "Achat et enregistrement de contrats", qty: 1, unit: "forfait", price: 50000 },
+      { code: "dossier", label: "Frais de dossier", qty: 1, unit: "forfait", price: 0 },
     ],
   },
   prestation: {
@@ -300,6 +314,14 @@ const DOC_TYPE_ORDER = ["decompte_entree", "prestation", "facture", "facture_imp
    (PF-…), date de validité, jamais « réglée », jamais comptée dans la caisse.
    Une fois acceptée, elle se convertit en document définitif (nouveau numéro). */
 const isProforma = (d) => d?.fields?.proforma === true || d?.fields?.proforma === "true";
+/* Nom précis d'un document de l'agence : type, référence, objet, personne, période */
+function nomDocument(doc) {
+  const cfg = DOC_TYPES[doc?.docType] || DOC_TYPES.courrier;
+  const type = isProforma(doc) ? "Facture proforma" : cfg.label;
+  const quand = doc?.periodIso ? periodLabel(doc.periodIso) : doc?.fields?.periode || (doc?.date ? String(doc.date).slice(0, 10).split("-").reverse().join("-") : "");
+  const objet = ["courrier", "relance"].includes(doc?.docType) ? doc?.object : "";
+  return nomFichier(`${type} ${doc?.ref || ""}`, objet, doc?.clientName, quand);
+}
 function proformaState(d) {
   if (!isProforma(d)) return null;
   const today = new Date().toISOString().slice(0, 10);
@@ -614,7 +636,7 @@ function controleRecouvrement({ properties = [], units = [], rentPeriods = [], r
       const prev = k > 0 && g[k - 1].period === periodAdd(p.period, -1) ? (lignesDe[g[k - 1].id] || []) : null;
       const base = { scope: p.scope, periodId: p.id, period: p.period, propertyId: p.propertyId, bien: prop?.name || "Bâtiment supprimé", locked: !!p.locked };
       if (!prop) out.push({ ...base, code: "bien_inconnu", niveau: "rouge", titre: "Tableau d'un bâtiment absent du patrimoine", detail: "Le bâtiment a été supprimé : ce tableau n'est plus rattaché à rien." });
-      doublonsLignes(ls).forEach((j, i) => out.push({ ...base, code: "doublon", niveau: "rouge", nom: ls[i].tenantName, lot: ls[i].unitLabel, lineId: ls[i].id,
+      doublonsLignes(ls).forEach((j, i) => out.push({ ...base, code: "doublon", niveau: "rouge", nom: ls[i].tenantName, lot: ls[i].unitLabel, lineId: ls[i].id, keepLineId: ls[j].id,
         titre: `${ls[i].tenantName || "Lot vacant"} figure deux fois (${ls[i].unitLabel || "sans lot"})`, detail: `Doublon de la ligne ${j + 1} : loyers, paiements et arriérés sont comptés deux fois.` }));
       ls.forEach((l) => {
         const u = lotDeLigne(l, lots);
@@ -652,9 +674,9 @@ function controleRecouvrement({ properties = [], units = [], rentPeriods = [], r
         /* Tableau arrêté avant ce contrôle : la quittance n'y est citée qu'en observation */
         if (p.locked) documents.filter((d) => quittanceActive(d) && d.ref && d.propertyId === p.propertyId && String(l.comment || "").includes(d.ref) && !rec.some((r) => r.doc === d.id))
           .forEach((d) => { prouve += Number(d.total) || 0; });
-        if (c > prouve + 0.5) out.push({ ...ctx, code: "sans_quittance", niveau: "orange", montant: c - prouve,
+        if (c > prouve + 0.5) out.push({ ...ctx, code: "sans_quittance", niveau: "orange", montant: c - prouve, prouve,
           titre: `${nom} : ${fcfa(c - prouve)} payés sans quittance`, detail: `Payé ${fcfa(c)} ; quittance(s) : ${rec.length ? rec.map((r) => `${r.ref} (${fcfa(r.montant)})`).join(", ") : "aucune"}. Établissez la quittance ou corrigez le payé.` });
-        else if (prouve > c + 0.5) out.push({ ...ctx, code: "quittance_superieure", niveau: "rouge", titre: `${nom} : quittances supérieures au payé`, detail: `${fcfa(prouve)} quittancés pour ${fcfa(c)} portés au tableau.` });
+        else if (prouve > c + 0.5) out.push({ ...ctx, code: "quittance_superieure", niveau: "rouge", prouve, titre: `${nom} : quittances supérieures au payé`, detail: `${fcfa(prouve)} quittancés pour ${fcfa(c)} portés au tableau.` });
         /* Report d'arriéré : doit égaler le reste à payer du mois précédent */
         if (prev && l.carriedArrears !== null && l.carriedArrears !== undefined) {
           const m = prev.find((x) => memeLigne(x, l));
@@ -677,6 +699,7 @@ function controleRecouvrement({ properties = [], units = [], rentPeriods = [], r
       const m = lm.find((x) => memeLigne(x, l));
       if (m && Math.abs((Number(m.collected) || 0) - (Number(l.collected) || 0)) > 0.5)
         out.push({ scope: "comptable", periodId: pc.id, period: pc.period, propertyId: pc.propertyId, bien: propById[pc.propertyId]?.name || "", locked: !!pc.locked, lineId: l.id,
+          commercialLineId: m.id, commercialPeriodId: pm.id, commercialLocked: !!pm.locked,
           nom: l.tenantName, lot: l.unitLabel, code: "ecart_scopes", niveau: "orange", titre: `${l.tenantName} : payé différent entre suivi commercial et état comptable`,
           detail: `${fcfa(m.collected)} au suivi commercial, ${fcfa(l.collected)} à l'état comptable.` });
     });
@@ -730,6 +753,93 @@ function controleRecouvrement({ properties = [], units = [], rentPeriods = [], r
     titre: `${refs.length} quittance(s) antérieure(s) au début du suivi`, detail: `${refs.slice(0, 8).join(", ")}${refs.length > 8 ? "…" : ""} : mois sans tableau de recouvrement, non reportées (l'historique n'est pas réécrit).` }));
   return out.sort((a, b) => NIVEAUX_CONTROLE[a.niveau].ordre - NIVEAUX_CONTROLE[b.niveau].ordre || (a.bien || "").localeCompare(b.bien || "") || String(b.period).localeCompare(String(a.period)));
 }
+/* ══ CORRECTIONS DES POINTS DE CONTRÔLE ══
+   Pour chaque point, les corrections possibles. « auto » : la correction ne
+   fait aucun choix à la place de l'utilisateur (les pièces la dictent) et
+   peut être appliquée d'office, y compris avec « Tout corriger ». Les autres
+   demandent un choix (deux versions possibles) et un clic de confirmation.
+   « tableau » : la correction modifie les lignes d'un tableau ; s'il est
+   arrêté pour virement, seule la direction peut la faire (déverrouillage,
+   correction et nouvel arrêté, tracés). */
+const cleSouple = (x) => cleDoublon(x).replace(/[^a-z0-9]/g, "");
+function optionsCorrection(a, { rentLines = [], units = [], documents = [] } = {}) {
+  const ligne = a.lineId ? rentLines.find((l) => l.id === a.lineId) : null;
+  const lot = a.unitId ? units.find((u) => u.id === a.unitId) : null;
+  const docs = ligne ? lineReceipts(ligne).map((r) => documents.find((d) => d.id === r.doc)).filter(Boolean) : [];
+  const dateQ = docs.map((d) => String(d.fields?.paidOn || "").slice(0, 10)).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort().pop() || "";
+  const prouve = ligne ? lineReceipts(ligne).reduce((x, r) => x + (Number(r.montant) || 0), 0) + partAvanceMensuelle(ligne) : 0;
+  const o = (cle, libelle, extra = {}) => ({ cle, libelle, auto: false, tableau: true, ...extra });
+  const lotsDuBien = units.filter((u) => u.propertyId === a.propertyId);
+  switch (a.code) {
+    case "doublon": {
+      const garde = rentLines.find((l) => l.id === a.keepLineId);
+      if (!ligne || !garde) return [];
+      const c1 = Number(garde.collected) || 0, c2 = Number(ligne.collected) || 0;
+      const vide = c2 <= 0.5 && !lineReceipts(ligne).length;
+      if (vide || Math.abs(c1 - c2) <= 0.5 || c1 <= 0.5)
+        return [o("supprimer_doublon", "Supprimer la ligne en double (paiement et quittances conservés sur la ligne gardée)", { auto: true })];
+      return [o("additionner", `Les deux paiements sont réels : les réunir sur une seule ligne (${fcfa(c1 + c2)})`),
+        o("supprimer_doublon", `Le second paiement (${fcfa(c2)}) est une erreur de saisie : supprimer la ligne en double`)];
+    }
+    case "vacant_tableau":
+      return lot ? [o("remplir_ligne", `Le locataire est bien dans les lieux : porter ${lot.tenantName} (${fcfa(lot.rent)}) au tableau`, { recommande: true })] : [];
+    case "lot_inconnu": {
+      const parNom = lotsDuBien.filter((u) => cleDoublon(u.tenantName) && cleDoublon(u.tenantName) === cleDoublon(a.nom));
+      const parLot = lotsDuBien.filter((u) => cleSouple(u.label) && cleSouple(u.label) === cleSouple(a.lot));
+      const cands = [...new Map([...parNom, ...parLot].map((u) => [u.id, u])).values()];
+      const liste = cands.length ? cands : lotsDuBien;
+      return liste.slice(0, 12).map((u) => o(`rattacher:${u.id}`, `Rattacher la ligne au lot ${u.label}${u.tenantName ? ` (${u.tenantName})` : ""}`, { auto: cands.length === 1 && parNom.length === 1 }));
+    }
+    case "nom_fiche":
+      return lot ? [o("nom_vers_tableau", `La fiche a raison : écrire « ${lot.tenantName} » au tableau`),
+        o("nom_vers_fiche", `Le tableau a raison : écrire « ${a.nom} » sur la fiche du lot ${lot.label}`, { tableau: false })] : [];
+    case "loyer_nul":
+      return [...(lot && Number(lot.rent) > 0 ? [o("loyer_vers_tableau", `Porter le loyer de la fiche (${fcfa(lot.rent)}) au tableau`, { auto: true })] : []),
+        o("regle_avance", "Ce mois est réglé d'avance : le marquer comme tel")];
+    case "loyer_fiche":
+      return lot ? [o("loyer_vers_tableau", `La fiche a raison : loyer de ${fcfa(lot.rent)} au tableau`, { recommande: true }),
+        o("loyer_vers_fiche", `Le loyer a changé : porter ${fcfa(ligne?.expected)} sur la fiche du lot ${lot.label}`, { tableau: false })] : [];
+    case "date_manquante":
+    case "date_future":
+      return [...(dateQ ? [o("date_quittance", `Reprendre la date de règlement de la quittance (${dateQ.split("-").reverse().join("/")})`, { auto: true })] : []),
+        o("date_saisie", "Indiquer la date de paiement", { demande: "date" })];
+    case "trop_percu":
+      return [...(prouve > 0.5 && ligne && prouve <= lineToCollect(ligne) + 0.5 ? [o("payer_prouve", `Ramener le payé au montant des quittances (${fcfa(prouve)})`, { auto: true })] : []),
+        ...(ligne ? [o("payer_du", `Ramener le payé au montant dû (${fcfa(lineToCollect(ligne))})`)] : [])];
+    case "sans_quittance":
+      return [o("etablir", "Établir la quittance du montant payé", { tableau: false, ecran: true, recommande: true }),
+        o("payer_prouve", `Le montant payé est faux : le ramener à ${fcfa(prouve)}`)];
+    case "quittance_superieure":
+      return [o("payer_prouve", `Porter au tableau le montant des quittances validées (${fcfa(a.prouve ?? prouve)})`, { auto: true })];
+    case "report_incoherent":
+      return [o("recalculer_reports", "Recalculer les arriérés reportés de ce bâtiment", { auto: true, tableau: false })];
+    case "absent_tableau":
+      return [o("ajouter_ligne", `Ajouter ${a.nom} (${a.lot}) au tableau du mois`, { auto: true })];
+    case "ecart_scopes":
+      return [o("aligner_commercial", "Aligner le suivi commercial sur l'état comptable (les quittances font foi)", { auto: true, tableau: false, commercial: true })];
+    case "quittance_non_reportee":
+      return [o("reporter", "Reporter la quittance à l'état comptable", { auto: true, tableau: false })];
+    case "quittance_retiree":
+      return [o("retirer", "Retirer du tableau le montant de cette quittance", { auto: true, tableau: false })];
+    case "quittance_sans_lot": {
+      const d = documents.find((x) => x.id === a.docId);
+      const cands = units.filter((u) => u.propertyId === d?.propertyId && cleDoublon(u.tenantName) && cleDoublon(u.tenantName) === cleDoublon(d?.clientName));
+      return cands.map((u) => o(`rattacher_quittance:${u.id}`, `Rattacher la quittance au lot ${u.label}`, { auto: cands.length === 1, tableau: false }));
+    }
+    case "bien_inconnu":
+      return [o("supprimer_tableau", "Supprimer ce tableau orphelin (seulement s'il ne contient aucun paiement)", { tableau: false })];
+    default:
+      return [];
+  }
+}
+/* Ce qui reste à faire à la main quand aucune correction ne peut être automatique */
+const CONSEIL_CORRECTION = {
+  quittance_attente: "Validez ou refusez la quittance dans Documents : elle sera reportée dès sa validation.",
+  quittance_sans_mois: "Ouvrez la quittance dans Documents et indiquez le bâtiment et le mois.",
+  quittance_hors_arrete: "Le tableau arrêté fait foi : si le paiement y manque, la direction le déverrouille, le complète puis l'arrête de nouveau.",
+  quittances_hors_suivi: "Information seulement : rien à corriger.",
+};
+
 /* État attendu d'une ligne pour un mois donné, d'après les avances du lot */
 function advanceStateFor(unitId, period, advances) {
   const du = (advances || []).filter((a) => a.unitId === unitId);
@@ -942,7 +1052,7 @@ const fmtEst = (min) => {
 };
 const fmtTime = (ts) => new Date(ts).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 
-/* ---- Formatage monétaire FCFA ---- */
+/* ---- Formatage monétaire F CFA ---- */
 /* Affiche un taux : 0.095 → « 9,5 % », 0.1 → « 10 % » */
 const pctLabel = (r) => {
   const v = (Number(r) || 0) * 100;
@@ -951,11 +1061,11 @@ const pctLabel = (r) => {
 
 const fcfa = (n) => {
   const v = Number(n || 0);
-  return v.toLocaleString("fr-FR", { maximumFractionDigits: 0 }) + " F";
+  return v.toLocaleString("fr-FR", { maximumFractionDigits: 0 }) + "\u00a0F\u00a0CFA";
 };
 const fcfaLong = (n) => {
   const v = Number(n || 0);
-  return v.toLocaleString("fr-FR", { maximumFractionDigits: 0 }) + " FCFA";
+  return v.toLocaleString("fr-FR", { maximumFractionDigits: 0 }) + "\u00a0F\u00a0CFA";
 };
 const qty = (n) => {
   const v = Number(n || 0);
@@ -1043,14 +1153,63 @@ function pageBox(orientation) {
 
 /* Impression : force l'orientation de la page (portrait ou paysage).
    @page ne pouvant pas être ciblé par une classe, on injecte la règle juste avant d'imprimer. */
-function printSheet(orientation = "portrait") {
+/* ══ NOM DES FICHIERS PDF ══
+   Le navigateur propose le titre de l'onglet comme nom du fichier enregistré
+   en PDF. Le temps de l'impression, ce titre devient le nom précis du
+   document (type, référence, personne, période) ; il est rétabli ensuite. */
+function nomFichier(...parties) {
+  return parties.flat().map((x) => String(x ?? "").trim()).filter(Boolean).join(" - ")
+    .replace(/[\\/:*?"<>|#%{}~]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 150);
+}
+/* « ÉTAT DES ARRIÉRÉS » → « État des arriérés » ; un titre déjà en minuscules reste tel quel */
+const enPhrase = (t) => { const x = String(t || "").trim(); return /[a-zà-ÿ]/.test(x) ? x : x.charAt(0) + x.slice(1).toLowerCase(); };
+function nomImpression() {
+  const area = document.getElementById("print-area");
+  if (!area) return "";
+  const explicite = area.getAttribute("data-nom");
+  if (explicite) return explicite;
+  const h = area.querySelector("[data-kb-titre]");
+  const titre = enPhrase(h?.getAttribute("data-kb-titre") || "");
+  const sous = h?.getAttribute("data-kb-sous-titre") || "";
+  return nomFichier(titre || "Document Entreprise Kibegnon", sous, titre && sous ? "" : isoDate(new Date()));
+}
+let titreAvantImpression = null;
+function titreImpression(actif) {
+  if (actif) {
+    const n = nomImpression();
+    if (!n) return;
+    if (titreAvantImpression === null) titreAvantImpression = document.title;
+    document.title = n;
+  } else if (titreAvantImpression !== null) {
+    document.title = titreAvantImpression; titreAvantImpression = null;
+  }
+}
+
+/* Marges d'impression : « normales » pour les courriers (2,5 cm sur les côtés,
+   comme un traitement de texte), plus serrées pour les états et tableaux. */
+const MARGES_COURRIER = {
+  normales: { label: "Normales (2,5 cm)", css: "20mm 25mm 18mm 25mm" },
+  moderees: { label: "Modérées (1,9 cm)", css: "18mm 19mm 16mm 19mm" },
+  larges:   { label: "Larges (3 cm)",     css: "22mm 30mm 20mm 30mm" },
+  etroites: { label: "Étroites (1,27 cm)", css: "12.7mm" },
+};
+/* Format de page : A4, orientation, marges (celles du courrier si la page en déclare) */
+function formatPage(orientation = "portrait", marges) {
   const id = "kb-page-orientation";
   document.getElementById(id)?.remove();
   const el = document.createElement("style");
   el.id = id;
   el.media = "print";
-  el.textContent = `@page { size: A4 ${orientation}; margin: ${orientation === "landscape" ? "8mm" : "12mm"}; }`;
+  const m = marges || document.getElementById("print-area")?.getAttribute("data-marges");
+  const marge = m ? (MARGES_COURRIER[m]?.css || m) : (orientation === "landscape" ? "8mm" : "12mm");
+  el.textContent = `@page { size: A4 ${orientation}; margin: ${marge}; }`;
   document.head.appendChild(el);
+}
+function printSheet(orientation = "portrait", options = {}) {
+  const id = "kb-page-orientation";
+  formatPage(orientation, options.marges);
+  if (options.nom) document.getElementById("print-area")?.setAttribute("data-nom", nomFichier(options.nom));
+  titreImpression(true);
 
   /* Le pied de page est fixé au bas de chaque feuille. On mesure sa hauteur
      à la largeur réelle d'impression, pour réserver exactement cet espace
@@ -1069,6 +1228,7 @@ function printSheet(orientation = "portrait") {
 
   const cleanup = () => {
     document.getElementById(id)?.remove();
+    titreImpression(false);
     window.removeEventListener("afterprint", cleanup);
   };
   window.addEventListener("afterprint", cleanup);
@@ -1289,7 +1449,7 @@ function arrearsOf(unit, data) {
   };
 }
 
-/* Libellé court : « 3 mois · 240 000 F » */
+/* Libellé court : « 3 mois · 240 000 F CFA » */
 const arrearsLabel = (a) => `${a.months} mois · ${fcfa(a.total)}`;
 
 const PAY_METHODS = ["Espèces", "Chèque", "Virement",
@@ -1307,18 +1467,22 @@ const DEPARTURE_REASON = {
 /* Version de l'application : permet de vérifier d'un coup d'œil que le
    fichier déployé est bien le dernier livré (utile après un remplacement
    sur GitHub, le navigateur gardant parfois l'ancienne version en cache). */
-const APP_VERSION = "37.0";
-const APP_BUILD = "2026-11-12";
+const APP_VERSION = "38.0";
+const APP_BUILD = "2026-11-26";
 
 /* ---- Papier à en-tête de l'agence ---- */
 const AGENCY = {
   name: "ENTREPRISE KIBEGNON",
-  form: "SARL au capital de 5 000 000 FCFA",
+  form: "SARL au capital de 5 000 000 F CFA",
   address: "Cocody, Rue du Lycée Technique — Abidjan, Côte d'Ivoire",
   agrement: "N° agrément : AB 0005262",
   regime: "Régime d'imposition : TEE",
   centre: "Centre des impôts : Cocody",
+  fixe: "+225 27 22 25 24 12",
   tel: "+225 07 87 84 33 68 / +225 01 51 96 60 67",
+  /* Ligne téléphonique complète, reprise en en-tête et en pied de page */
+  telephones: "Fixe : +225 27 22 25 24 12 — Cel. : +225 07 87 84 33 68 / +225 01 51 96 60 67",
+  telephonesCourts: "Tél. fixe : 27 22 25 24 12 · Cel. : 07 87 84 33 68 / 01 51 96 60 67",
   rc: "RC : CI-ABJ-03-2020-B13-02665",
   cc: "CC : 2011466 M",
   bank: "BANK OF AFRICA CI — CI032 01016 008298970007 71",
@@ -1332,7 +1496,8 @@ const LOGO_AGREMENT = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ8AAAFACAM
 /* En-tête commun à tous les documents imprimés */
 function PrintHead({ title, subtitle, extra }) {
   return (
-    <div className="pb-3 border-b" style={{ borderColor: "var(--line)" }}>
+    <div className="pb-3 border-b" style={{ borderColor: "var(--line)" }}
+      data-kb-titre={typeof title === "string" ? title : ""} data-kb-sous-titre={typeof subtitle === "string" ? subtitle : ""}>
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
           <img src={LOGO} alt="Entreprise Kibegnon" className="h-14 w-auto" />
@@ -1341,6 +1506,7 @@ function PrintHead({ title, subtitle, extra }) {
             <p className="text-[10px] leading-snug" style={{ color: "var(--muted)" }}>{AGENCY.address}</p>
             <p className="text-[10px] leading-snug" style={{ color: "var(--muted)" }}>{AGENCY.agrement} · {AGENCY.form}</p>
             <p className="text-[10px] leading-snug" style={{ color: "var(--muted)" }}>{AGENCY.regime} · {AGENCY.centre}</p>
+            <p className="text-[10px] leading-snug font-semibold" style={{ color: "var(--ink)" }}>{AGENCY.telephonesCourts}</p>
           </div>
         </div>
         <div className="flex items-start gap-3">
@@ -1361,9 +1527,9 @@ function PrintHead({ title, subtitle, extra }) {
    chaque page imprimée : il réserve la place du pied de page légal, lequel
    est positionné en fixe au bas de chaque feuille. Aucun vide artificiel,
    aucune hauteur minimale : impossible de générer une page superflue. */
-function PrintPage({ className, style, note, children }) {
+function PrintPage({ className, style, note, nom, marges, children }) {
   return (
-    <div id="print-area" className={className} style={style}>
+    <div id="print-area" className={className} style={style} data-nom={nom ? nomFichier(nom) : undefined} data-marges={marges || undefined}>
       <table className="kb-page">
         <tbody><tr><td className="kb-page-body">{children}</td></tr></tbody>
         <tfoot><tr><td><div className="kb-foot-space" aria-hidden="true" /></td></tr></tfoot>
@@ -1380,7 +1546,8 @@ function PrintFoot({ note }) {
       {note && <p className="text-[10px] mb-1" style={{ color: "var(--muted)" }}>{note}</p>}
       <p className="text-[9px] leading-relaxed" style={{ color: "var(--muted)" }}>
         {AGENCY.name} — {AGENCY.form} — {AGENCY.address}<br />
-        Tél : {AGENCY.tel} — {AGENCY.rc} — {AGENCY.cc} — {AGENCY.agrement}<br />
+        {AGENCY.telephones}<br />
+        {AGENCY.rc} — {AGENCY.cc} — {AGENCY.agrement}<br />
         {AGENCY.bank}<br />
         {AGENCY.email} — {AGENCY.site}
       </p>
@@ -1760,6 +1927,8 @@ function useStore(userId) {
   const [rentAdvances, setRentAdvances] = useState([]);
   const [visits, setVisits] = useState([]);
   const [artisans, setArtisans] = useState([]);
+  const [leases, setLeases] = useState([]);
+  const [leasesError, setLeasesError] = useState("");
   const [handovers, setHandovers] = useState([]);
 
   /* Référence vivante des membres, utilisée par les notifications */
@@ -1773,7 +1942,7 @@ function useStore(userId) {
   const dejaConnecte = useRef(false);
 
   const load = useCallback(async () => {
-    const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc, un, rp, rlin, rch, rq, tax, cp, ff, ce, ho, ft, prs, ppr, wrp, adv, vis, art] = await Promise.all([
+    const [dep, prof, tk, te, at, ch, cm, ms, ow, pr, pd, se, rl, rll, qt, ql, tpl, doc, un, rp, rlin, rch, rq, tax, cp, ff, ce, ho, ft, prs, ppr, wrp, adv, vis, art, bx] = await Promise.all([
       supabase.from("departments").select("*").order("created_at"),
       supabase.from("profiles").select("*").order("created_at"),
       fetchAll("tasks"),
@@ -1809,7 +1978,11 @@ function useStore(userId) {
       fetchAll("rent_advances", { col: "paid_at", asc: false }),
       fetchAll("property_visits", { col: "visit_date", asc: false }),
       fetchAll("artisans", { col: "name" }),
+      supabase.from("leases").select("*").order("starts_on", { ascending: false }),
     ]);
+    /* Registre des baux (v38) : absent tant que la migration n'est pas passée */
+    setLeases((bx?.data || []).map(mBail));
+    setLeasesError(bx?.error ? (/does not exist|schema cache|Could not find/i.test(bx.error.message || "") ? "Le registre des baux n'est pas encore installé : exécutez migration-v38.sql dans Supabase." : bx.error.message) : "");
     setDepartments((dep.data || []).map(mDept));
     setMembers((prof.data || []).map(mProfile));
     setTasks((tk.data || []).map(mTask));
@@ -2592,6 +2765,144 @@ function useStore(userId) {
     if (error) return { error: error.message };
     setRentPeriods((x) => x.map((y) => (y.id === period.id ? mPeriod(data) : y)));
     return { message: `${periodLabel(period.period)} déverrouillé — pensez à l'arrêter de nouveau après correction` };
+  };
+
+  /* ══ CORRECTION DES POINTS DE CONTRÔLE DU RECOUVREMENT ══
+     Applique une correction proposée par optionsCorrection. Un tableau arrêté
+     pour virement n'est touché que sur demande expresse de la direction :
+     déverrouillage tracé, correction, puis nouvel arrêté à la même date (les
+     quittances restent rattachées aux mêmes mois). */
+  const rechargerRecouvrement = async () => {
+    const [ls, us, ps, ds] = await Promise.all([fetchAll("rent_lines", { col: "position" }), fetchAll("units", { col: "label" }),
+      supabase.from("rent_periods").select("*").order("period", { ascending: false }), fetchAll("documents", { col: "doc_date", asc: false })]);
+    if (ls.data) setRentLines(ls.data.map(mRLine));
+    if (us.data) setUnits(us.data.map(mUnit));
+    if (ps.data) setRentPeriods(ps.data.map(mPeriod));
+    if (ds.data) setDocuments(ds.data.map(mDoc));
+  };
+  const appliquerCorrection = async (a, cle, valeur) => {
+    const lireLigne = async (id) => { const { data } = await supabase.from("rent_lines").select("*").eq("id", id).maybeSingle(); return data ? mRLine(data) : null; };
+    const majLigne = async (id, maj) => { const { data, error } = await supabase.from("rent_lines").update(maj).eq("id", id).select(); return error ? { error: error.message } : !data?.length ? { error: "Modification refusée (droits insuffisants ou ligne introuvable)." } : {}; };
+    const majLot = async (id, maj) => { const { data, error } = await supabase.from("units").update(maj).eq("id", id).select(); return error ? { error: error.message } : !data?.length ? { error: "Fiche du lot non modifiée (droits insuffisants)." } : {}; };
+    const ligne = a.lineId ? await lireLigne(a.lineId) : null;
+    const { data: lotRow } = a.unitId ? await supabase.from("units").select("*").eq("id", a.unitId).maybeSingle() : { data: null };
+    const lot = lotRow ? mUnit(lotRow) : null;
+    const prouveDe = (l) => lineReceipts(l).reduce((x, r) => x + (Number(r.montant) || 0), 0) + partAvanceMensuelle(l);
+    const [base, arg] = String(cle).split(":");
+    switch (base) {
+      case "supprimer_doublon":
+      case "additionner": {
+        const garde = await lireLigne(a.keepLineId);
+        if (!garde || !ligne) return { error: "Lignes introuvables : rechargez la page." };
+        const vues = new Set(); const recus = [];
+        [...lineReceipts(garde), ...lineReceipts(ligne)].forEach((r) => { const k = `${r.doc}|${r.du}`; if (!vues.has(k)) { vues.add(k); recus.push(r); } });
+        const c1 = Number(garde.collected) || 0, c2 = Number(ligne.collected) || 0;
+        const maj = { receipts: recus, collected: base === "additionner" ? c1 + c2 : Math.max(c1, c2),
+          paid_at: garde.paidAt || ligne.paidAt || null, unit_id: garde.unitId || ligne.unitId || null,
+          comment: [garde.comment, ligne.comment].filter(Boolean).filter((x, i, t) => t.indexOf(x) === i).join(" · ").slice(0, 500) };
+        const r = await majLigne(garde.id, maj); if (r.error) return r;
+        const { error } = await supabase.from("rent_lines").delete().eq("id", ligne.id);
+        return error ? { error: error.message } : { message: "Ligne en double supprimée." };
+      }
+      case "remplir_ligne":
+        if (!lot) return { error: "Fiche du lot introuvable." };
+        return majLigne(a.lineId, { tenant_name: lot.tenantName, tenant_phone: lot.tenantPhone || "", unit_id: lot.id, unit_label: lot.label, expected: Number(lot.rent) || 0, vacant: false });
+      case "rattacher": {
+        const { data: u } = await supabase.from("units").select("*").eq("id", arg).maybeSingle();
+        if (!u) return { error: "Lot introuvable." };
+        return majLigne(a.lineId, { unit_id: u.id, unit_label: u.label });
+      }
+      case "nom_vers_tableau": return lot ? majLigne(a.lineId, { tenant_name: lot.tenantName }) : { error: "Fiche du lot introuvable." };
+      case "nom_vers_fiche": return lot && ligne ? majLot(lot.id, { tenant_name: ligne.tenantName }) : { error: "Ligne ou lot introuvable." };
+      case "loyer_vers_tableau": return lot && Number(lot.rent) > 0 ? majLigne(a.lineId, { expected: Number(lot.rent) }) : { error: "La fiche du lot n'indique pas de loyer." };
+      case "loyer_vers_fiche": return lot && ligne ? majLot(lot.id, { rent_amount: Number(ligne.expected) || 0 }) : { error: "Ligne ou lot introuvable." };
+      case "regle_avance": return majLigne(a.lineId, { prepaid: true });
+      case "date_quittance": {
+        const ids = lineReceipts(ligne).map((r) => r.doc);
+        const { data: dq } = ids.length ? await supabase.from("documents").select("fields").in("id", ids) : { data: [] };
+        const d = (dq || []).map((x) => String(x.fields?.paidOn || "").slice(0, 10)).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)).sort().pop();
+        return d ? majLigne(a.lineId, { paid_at: d }) : { error: "Aucune date de règlement sur les quittances de cette ligne." };
+      }
+      case "date_saisie":
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(valeur || "")) return { error: "Indiquez une date valide." };
+        if (valeur > isoDate(new Date())) return { error: "La date de paiement ne peut pas être dans le futur." };
+        return majLigne(a.lineId, { paid_at: valeur });
+      case "payer_prouve": return ligne ? majLigne(a.lineId, { collected: prouveDe(ligne) }) : { error: "Ligne introuvable." };
+      case "payer_du": return ligne ? majLigne(a.lineId, { collected: lineToCollect(ligne) }) : { error: "Ligne introuvable." };
+      case "recalculer_reports": { const r = await cascadeFrom(a.propertyId, a.scope, ""); return { message: `${r.changes} report(s) d'arriérés recalculé(s)${r.bloque ? ` ; le tableau arrêté de ${periodLabel(r.bloque)} reste tel quel` : ""}.` }; }
+      case "ajouter_ligne": {
+        if (!lot) return { error: "Fiche du lot introuvable." };
+        const { data: ls } = await supabase.from("rent_lines").select("position").eq("period_id", a.periodId);
+        const pos = Math.max(-1, ...(ls || []).map((x) => Number(x.position) || 0)) + 1;
+        const { error } = await supabase.from("rent_lines").insert({ period_id: a.periodId, unit_id: lot.id, unit_label: lot.label, tenant_name: lot.tenantName,
+          tenant_phone: lot.tenantPhone || "", expected: Number(lot.rent) || 0, collected: 0, position: pos, vacant: false, months: 1, receipts: [] });
+        return error ? { error: error.message } : { message: `${lot.tenantName} ajouté(e) au tableau.` };
+      }
+      case "aligner_commercial": {
+        if (!ligne || !a.commercialLineId) return { error: "Lignes introuvables." };
+        return majLigne(a.commercialLineId, { collected: Number(ligne.collected) || 0, paid_at: ligne.paidAt || null });
+      }
+      case "reporter":
+      case "retirer": {
+        const { data: d } = await supabase.from("documents").select("*").eq("id", a.docId).maybeSingle();
+        return syncQuittance(d ? mDoc(d) : { id: a.docId, ref: a.ref, docType: "quittance" }, { retirer: base === "retirer" || !d });
+      }
+      case "rattacher_quittance": {
+        const { data, error } = await supabase.from("documents").update({ unit_id: arg }).eq("id", a.docId).select().single();
+        if (error) return { error: error.message };
+        return syncQuittance(mDoc(data));
+      }
+      case "supprimer_tableau": {
+        const { data: ls } = await supabase.from("rent_lines").select("collected").eq("period_id", a.periodId);
+        if ((ls || []).some((x) => Number(x.collected) > 0)) return { error: "Ce tableau contient des paiements : il n'est pas supprimé. Rattachez-le d'abord à un bâtiment." };
+        const { error } = await supabase.from("rent_periods").delete().eq("id", a.periodId);
+        return error ? { error: error.message } : { message: "Tableau orphelin supprimé." };
+      }
+      default: return { error: "Correction inconnue." };
+    }
+  };
+  /* Registre des baux : rechargé après chaque modification (avec les lots, dont les dates suivent le bail en cours) */
+  const reloadLeases = async () => {
+    const [bx, us] = await Promise.all([supabase.from("leases").select("*").order("starts_on", { ascending: false }), fetchAll("units", { col: "label" })]);
+    if (!bx.error) { setLeases((bx.data || []).map(mBail)); setLeasesError(""); }
+    if (us.data) setUnits(us.data.map(mUnit));
+  };
+  const corrigerAnomalie = async (a, cle, valeur, { deverrouiller = false } = {}) => {
+    const opt = optionsCorrection(a, { rentLines, units, documents }).find((o) => o.cle === cle) || { tableau: true };
+    const pid = opt.commercial ? a.commercialPeriodId : a.periodId;
+    const { data: pRow } = opt.tableau || opt.commercial ? await supabase.from("rent_periods").select("*").eq("id", pid).maybeSingle() : { data: null };
+    const per = pRow ? mPeriod(pRow) : null;
+    let reverrou = null;
+    if (per?.locked) {
+      if (!deverrouiller) return { error: `Le tableau de ${periodLabel(per.period)} est arrêté pour virement : la correction demande son déverrouillage par la direction.`, verrou: true };
+      const u = await unlockPeriod(per, `Correction automatique du contrôle : ${a.titre}`);
+      if (u?.error) return u;
+      reverrou = per;
+    }
+    let r;
+    try { r = await appliquerCorrection(a, cle, valeur); }
+    catch (e) { r = { error: e?.message || "Correction impossible." }; }
+    finally {
+      /* Nouvel arrêté à la date d'origine : les quittances restent rattachées aux mêmes mois */
+      if (reverrou) await supabase.from("rent_periods").update({ locked: true, locked_at: reverrou.lockedAt, locked_by: reverrou.lockedBy, status: "valide" }).eq("id", reverrou.id);
+    }
+    if (!r?.error && per && !["recalculer_reports"].includes(cle)) await cascadeFrom(per.propertyId, per.scope, per.period);
+    await rechargerRecouvrement();
+    return r?.error ? r : { message: r?.message || "Corrigé." };
+  };
+  /* « Tout corriger » : seulement les corrections sans choix, hors tableaux arrêtés */
+  const corrigerToutAuto = async (anomalies) => {
+    let faites = 0, ignorees = 0; const erreurs = [];
+    for (const a of anomalies) {
+      const opt = optionsCorrection(a, { rentLines, units, documents }).find((o) => o.auto);
+      if (!opt) continue;
+      if ((opt.commercial ? a.commercialLocked : a.locked) && opt.tableau !== false) { ignorees += 1; continue; }
+      const r = await corrigerAnomalie(a, opt.cle);
+      if (r?.error) erreurs.push(`${a.titre} : ${r.error}`); else faites += 1;
+    }
+    return { faites, ignorees, erreurs, message: `${faites} point(s) corrigé(s) automatiquement`
+      + (ignorees ? ` ; ${ignorees} point(s) sur des tableaux arrêtés laissés à la direction` : "")
+      + (erreurs.length ? ` ; ${erreurs.length} échec(s) : ${erreurs.slice(0, 3).join(" | ")}` : "") + "." };
   };
 
   /* ══ AVANCES : application automatique à tous les tableaux concernés ══ */
@@ -3402,7 +3713,7 @@ function useStore(userId) {
        et fiches existants les ignorent sans autre modification. */
     quotes: activeQuotes, quotesAll: quotes, quoteLines, templates, documents,
     units, rentPeriods, rentLines, rentCharges, requests, taxRecords, complaints, folderFiles,
-    cashEntries, handovers, formerTenants, prospects, prospected, weeklyReports, rentAdvances, visits, artisans,
+    cashEntries, handovers, formerTenants, prospects, prospected, weeklyReports, rentAdvances, visits, artisans, leases, leasesError,
     actions: {
       createTask, updateTask, deleteTask, startTimer, stopTimer, pauseTask, finishTask, addManualTime, deleteEntry,
       ensureDm, sendMessage, markRead, saveDept, deleteDept, updateProfile, adminUsers,
@@ -3417,7 +3728,7 @@ function useStore(userId) {
       uploadFolderFile, deleteFolderFile, approveDocument, applyReceiptToRent, syncQuittance, rapprocherQuittances,
       saveCashEntry, deleteCashEntry, createHandover, answerHandover,
       applyAdvanceToPeriods, archiveTenant, deleteFormerTenant,
-      saveAdvance, deleteAdvance, syncAdvancesForUnit, cascadeFrom, recalcAllCarried, lockPeriod, unlockPeriod,
+      saveAdvance, deleteAdvance, syncAdvancesForUnit, cascadeFrom, recalcAllCarried, lockPeriod, unlockPeriod, corrigerAnomalie, corrigerToutAuto, reloadLeases,
       saveVisit, setVisitStatus, deleteVisit, markOwnerInformed, createVisitTask, scheduleNextVisit,
       saveArtisan, deleteArtisan, importArtisansFromQuotes,
       saveProspect, deleteProspect, saveProspected, deleteProspected, uploadProspectedPhoto, deleteProspectedPhoto,
@@ -3548,6 +3859,44 @@ function LineEditor({ lines, setLines, labelPlaceholder = "Désignation de la pr
   );
 }
 
+/* ══ DÉCOMPTE D'ENTRÉE ══
+   Les lignes « mois d'avance », « caution » et « agence » se calculent sur le
+   loyer mensuel : nombre de mois × loyer. Les anciennes lignes (« 2 MOIS
+   D'AVANCE », « CAUTION : 2 MOIS »…) sont reconnues et converties. */
+const codeLigneDecompte = (l) => {
+  if (l.code) return l.code;
+  const t = String(l.label || "").toUpperCase();
+  if (t.includes("AVANCE")) return "avance";
+  if (t.includes("CAUTION") || t.includes("GARANTIE")) return "caution";
+  if (t.includes("AGENCE")) return "agence";
+  if (t.includes("DOSSIER")) return "dossier";
+  return "";
+};
+const LIBELLES_DECOMPTE = { avance: "Mois d'avance", caution: "Caution (dépôt de garantie)", agence: "Frais d'agence", dossier: "Frais de dossier" };
+function appliquerDecompte(lines, fields, ancienLoyer = 0) {
+  const loyer = Math.max(0, Number(fields.loyerMensuel) || 0);
+  const mois = { avance: Number(fields.moisAvance ?? 2), caution: Number(fields.moisCaution ?? 2), agence: Number(fields.moisAgence ?? 1) };
+  const vus = new Set();
+  const out = lines.map((l) => {
+    const c = codeLigneDecompte(l);
+    if (["avance", "caution", "agence"].includes(c)) { vus.add(c); return { ...l, code: c, label: LIBELLES_DECOMPTE[c], qty: Math.max(0, mois[c] || 0), unit: "mois", price: loyer }; }
+    if (c === "dossier") {
+      vus.add(c);
+      /* Frais de dossier : 10 % du loyer, sauf montant saisi à la main */
+      const auto = !(Number(l.price) > 0) || Math.round((Number(ancienLoyer) || 0) * 0.1) === Math.round(Number(l.price));
+      return { ...l, code: c, label: l.label || LIBELLES_DECOMPTE.dossier, unit: l.unit && l.unit !== "u" ? l.unit : "forfait", qty: Number(l.qty) > 0 ? l.qty : 1, price: auto ? Math.round(loyer * 0.1) : l.price };
+    }
+    return l;
+  });
+  /* Une ligne supprimée par erreur revient si on lui donne un nombre de mois */
+  ["avance", "caution", "agence"].forEach((c, i) => {
+    if (!vus.has(c) && mois[c] > 0) out.splice(Math.min(i, out.length), 0, { code: c, label: LIBELLES_DECOMPTE[c], qty: mois[c], unit: "mois", price: loyer });
+  });
+  return out.filter((l) => !(["avance", "caution", "agence"].includes(l.code) && !(Number(l.qty) > 0)));
+}
+/* Décompte établi avec le loyer mensuel et le nombre de mois (version 38) */
+const decompteDetaille = (doc) => doc?.docType === "decompte_entree" && Number(doc?.fields?.loyerMensuel) > 0;
+
 /* ================= Modale de saisie ================= */
 /* Destinataire d'un courrier libre */
 const DEST_TYPES = { locataire: "Un locataire", proprietaire: "Un propriétaire", tiers: "Autre destinataire (administration, partenaire, fournisseur…)" };
@@ -3564,28 +3913,37 @@ function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onC
     clientName: "", clientPhone: "", clientEmail: "", clientAddr: "", object: "", body: "",
     status: "brouillon", notes: "", ...initial,
     /* Courrier : mention « Visa client » décochée par défaut ; relance : conservée */
-    fields: { ...(!initial.id && initial.docType === "courrier" ? { visaClient: false, destType: "locataire" } : {}), ...(initial.fields || {}) },
+    fields: { ...(!initial.id && initial.docType === "courrier" ? { visaClient: false, destType: "locataire" } : {}),
+      ...(!initial.id && initial.docType === "decompte_entree" ? { moisAvance: 2, moisCaution: 2, moisAgence: 1,
+        ...(Number((units || []).find((u) => u.id === initial.unitId)?.rent) > 0 ? { loyerMensuel: Number((units || []).find((u) => u.id === initial.unitId).rent) } : {}) } : {}),
+      ...(initial.fields || {}) },
   }));
-  const [lines, setLines] = useState(() => initial.lines?.length ? initial.lines : cfg.preset.map((l) => ({ ...l })));
+  const [lines, setLines] = useState(() => {
+    if (initial.lines?.length) return initial.lines;
+    const base = cfg.preset.map((l) => ({ ...l }));
+    /* Nouveau décompte ouvert depuis un lot : loyer repris d'office */
+    const lot = initial.docType === "decompte_entree" ? (units || []).find((u) => u.id === initial.unitId) : null;
+    return lot && Number(lot.rent) > 0 ? appliquerDecompte(base, { loyerMensuel: Number(lot.rent), ...(initial.fields || {}) }) : base;
+  });
   const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   const setField = (k, v) => setF((p) => ({ ...p, fields: { ...p.fields, [k]: v } }));
+  /* Décompte d'entrée : toute modification du loyer ou d'un nombre de mois recalcule les lignes */
+  const majDecompte = (patch) => {
+    const fields = { moisAvance: 2, moisCaution: 2, moisAgence: 1, ...f.fields, ...patch };
+    setF((p) => ({ ...p, fields: { moisAvance: 2, moisCaution: 2, moisAgence: 1, ...p.fields, ...patch } }));
+    setLines((ls) => appliquerDecompte(ls, fields, f.fields.loyerMensuel));
+  };
 
   const pickProperty = (id) => {
     const prop = properties.find((p) => p.id === id);
     setF((s) => ({ ...s, propertyId: id, ownerId: prop?.ownerId || s.ownerId }));
-    /* Décompte d'entrée : pré-calcul depuis le loyer du bien */
-    if (prop?.rent && f.docType === "decompte_entree") {
-      const r = Number(prop.rent);
-      setLines((ls) => ls.map((l) => {
-        const t = l.label.toUpperCase();
-        if (t.includes("AVANCE")) return { ...l, price: r * 2 };
-        if (t.includes("CAUTION")) return { ...l, price: r * 2 };
-        if (t.includes("AGENCE")) return { ...l, price: r };
-        if (t.includes("FRAIS DE DOSSIER")) return { ...l, price: Math.round(r * 0.1) };
-        return l;
-      }));
+    /* Décompte d'entrée : loyer mensuel repris du lot choisi, sinon du bien */
+    if (f.docType === "decompte_entree") {
+      const lot = (units || []).find((u) => u.id === f.unitId && u.propertyId === id);
+      const r = Number(lot?.rent) || Number(prop?.rent) || 0;
+      if (r > 0) majDecompte({ loyerMensuel: r });
     }
     if (prop?.rent && (f.docType === "quittance" || f.docType === "facture_impayes")) {
       setLines((ls) => ls.map((l) => (l.label.toLowerCase().includes("loyer") ? { ...l, price: Number(prop.rent) } : l)));
@@ -3633,6 +3991,9 @@ function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onC
     if (isPF) {
       if (!f.fields.validUntil) { setBusy(false); setErr("Indiquez la date de validité de la proforma."); return; }
       if (f.fields.validUntil < f.date) { setBusy(false); setErr("La date de validité doit être postérieure à la date du document."); return; }
+    }
+    if (f.docType === "decompte_entree" && !f.id && !(Number(f.fields.loyerMensuel) > 0)) {
+      setBusy(false); setErr("Indiquez le loyer mensuel : il sert au calcul des mois d'avance et de la caution."); return;
     }
     const r = await onSave({ ...f, lines, approval, ...(tiers ? { propertyId: "", unitId: null } : {}),
       ...(isPF ? { direction: "neutre", status: f.status === "regle" ? "emis" : f.status } : {}) });
@@ -3703,9 +4064,13 @@ function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onC
         <PersonPicker label={destType === "proprietaire" ? "Propriétaire" : cfg.clientLabel}
           hint={destType === "proprietaire" ? "Choisissez un propriétaire connu ou saisissez un nom libre" : "Choisissez un locataire connu ou saisissez un nom libre"}
           value={f.clientName} options={destType === "proprietaire" ? ownerOptions : tenantOptions} placeholder="Ex. Mme SAKOUA BADE"
-          onPick={(v, hit) => setF((p) => ({ ...p, clientName: v,
-            ...(hit ? { clientPhone: hit.phone || p.clientPhone, clientEmail: hit.email || p.clientEmail,
-              unitId: hit.unitId || p.unitId, propertyId: hit.propertyId || p.propertyId, ownerId: hit.ownerId || p.ownerId } : {}) }))} />
+          onPick={(v, hit) => {
+            setF((p) => ({ ...p, clientName: v,
+              ...(hit ? { clientPhone: hit.phone || p.clientPhone, clientEmail: hit.email || p.clientEmail,
+                unitId: hit.unitId || p.unitId, propertyId: hit.propertyId || p.propertyId, ownerId: hit.ownerId || p.ownerId } : {}) }));
+            const lot = hit?.unitId ? (units || []).find((u) => u.id === hit.unitId) : null;
+            if (f.docType === "decompte_entree" && Number(lot?.rent) > 0) majDecompte({ loyerMensuel: Number(lot.rent) });
+          }} />
         <Field label="Téléphone"><input className={inputCls} style={inputStyle} value={f.clientPhone} onChange={(e) => set("clientPhone", e.target.value)} placeholder="+225 07 ..." /></Field>
       </div>
       )}
@@ -3796,9 +4161,10 @@ function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onC
             </Field>
             <Field label="Délai accordé (jours)"><input type="number" min={0} className={inputCls} style={inputStyle} value={f.fields.delay || 8} onChange={(e) => setField("delay", e.target.value)} /></Field>
           </div>
+          <OptionsCourrier fields={f.fields} setField={setField} />
           <Field label="Corps du courrier"
-            hint={f.docType === "relance" ? "Laissez vide pour utiliser le texte type généré automatiquement" : "Mise en forme complète : gras, listes, alignements, titres"}>
-            <LetterEditor value={f.body} onChange={(html) => set("body", html)}
+            hint={f.docType === "relance" ? "Laissez vide pour utiliser le texte type généré automatiquement" : "La page affichée a la largeur et les marges du courrier imprimé"}>
+            <LetterEditor value={f.body} onChange={(html) => set("body", html)} mise={f.fields.mise}
               context={{ clientName: f.clientName, propertyName: properties.find((p) => p.id === f.propertyId)?.name,
                 unitLabel: (units || []).find((u) => u.id === f.unitId)?.label, total }}
               placeholder={f.docType === "relance" ? "Laissez vide pour le texte type…" : "Rédigez votre courrier…"} />
@@ -3838,12 +4204,32 @@ function DocModal({ initial, properties, owners, units, isAdminUser, onSave, onC
         </div>
       )}
 
+      {f.docType === "decompte_entree" && (
+        <div className="rounded-xl border p-3 mb-3" style={{ borderColor: "#BFDBFE", background: "#F3F8FD" }}>
+          <p className="text-xs font-semibold mb-2" style={{ color: "#1F5C82" }}>Loyer mensuel et nombre de mois</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Field label="Loyer mensuel (F CFA) *"><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} aria-label="Loyer mensuel"
+              value={f.fields.loyerMensuel ?? ""} onChange={(e) => majDecompte({ loyerMensuel: e.target.value })} /></Field>
+            <Field label="Mois d'avance"><input type="number" min={0} max={24} className={inputCls} style={inputStyle} aria-label="Nombre de mois d'avance"
+              value={f.fields.moisAvance ?? 2} onChange={(e) => majDecompte({ moisAvance: e.target.value })} /></Field>
+            <Field label="Mois de caution"><input type="number" min={0} max={24} className={inputCls} style={inputStyle} aria-label="Nombre de mois de caution"
+              value={f.fields.moisCaution ?? 2} onChange={(e) => majDecompte({ moisCaution: e.target.value })} /></Field>
+            <Field label="Mois d'agence"><input type="number" min={0} max={12} className={inputCls} style={inputStyle} aria-label="Nombre de mois d'agence"
+              value={f.fields.moisAgence ?? 1} onChange={(e) => majDecompte({ moisAgence: e.target.value })} /></Field>
+          </div>
+          {(Number(f.fields.moisAvance ?? 2) > 2 || Number(f.fields.moisCaution ?? 2) > 2) && (
+            <p className="text-[11px] mt-1" style={{ color: "#B5171D" }}><AlertTriangle size={12} className="inline mb-0.5" /> Bail d'habitation : l'avance et la caution ne peuvent dépasser deux mois de loyer chacune (Code de la Construction et de l'Habitat, art. 415 et 416). Au-delà, réservez ce décompte à un bail professionnel.</p>
+          )}
+          <p className="text-[11px] mt-1" style={{ color: "var(--muted)" }}>Chaque ligne se calcule : nombre de mois × loyer mensuel. Les frais de dossier sont proposés à 10 % du loyer et restent modifiables.</p>
+        </div>
+      )}
+
       {!(tiers && !lines.some((l) => (l.label || "").trim())) && <>
       <p className="text-xs font-semibold mb-2 mt-1" style={{ color: "var(--ink)" }}>
         {isDecharge ? "Montant de la décharge" : isLetter ? "Sommes réclamées" : "Détail du document"}
       </p>
-      <LineEditor lines={lines} setLines={setLines} showUnit={f.docType !== "decompte_entree"}
-        labelPlaceholder={f.docType === "decompte_entree" ? "Ex. 2 MOIS D'AVANCE" : "Désignation"} />
+      <LineEditor lines={lines} setLines={setLines}
+        labelPlaceholder={f.docType === "decompte_entree" ? "Ex. Frais de branchement" : "Désignation"} />
       </>}
 
       {f.docType === "recu_charge" && (
@@ -3936,18 +4322,48 @@ const aLe = (groupe) => {
    alignements, listes, titres, tailles et couleurs.
    ══════════════════════════════════════════════════════════════════════ */
 
+/* ══ RÉDACTION DES COURRIERS ══
+   Polices installées sur les ordinateurs Windows et Office (aucun
+   téléchargement) ; tailles en points, comme dans un traitement de texte. */
 const LETTER_FONTS = [
-  { label: "Calibri", value: "Calibri, sans-serif" },
+  { label: "Calibri", value: "Calibri, Carlito, sans-serif" },
+  { label: "Cambria", value: "Cambria, Caladea, Georgia, serif" },
   { label: "Arial", value: "Arial, Helvetica, sans-serif" },
-  { label: "Times New Roman", value: "'Times New Roman', Times, serif" },
+  { label: "Arial Narrow", value: "'Arial Narrow', Arial, sans-serif" },
+  { label: "Book Antiqua", value: "'Book Antiqua', Palatino, serif" },
+  { label: "Bookman Old Style", value: "'Bookman Old Style', serif" },
+  { label: "Candara", value: "Candara, Calibri, sans-serif" },
+  { label: "Century Gothic", value: "'Century Gothic', sans-serif" },
+  { label: "Constantia", value: "Constantia, Georgia, serif" },
+  { label: "Corbel", value: "Corbel, Calibri, sans-serif" },
+  { label: "Courier New", value: "'Courier New', Courier, monospace" },
+  { label: "Franklin Gothic", value: "'Franklin Gothic Medium', Arial, sans-serif" },
+  { label: "Garamond", value: "Garamond, 'EB Garamond', serif" },
   { label: "Georgia", value: "Georgia, serif" },
-  { label: "Inter", value: "Inter, sans-serif" },
+  { label: "Gill Sans MT", value: "'Gill Sans MT', 'Gill Sans', sans-serif" },
+  { label: "Lucida Sans", value: "'Lucida Sans Unicode', 'Lucida Sans', sans-serif" },
+  { label: "Palatino Linotype", value: "'Palatino Linotype', Palatino, serif" },
+  { label: "Segoe UI", value: "'Segoe UI', Arial, sans-serif" },
+  { label: "Tahoma", value: "Tahoma, Verdana, sans-serif" },
+  { label: "Times New Roman", value: "'Times New Roman', Times, serif" },
+  { label: "Trebuchet MS", value: "'Trebuchet MS', sans-serif" },
+  { label: "Verdana", value: "Verdana, sans-serif" },
 ];
-const LETTER_SIZES = [
-  { label: "9", value: "1" }, { label: "10", value: "2" }, { label: "12", value: "3" },
-  { label: "14", value: "4" }, { label: "18", value: "5" }, { label: "24", value: "6" },
-];
-const LETTER_COLORS = ["#1A1C20", "#D81F26", "#2E78A8", "#4F9E2A", "#C58A1B", "#7C3AED", "#6B7280"];
+const LETTER_SIZES = [8, 9, 10, 10.5, 11, 12, 13, 14, 16, 18, 20, 22, 24, 28, 32, 36];
+const LETTER_COLORS = ["#1A1C20", "#374151", "#6B7280", "#D81F26", "#B5171D", "#EA580C", "#C58A1B", "#4F9E2A", "#0F766E", "#2E78A8", "#1E3A8A", "#7C3AED"];
+const LETTER_SPACINGS = [["1", "Simple (1,0)"], ["1.15", "1,15"], ["1.5", "1,5"], ["2", "Double (2,0)"]];
+const LETTER_PARA = [["0", "Aucun"], ["3", "3 pt"], ["6", "6 pt"], ["8", "8 pt"], ["12", "12 pt"]];
+/* Mise en page par défaut d'un courrier (modifiable pour chaque courrier) */
+const MISE_DEFAUT = { police: "Calibri", taille: 11, interligne: "1.15", espacement: "6", marges: "normales", alignement: "justify" };
+const miseDe = (m) => ({ ...MISE_DEFAUT, ...(m || {}) });
+const policeCss = (nom) => (LETTER_FONTS.find((x) => x.label === nom) || LETTER_FONTS[0]).value;
+/* Largeur de texte d'une page A4 selon les marges : ce qu'on voit à l'écran est ce qui s'imprime */
+const LARGEUR_TEXTE_MM = { normales: 160, moderees: 172, larges: 150, etroites: 184.6 };
+/* Style du corps de lettre, à l'écran comme à l'impression */
+const styleCorps = (m) => {
+  const x = miseDe(m);
+  return { fontFamily: policeCss(x.police), fontSize: `${x.taille}pt`, lineHeight: x.interligne, textAlign: x.alignement, "--kb-esp": `${x.espacement}pt` };
+};
 
 /* Convertit un ancien texte brut en HTML, pour ne rien perdre de l'existant */
 const isHtml = (t) => /<(p|div|br|h[1-3]|ul|ol|li|b|i|u|strong|em|span|font)\b/i.test(t || "");
@@ -3974,7 +4390,7 @@ function htmlToText(html) {
 
 function ToolBtn({ onClick, active, title, children, wide }) {
   return (
-    <button type="button" title={title} onMouseDown={(e) => e.preventDefault()} onClick={onClick}
+    <button type="button" title={title} aria-label={title} onMouseDown={(e) => e.preventDefault()} onClick={onClick}
       className="rounded-md flex items-center justify-center shrink-0"
       style={{
         height: 30, minWidth: wide ? "auto" : 30, padding: wide ? "0 8px" : 0,
@@ -3993,23 +4409,47 @@ const LETTER_FIELDS = [
   ["{{DATE}}", "Date du jour"], ["{{DESTINATAIRE}}", "Nom du destinataire"], ["{{BIEN}}", "Nom du bien"],
   ["{{LOT}}", "Lot / appartement"], ["{{MONTANT}}", "Montant du document"], ["{{AGENCE}}", "Entreprise Kibegnon SARL"],
 ];
-const LETTER_HIGHLIGHTS = ["#FFF59D", "#C8E6C9", "#BBDEFB", "#F8BBD0", "transparent"];
+const LETTER_HIGHLIGHTS = ["#FFF59D", "#C8E6C9", "#BBDEFB", "#F8BBD0", "#FFE0B2", "transparent"];
+/* Formules usuelles de la correspondance */
+const FORMULES_APPEL = ["Madame, Monsieur,", "Madame,", "Monsieur,", "Monsieur le Directeur,", "Madame la Directrice,", "Cher client,"];
+const FORMULES_POLITESSE = [
+  "Nous vous prions d'agréer, Madame, Monsieur, l'expression de nos salutations distinguées.",
+  "Veuillez agréer, Madame, Monsieur, l'expression de notre considération distinguée.",
+  "Restant à votre disposition pour tout renseignement complémentaire, nous vous prions de croire, Madame, Monsieur, en l'assurance de nos sentiments dévoués.",
+  "Dans l'attente de votre retour, nous vous prions d'agréer, Madame, Monsieur, nos salutations respectueuses.",
+  "Vous en souhaitant bonne réception, nous vous prions d'agréer, Madame, Monsieur, l'expression de nos sentiments les meilleurs.",
+];
+const CARACTERES = ["« ", " »", "—", "–", "…", "n°", "°", "F CFA", "€", "²", "³", "½", "¼", "✓", "•", "→"];
 
-function LetterEditor({ value, onChange, placeholder, context = {} }) {
+/* Menus déroulants de la barre d'outils (composants stables : la saisie y reste fluide) */
+function EdPop({ ouvert, large, children }) {
+  if (!ouvert) return null;
+  return (
+    <div className="absolute z-30 mt-1 p-2 rounded-lg border bg-white" onMouseDown={(e) => { if (!["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName)) e.preventDefault(); }}
+      style={{ borderColor: "var(--line)", boxShadow: "0 8px 24px rgba(0,0,0,.12)", minWidth: large ? 300 : undefined, maxWidth: "90vw" }}>{children}</div>);
+}
+const EdTitre = ({ children }) => <p className="text-[10px] font-semibold uppercase tracking-wide mt-1.5 mb-1" style={{ color: "var(--muted)" }}>{children}</p>;
+const EdItem = ({ onClick, children }) => <button type="button" onClick={onClick} className="block w-full text-left text-xs px-2 py-1.5 rounded hover:bg-slate-100">{children}</button>;
+
+function LetterEditor({ value, onChange, placeholder, context = {}, mise }) {
   const ref = useRef(null);
   const [etat, setEtat] = useState({});
-  const [couleurs, setCouleurs] = useState(false);
-  const [surlign, setSurlign] = useState(false);
+  const [menu, setMenu] = useState("");               // menu ouvert : couleur, surlignage, inserer, tableau, chercher
   const [plein, setPlein] = useState(false);
-  const [stats, setStats] = useState({ mots: 0, car: 0 });
-  const [tableau, setTableau] = useState(false);
+  const [stats, setStats] = useState({ mots: 0, car: 0, pages: 1 });
   const [tRows, setTRows] = useState(3); const [tCols, setTCols] = useState(3);
+  const [cherche, setCherche] = useState(""); const [remplace, setRemplace] = useState(""); const [resultat, setResultat] = useState("");
+  const m = miseDe(mise);
+  const largeur = `${LARGEUR_TEXTE_MM[m.marges] || 160}mm`;
 
   const compter = () => {
-    const txt = ref.current?.innerText || "";
-    setStats({ mots: (txt.trim().match(/\S+/g) || []).length, car: txt.length });
+    const el = ref.current; const txt = el?.innerText || "";
+    /* Hauteur utile d'une page A4 (≈ 245 mm de texte avec l'en-tête), en pixels */
+    const pages = el ? Math.max(1, Math.ceil(el.scrollHeight / (245 * 3.78))) : 1;
+    setStats({ mots: (txt.trim().match(/\S+/g) || []).length, car: txt.length, pages });
   };
   useEffect(() => { compter(); /* eslint-disable-line */ }, []);
+  const emettre = () => { onChange(ref.current?.innerHTML || ""); compter(); };
 
   /* Remplit les champs dynamiques avec le contexte du document */
   const substitute = (code) => ({
@@ -4021,24 +4461,77 @@ function LetterEditor({ value, onChange, placeholder, context = {} }) {
     "{{AGENCE}}": "Entreprise Kibegnon SARL",
   }[code] || code);
 
-  const insertHtml = (html) => {
-    ref.current?.focus();
-    try { document.execCommand("insertHTML", false, html); } catch { /* ignoré */ }
-    onChange(ref.current?.innerHTML || ""); compter();
+  /* La sélection est mémorisée : ouvrir un menu ne doit pas la perdre */
+  const selection = useRef(null);
+  const memoriser = () => {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && ref.current?.contains(sel.anchorNode)) selection.current = sel.getRangeAt(0).cloneRange();
   };
-  const insertTable = () => {
-    const r = Math.max(1, Math.min(12, Number(tRows) || 3)), c = Math.max(1, Math.min(8, Number(tCols) || 3));
-    const cell = '<td style="border:1px solid #9AA6B5;padding:4px 8px;min-width:60px">&nbsp;</td>';
-    const rows = Array.from({ length: r }, (_, i) => `<tr>${Array.from({ length: c }, () => (i === 0 ? cell.replace("<td", '<td style="background:#F1F3F5;font-weight:700;border:1px solid #9AA6B5;padding:4px 8px"').replace('style="border:1px solid #9AA6B5;padding:4px 8px;min-width:60px" ', "") : cell)).join("")}</tr>`).join("");
-    insertHtml(`<table style="border-collapse:collapse;width:100%;margin:8px 0">${rows}</table><p></p>`);
-    setTableau(false);
-  };
-  const setLineHeight = (lh) => {
+  const restaurer = () => {
     ref.current?.focus();
     const sel = window.getSelection();
-    let node = sel?.anchorNode; while (node && node !== ref.current && !(node.nodeType === 1 && /^(P|DIV|H[1-3]|LI)$/.test(node.tagName))) node = node.parentNode;
-    if (node && node !== ref.current) node.style.lineHeight = lh; else if (ref.current) ref.current.style.lineHeight = lh;
-    onChange(ref.current?.innerHTML || "");
+    if (selection.current && sel) { sel.removeAllRanges(); sel.addRange(selection.current); }
+  };
+
+  const insertHtml = (html) => {
+    restaurer();
+    try { document.execCommand("insertHTML", false, html); } catch { /* ignoré */ }
+    setMenu(""); emettre();
+  };
+  const insertTexte = (t) => insertHtml(t.replace(/&/g, "&amp;").replace(/</g, "&lt;"));
+  const insertParagraphe = (t) => insertHtml(`<p>${t.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</p>`);
+  const insertTable = () => {
+    const r = Math.max(1, Math.min(12, Number(tRows) || 3)), c = Math.max(1, Math.min(8, Number(tCols) || 3));
+    const td = (tete) => `<td style="border:1px solid #9AA6B5;padding:4px 8px;min-width:60px${tete ? ";background:#F1F3F5;font-weight:700" : ""}">&nbsp;</td>`;
+    const rows = Array.from({ length: r }, (_, i) => `<tr>${Array.from({ length: c }, () => td(i === 0)).join("")}</tr>`).join("");
+    insertHtml(`<table style="border-collapse:collapse;width:100%;margin:8px 0">${rows}</table><p><br></p>`);
+  };
+  /* Interligne du paragraphe courant (ou de toute la lettre si rien n'est sélectionné) */
+  const setLineHeight = (lh) => {
+    restaurer();
+    const sel = window.getSelection();
+    let node = sel?.anchorNode; while (node && node !== ref.current && !(node.nodeType === 1 && /^(P|DIV|H[1-3]|LI|BLOCKQUOTE)$/.test(node.tagName))) node = node.parentNode;
+    if (node && node !== ref.current) node.style.lineHeight = lh;
+    emettre();
+  };
+  /* Taille en points : la commande native ne connaît que 7 tailles, on la convertit */
+  const appliquerTaille = (pt) => {
+    restaurer();
+    try {
+      document.execCommand("styleWithCSS", false, false);
+      document.execCommand("fontSize", false, "7");
+    } catch { /* ignoré */ }
+    ref.current?.querySelectorAll('font[size="7"]').forEach((el) => { el.removeAttribute("size"); el.style.fontSize = `${pt}pt`; });
+    emettre();
+  };
+  const appliquerPolice = (label) => {
+    restaurer();
+    try { document.execCommand("fontName", false, policeCss(label)); } catch { /* ignoré */ }
+    emettre();
+  };
+  /* MAJUSCULES / minuscules / Première lettre en capitale sur la sélection */
+  const changerCasse = (mode) => {
+    restaurer();
+    const t = window.getSelection()?.toString() || "";
+    if (!t) return;
+    const r = mode === "maj" ? t.toLocaleUpperCase("fr-FR") : mode === "min" ? t.toLocaleLowerCase("fr-FR")
+      : t.toLocaleLowerCase("fr-FR").replace(/(^|[\s'’(«-])(\p{L})/gu, (a, b, c) => b + c.toLocaleUpperCase("fr-FR"));
+    document.execCommand("insertText", false, r);
+    setMenu(""); emettre();
+  };
+  /* Rechercher et remplacer dans tout le courrier (la mise en forme est conservée) */
+  const remplacerTout = () => {
+    if (!cherche || !ref.current) return;
+    const walker = document.createTreeWalker(ref.current, NodeFilter.SHOW_TEXT);
+    const motif = new RegExp(cherche.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+    let n = 0; let node;
+    while ((node = walker.nextNode())) {
+      const avant = node.nodeValue;
+      const apres = avant.replace(motif, () => { n += 1; return remplace; });
+      if (apres !== avant) node.nodeValue = apres;
+    }
+    setResultat(n ? `${n} remplacement(s)` : "Aucune occurrence");
+    emettre();
   };
 
   /* Le contenu n'est injecté qu'au montage : réécrire à chaque frappe
@@ -4047,10 +4540,13 @@ function LetterEditor({ value, onChange, placeholder, context = {} }) {
     if (ref.current && ref.current.innerHTML !== (value || "")) {
       ref.current.innerHTML = value || "";
     }
+    /* Entrée crée un vrai paragraphe (et non une simple division) */
+    try { document.execCommand("defaultParagraphSeparator", false, "p"); } catch { /* ignoré */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const majEtat = () => {
+    memoriser();
     try {
       setEtat({
         bold: document.queryCommandState("bold"),
@@ -4070,32 +4566,38 @@ function LetterEditor({ value, onChange, placeholder, context = {} }) {
   };
 
   const cmd = (nom, arg) => {
-    ref.current?.focus();
+    restaurer();
     try { document.execCommand(nom, false, arg); } catch { /* ignoré */ }
-    onChange(ref.current?.innerHTML || "");
-    majEtat(); compter();
+    emettre(); majEtat();
   };
 
   const sep = <span style={{ width: 1, height: 20, background: "var(--line)", margin: "0 3px", flexShrink: 0 }} />;
+  const selCls = "rounded-md border text-xs px-1.5";
+  const basculer = (id) => { memoriser(); setMenu((x) => (x === id ? "" : id)); };
 
   return (
-    <div className="rounded-xl border overflow-hidden" style={plein
+    <div className="rounded-xl border" style={plein
       ? { position: "fixed", inset: 0, zIndex: 60, borderRadius: 0, background: "#EEF1F5", display: "flex", flexDirection: "column" }
       : { borderColor: "var(--line)" }}>
-      {/* Barre d'outils */}
-      <div className="flex flex-wrap items-center gap-0.5 p-1.5 border-b print:hidden"
-        style={{ borderColor: "var(--line)", background: "#F7F9FB" }}>
+      {/* Barre d'outils : reste visible pendant la rédaction */}
+      <div className="flex flex-wrap items-center gap-0.5 p-1.5 border-b print:hidden rounded-t-xl"
+        style={{ borderColor: "var(--line)", background: "#F7F9FB", position: "sticky", top: 0, zIndex: 5 }}>
 
-        <select onMouseDown={(e) => e.stopPropagation()} onChange={(e) => cmd("fontName", e.target.value)}
-          className="rounded-md border text-xs px-1.5" style={{ ...inputStyle, height: 30, width: 118 }} defaultValue="">
-          <option value="" disabled>Police</option>
-          {LETTER_FONTS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+        <select aria-label="Police" title="Police du texte sélectionné" onMouseDown={memoriser} onChange={(e) => { if (e.target.value) appliquerPolice(e.target.value); e.target.value = ""; }}
+          className={selCls} style={{ ...inputStyle, height: 30, width: 128 }} defaultValue="">
+          <option value="" disabled>Police…</option>
+          {LETTER_FONTS.map((f) => <option key={f.label} value={f.label} style={{ fontFamily: f.value }}>{f.label}</option>)}
         </select>
-
-        <select onChange={(e) => cmd("fontSize", e.target.value)}
-          className="rounded-md border text-xs px-1.5" style={{ ...inputStyle, height: 30, width: 62 }} defaultValue="">
+        <select aria-label="Taille" title="Taille du texte sélectionné (points)" onMouseDown={memoriser} onChange={(e) => { if (e.target.value) appliquerTaille(e.target.value); e.target.value = ""; }}
+          className={selCls} style={{ ...inputStyle, height: 30, width: 66 }} defaultValue="">
           <option value="" disabled>Taille</option>
-          {LETTER_SIZES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+          {LETTER_SIZES.map((t) => <option key={t} value={t}>{String(t).replace(".", ",")}</option>)}
+        </select>
+        <select aria-label="Style de paragraphe" onMouseDown={memoriser} onChange={(e) => { cmd("formatBlock", e.target.value); e.target.value = ""; }}
+          className={selCls} style={{ ...inputStyle, height: 30, width: 92 }} defaultValue="">
+          <option value="" disabled>Style</option>
+          <option value="<p>">Normal</option><option value="<h1>">Titre 1</option><option value="<h2>">Titre 2</option><option value="<h3>">Titre 3</option>
+          <option value="<blockquote>">Citation</option>
         </select>
 
         {sep}
@@ -4106,36 +4608,26 @@ function LetterEditor({ value, onChange, placeholder, context = {} }) {
         <ToolBtn title="Exposant" active={etat.sup} onClick={() => cmd("superscript")}><Superscript size={15} /></ToolBtn>
         <ToolBtn title="Indice" active={etat.sub} onClick={() => cmd("subscript")}><Subscript size={15} /></ToolBtn>
         <div className="relative">
-          <ToolBtn title="Surlignage" onClick={() => setSurlign((c) => !c)}><Highlighter size={15} /></ToolBtn>
-          {surlign && (
-            <div className="absolute z-20 mt-1 p-1.5 rounded-lg border bg-white flex gap-1" style={{ borderColor: "var(--line)", boxShadow: "0 6px 20px rgba(0,0,0,.10)" }}>
-              {LETTER_HIGHLIGHTS.map((c) => (
-                <button key={c} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { cmd("hiliteColor", c); setSurlign(false); }}
-                  className="rounded" style={{ width: 20, height: 20, background: c === "transparent" ? "#fff" : c, border: "1px solid var(--line)" }} title={c === "transparent" ? "Aucun" : ""} />
-              ))}
-            </div>
-          )}
+          <ToolBtn title="Couleur du texte" active={menu === "couleur"} onClick={() => basculer("couleur")}><Palette size={15} /></ToolBtn>
+          <EdPop ouvert={menu === "couleur"}><div className="grid grid-cols-6 gap-1">{LETTER_COLORS.map((c) => (
+            <button key={c} type="button" aria-label={`Couleur ${c}`} onClick={() => { cmd("foreColor", c); setMenu(""); }} className="rounded-full" style={{ width: 20, height: 20, background: c, border: "1px solid #fff", outline: "1px solid var(--line)" }} />))}</div></EdPop>
         </div>
-
         <div className="relative">
-          <ToolBtn title="Couleur du texte" onClick={() => setCouleurs((c) => !c)}><Palette size={15} /></ToolBtn>
-          {couleurs && (
-            <div className="absolute z-20 mt-1 p-1.5 rounded-lg border bg-white flex gap-1"
-              style={{ borderColor: "var(--line)", boxShadow: "0 6px 20px rgba(0,0,0,.10)" }}>
-              {LETTER_COLORS.map((c) => (
-                <button key={c} type="button" onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => { cmd("foreColor", c); setCouleurs(false); }}
-                  className="rounded-full" style={{ width: 20, height: 20, background: c, border: "1px solid #fff", outline: "1px solid var(--line)" }} />
-              ))}
-            </div>
-          )}
+          <ToolBtn title="Surlignage" active={menu === "surligner"} onClick={() => basculer("surligner")}><Highlighter size={15} /></ToolBtn>
+          <EdPop ouvert={menu === "surligner"}><div className="flex gap-1">{LETTER_HIGHLIGHTS.map((c) => (
+            <button key={c} type="button" aria-label={c === "transparent" ? "Sans surlignage" : `Surlignage ${c}`} onClick={() => { cmd("hiliteColor", c); setMenu(""); }} className="rounded" style={{ width: 20, height: 20, background: c === "transparent" ? "#fff" : c, border: "1px solid var(--line)" }} />))}</div></EdPop>
         </div>
 
         {sep}
-        <ToolBtn title="Aligner à gauche" active={etat.left} onClick={() => cmd("justifyLeft")}><AlignLeft size={15} /></ToolBtn>
-        <ToolBtn title="Centrer" active={etat.center} onClick={() => cmd("justifyCenter")}><AlignCenter size={15} /></ToolBtn>
-        <ToolBtn title="Aligner à droite" active={etat.right} onClick={() => cmd("justifyRight")}><AlignRight size={15} /></ToolBtn>
-        <ToolBtn title="Justifier" active={etat.justify} onClick={() => cmd("justifyFull")}><AlignJustify size={15} /></ToolBtn>
+        <ToolBtn title="Aligner à gauche (Ctrl+L)" active={etat.left} onClick={() => cmd("justifyLeft")}><AlignLeft size={15} /></ToolBtn>
+        <ToolBtn title="Centrer (Ctrl+E)" active={etat.center} onClick={() => cmd("justifyCenter")}><AlignCenter size={15} /></ToolBtn>
+        <ToolBtn title="Aligner à droite (Ctrl+R)" active={etat.right} onClick={() => cmd("justifyRight")}><AlignRight size={15} /></ToolBtn>
+        <ToolBtn title="Justifier (Ctrl+J)" active={etat.justify} onClick={() => cmd("justifyFull")}><AlignJustify size={15} /></ToolBtn>
+        <select aria-label="Interligne du paragraphe" title="Interligne du paragraphe" onMouseDown={memoriser} onChange={(e) => { if (e.target.value) setLineHeight(e.target.value); e.target.value = ""; }}
+          className={selCls} style={{ ...inputStyle, height: 30, width: 84 }} defaultValue="">
+          <option value="" disabled>Interligne</option>
+          {LETTER_SPACINGS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
 
         {sep}
         <ToolBtn title="Liste à puces" active={etat.ul} onClick={() => cmd("insertUnorderedList")}><List size={15} /></ToolBtn>
@@ -4144,87 +4636,160 @@ function LetterEditor({ value, onChange, placeholder, context = {} }) {
         <ToolBtn title="Augmenter le retrait" onClick={() => cmd("indent")}><IndentIncrease size={15} /></ToolBtn>
 
         {sep}
-        <select onChange={(e) => { cmd("formatBlock", e.target.value); e.target.value = ""; }}
-          className="rounded-md border text-xs px-1.5" style={{ ...inputStyle, height: 30, width: 96 }} defaultValue="">
-          <option value="" disabled>Style</option>
-          <option value="<p>">Normal</option><option value="<h1>">Titre 1</option><option value="<h2>">Titre 2</option><option value="<h3>">Titre 3</option>
-          <option value="<blockquote>">Citation</option>
-        </select>
-        <select onChange={(e) => { setLineHeight(e.target.value); e.target.value = ""; }}
-          className="rounded-md border text-xs px-1.5" style={{ ...inputStyle, height: 30, width: 92 }} defaultValue="" title="Interligne">
-          <option value="" disabled>Interligne</option>
-          <option value="1.15">Simple</option><option value="1.5">1,5</option><option value="2">Double</option>
-        </select>
+        <div className="relative">
+          <ToolBtn wide title="Insérer une formule, un champ, un tableau…" active={menu === "inserer"} onClick={() => basculer("inserer")}><Plus size={14} /><span className="text-xs ml-1">Insérer</span><ChevronDown size={12} /></ToolBtn>
+          <EdPop ouvert={menu === "inserer"} large>
+            <div className="max-h-[60vh] overflow-y-auto pr-1" style={{ width: 340 }}>
+              <EdTitre>Formule d'appel</EdTitre>
+              {FORMULES_APPEL.map((t) => <EdItem key={t} onClick={() => insertParagraphe(t)}>{t}</EdItem>)}
+              <EdTitre>Formule de politesse</EdTitre>
+              {FORMULES_POLITESSE.map((t) => <EdItem key={t} onClick={() => insertParagraphe(t)}>{t}</EdItem>)}
+              <EdTitre>Information du dossier</EdTitre>
+              {LETTER_FIELDS.map(([code, l]) => <EdItem key={code} onClick={() => insertTexte(substitute(code))}>{l} : <span style={{ color: "var(--muted)" }}>{substitute(code)}</span></EdItem>)}
+              <EdTitre>Caractères spéciaux</EdTitre>
+              <div className="flex flex-wrap gap-1 px-1">{CARACTERES.map((c) => <button key={c} type="button" onClick={() => insertTexte(c)} className="text-xs rounded border px-2 py-1 hover:bg-slate-100" style={{ borderColor: "var(--line)" }}>{c.trim()}</button>)}</div>
+              <EdTitre>Éléments</EdTitre>
+              <EdItem onClick={() => { setMenu("tableau"); }}>Tableau…</EdItem>
+              <EdItem onClick={() => { const u = window.prompt("Adresse du lien :", "https://"); if (u) { restaurer(); cmd("createLink", u); setMenu(""); } }}>Lien</EdItem>
+              <EdItem onClick={() => { cmd("insertHorizontalRule"); setMenu(""); }}>Ligne de séparation</EdItem>
+              <EdItem onClick={() => insertHtml('<div class="kb-pagebreak">— saut de page —</div><p><br></p>')}>Saut de page à l'impression</EdItem>
+            </div>
+          </EdPop>
+          <EdPop ouvert={menu === "tableau"}>
+            <div className="flex items-center gap-1.5">
+              <input type="number" min={1} max={12} value={tRows} onChange={(e) => setTRows(e.target.value)} aria-label="Nombre de lignes" className="w-12 px-1 py-1 rounded border text-xs" style={inputStyle} /><span className="text-xs">lignes ×</span>
+              <input type="number" min={1} max={8} value={tCols} onChange={(e) => setTCols(e.target.value)} aria-label="Nombre de colonnes" className="w-12 px-1 py-1 rounded border text-xs" style={inputStyle} /><span className="text-xs">colonnes</span>
+              <button type="button" onClick={insertTable} className="kb-btn kb-btn-primary text-xs px-2 py-1">Insérer</button>
+            </div>
+          </EdPop>
+        </div>
+        <div className="relative">
+          <ToolBtn title="Majuscules / minuscules" active={menu === "casse"} onClick={() => basculer("casse")}><CaseSensitive size={16} /></ToolBtn>
+          <EdPop ouvert={menu === "casse"}>
+            <EdItem onClick={() => changerCasse("maj")}>MAJUSCULES</EdItem>
+            <EdItem onClick={() => changerCasse("min")}>minuscules</EdItem>
+            <EdItem onClick={() => changerCasse("titre")}>Première Lettre En Capitale</EdItem>
+          </EdPop>
+        </div>
+        <div className="relative">
+          <ToolBtn title="Rechercher et remplacer" active={menu === "chercher"} onClick={() => { setResultat(""); basculer("chercher"); }}><Replace size={15} /></ToolBtn>
+          <EdPop ouvert={menu === "chercher"} large>
+            <div className="grid gap-1.5" style={{ width: 280 }}>
+              <input value={cherche} onChange={(e) => { setCherche(e.target.value); setResultat(""); }} placeholder="Rechercher" aria-label="Texte à rechercher" className="px-2 py-1.5 rounded border text-xs" style={inputStyle} />
+              <input value={remplace} onChange={(e) => setRemplace(e.target.value)} placeholder="Remplacer par" aria-label="Remplacer par" className="px-2 py-1.5 rounded border text-xs" style={inputStyle} />
+              <div className="flex items-center justify-between gap-2"><span className="text-[11px]" style={{ color: "var(--muted)" }}>{resultat}</span>
+                <button type="button" onClick={remplacerTout} disabled={!cherche} className="kb-btn kb-btn-primary text-xs px-2 py-1 disabled:opacity-40">Tout remplacer</button></div>
+            </div>
+          </EdPop>
+        </div>
         <ToolBtn title="Effacer la mise en forme" onClick={() => cmd("removeFormat")}><Eraser size={15} /></ToolBtn>
-
-        {sep}
         <ToolBtn title="Annuler (Ctrl+Z)" onClick={() => cmd("undo")}><Undo2 size={15} /></ToolBtn>
         <ToolBtn title="Rétablir (Ctrl+Y)" onClick={() => cmd("redo")}><Redo2 size={15} /></ToolBtn>
 
-        {sep}
-        <div className="relative">
-          <ToolBtn wide title="Insérer un tableau" onClick={() => setTableau((t) => !t)}><Table2 size={15} /><span className="text-xs ml-1">Tableau</span></ToolBtn>
-          {tableau && (
-            <div className="absolute z-20 mt-1 p-2 rounded-lg border bg-white flex items-center gap-1.5" style={{ borderColor: "var(--line)", boxShadow: "0 6px 20px rgba(0,0,0,.10)" }}>
-              <input type="number" min={1} max={12} value={tRows} onChange={(e) => setTRows(e.target.value)} className="w-12 px-1 py-1 rounded border text-xs" style={inputStyle} /><span className="text-xs">lignes ×</span>
-              <input type="number" min={1} max={8} value={tCols} onChange={(e) => setTCols(e.target.value)} className="w-12 px-1 py-1 rounded border text-xs" style={inputStyle} /><span className="text-xs">colonnes</span>
-              <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={insertTable} className="kb-btn kb-btn-primary text-xs px-2 py-1">Insérer</button>
-            </div>
-          )}
-        </div>
-        <ToolBtn title="Insérer un lien" onClick={() => { const u = prompt("Adresse du lien :", "https://"); if (u) cmd("createLink", u); }}><Link2 size={15} /></ToolBtn>
-        <ToolBtn title="Ligne de séparation" onClick={() => cmd("insertHorizontalRule")}><Minus size={15} /></ToolBtn>
-        <ToolBtn title="Saut de page à l'impression" onClick={() => insertHtml('<div class="kb-pagebreak" style="border-top:1px dashed #9AA6B5;margin:12px 0;text-align:center;font-size:10px;color:#9AA6B5">— saut de page —</div><p></p>')}><FileText size={15} /></ToolBtn>
-        <select onChange={(e) => { if (e.target.value) insertHtml(substitute(e.target.value)); e.target.value = ""; }}
-          className="rounded-md border text-xs px-1.5" style={{ ...inputStyle, height: 30, width: 130 }} defaultValue="" title="Insérer une information du dossier">
-          <option value="" disabled>Insérer un champ…</option>
-          {LETTER_FIELDS.map(([code, l]) => <option key={code} value={code}>{l}</option>)}
-        </select>
-
         <span className="flex-1" />
-        <ToolBtn title={plein ? "Quitter le plein écran" : "Plein écran"} onClick={() => setPlein((p) => !p)}>{plein ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</ToolBtn>
+        <ToolBtn title={plein ? "Quitter le plein écran (Échap)" : "Plein écran"} onClick={() => setPlein((p) => !p)}>{plein ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</ToolBtn>
       </div>
 
-      {/* Zone de rédaction, aux dimensions d'une page */}
-      <div style={{ background: "#EEF1F5", padding: "14px 0", ...(plein ? { flex: 1, overflow: "auto" } : {}) }}>
+      {/* Zone de rédaction : largeur et marges de la page imprimée */}
+      <div onMouseDown={() => setMenu("")} style={{ background: "#EEF1F5", padding: "16px 8px", ...(plein ? { flex: 1, overflow: "auto" } : {}) }}>
         <div
           ref={ref}
           contentEditable
           suppressContentEditableWarning
-          onInput={() => { onChange(ref.current?.innerHTML || ""); compter(); }}
+          spellCheck
+          lang="fr"
+          role="textbox"
+          aria-multiline="true"
+          aria-label="Corps du courrier"
+          onInput={emettre}
           onKeyUp={majEtat}
           onMouseUp={majEtat}
           onKeyDown={(e) => {
+            if (e.key === "Escape" && plein) { setPlein(false); return; }
+            /* Tabulation : retrait de début de ligne, comme dans un traitement de texte */
+            if (e.key === "Tab") { e.preventDefault(); document.execCommand("insertHTML", false, "&emsp;&emsp;"); emettre(); return; }
             /* Raccourcis clavier habituels des traitements de texte */
             if (!(e.ctrlKey || e.metaKey)) return;
             const k = e.key.toLowerCase();
             const map = { b: "bold", i: "italic", u: "underline", e: "justifyCenter", l: "justifyLeft", r: "justifyRight", j: "justifyFull" };
             if (map[k]) { e.preventDefault(); cmd(map[k]); }
-            if (k === "s") { e.preventDefault(); onChange(ref.current?.innerHTML || ""); }
+            if (k === "s") { e.preventDefault(); emettre(); }
           }}
-          onBlur={() => onChange(ref.current?.innerHTML || "")}
+          onBlur={() => { memoriser(); emettre(); }}
           onPaste={(e) => {
             /* Collage en texte simple : évite d'importer la mise en forme
-               d'un autre logiciel, souvent illisible à l'impression. */
+               d'un autre logiciel, souvent illisible à l'impression. Les
+               paragraphes sont conservés. */
             e.preventDefault();
             const txt = e.clipboardData.getData("text/plain");
-            document.execCommand("insertText", false, txt);
+            const html = txt.split(/\r?\n\r?\n/).map((p) => `<p>${p.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\r?\n/g, "<br>")}</p>`).join("");
+            document.execCommand(txt.includes("\n") ? "insertHTML" : "insertText", false, txt.includes("\n") ? html : txt);
+            emettre();
           }}
           data-placeholder={placeholder || "Rédigez votre courrier…"}
           className="kb-letter mx-auto bg-white"
           style={{
-            width: "min(100%, 640px)", minHeight: 340, padding: "28px 34px",
-            outline: "none", fontFamily: "Calibri, sans-serif", fontSize: 14.5,
-            lineHeight: 1.65, color: "var(--ink)", textAlign: "justify",
+            ...styleCorps(m),
+            width: largeur, maxWidth: "100%", minHeight: plein ? "80vh" : 360, padding: "22px 26px",
+            outline: "none", color: "var(--ink)", boxSizing: "content-box",
             boxShadow: "0 1px 4px rgba(0,0,0,.08)",
-            ...(plein ? { width: "min(100%, 760px)", minHeight: "80vh" } : {}),
           }}
         />
       </div>
-      <div className="flex items-center justify-between px-3 py-1.5 border-t text-[11px] print:hidden" style={{ borderColor: "var(--line)", background: "#F7F9FB", color: "var(--muted)" }}>
-        <span>{stats.mots} mot{stats.mots > 1 ? "s" : ""} · {stats.car} caractère{stats.car > 1 ? "s" : ""}</span>
-        <span>Ctrl+B gras · Ctrl+I italique · Ctrl+U souligné · Ctrl+E centrer · Ctrl+J justifier</span>
+      <div className="flex items-center justify-between gap-2 flex-wrap px-3 py-1.5 border-t text-[11px] print:hidden rounded-b-xl" style={{ borderColor: "var(--line)", background: "#F7F9FB", color: "var(--muted)" }}>
+        <span>{stats.mots} mot{stats.mots > 1 ? "s" : ""} · {stats.car} caractère{stats.car > 1 ? "s" : ""} · environ {stats.pages} page{stats.pages > 1 ? "s" : ""}</span>
+        <span>{m.police} {String(m.taille).replace(".", ",")} pt · interligne {String(m.interligne).replace(".", ",")} · {(MARGES_COURRIER[m.marges] || MARGES_COURRIER.normales).label.toLowerCase()}</span>
       </div>
+    </div>
+  );
+}
+
+/* Mise en page et options d'un courrier : repliées par défaut pour ne pas gêner la rédaction */
+const MENTIONS_ENVOI = ["", "Lettre recommandée avec accusé de réception", "Remise en main propre contre décharge", "Par porteur", "Par courrier électronique", "Par voie d'huissier de justice"];
+const QUALITES_SIGNATAIRE = ["La Gérante", "Le Gérant", "Le Responsable administratif et juridique", "Le Service de la gestion locative", "Le Service recouvrement", "Le Service commercial"];
+function OptionsCourrier({ fields, setField }) {
+  const [ouvert, setOuvert] = useState(false);
+  const m = miseDe(fields.mise);
+  const setMise = (k, v) => setField("mise", { ...m, [k]: v });
+  const resume = `${m.police} ${String(m.taille).replace(".", ",")} pt · interligne ${String(m.interligne).replace(".", ",")} · marges ${(MARGES_COURRIER[m.marges] || MARGES_COURRIER.normales).label.toLowerCase()}`
+    + `${fields.envoi ? ` · ${fields.envoi.toLowerCase()}` : ""}${fields.signataireQualite ? ` · signé : ${fields.signataireQualite}` : ""}`;
+  const sel = `${inputCls}`;
+  return (
+    <div className="rounded-xl border mb-3" style={{ borderColor: "var(--line)", background: "#FAFBFC" }}>
+      <button type="button" onClick={() => setOuvert((o) => !o)} className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left" aria-expanded={ouvert}>
+        <span className="text-xs"><SlidersHorizontal size={13} className="inline mb-0.5 mr-1" /><strong>Mise en page et options du courrier</strong> <span style={{ color: "var(--muted)" }}>— {resume}</span></span>
+        <ChevronDown size={15} style={{ transform: ouvert ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+      </button>
+      {ouvert && (
+        <div className="px-3 pb-3 border-t pt-3" style={{ borderColor: "var(--line)" }}>
+          <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--muted)" }}>Mise en page de tout le courrier</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <Field label="Police"><select className={sel} style={inputStyle} value={m.police} onChange={(e) => setMise("police", e.target.value)}>
+              {LETTER_FONTS.map((f) => <option key={f.label} value={f.label}>{f.label}</option>)}</select></Field>
+            <Field label="Taille (points)"><select className={sel} style={inputStyle} value={m.taille} onChange={(e) => setMise("taille", Number(e.target.value))}>
+              {LETTER_SIZES.filter((t) => t >= 9 && t <= 16).map((t) => <option key={t} value={t}>{String(t).replace(".", ",")}</option>)}</select></Field>
+            <Field label="Interligne"><select className={sel} style={inputStyle} value={m.interligne} onChange={(e) => setMise("interligne", e.target.value)}>
+              {LETTER_SPACINGS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
+            <Field label="Espace après paragraphe"><select className={sel} style={inputStyle} value={m.espacement} onChange={(e) => setMise("espacement", e.target.value)}>
+              {LETTER_PARA.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
+            <Field label="Marges"><select className={sel} style={inputStyle} value={m.marges} onChange={(e) => setMise("marges", e.target.value)}>
+              {Object.entries(MARGES_COURRIER).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></Field>
+            <Field label="Alignement du texte"><select className={sel} style={inputStyle} value={m.alignement} onChange={(e) => setMise("alignement", e.target.value)}>
+              <option value="justify">Justifié</option><option value="left">À gauche</option></select></Field>
+          </div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide mb-2 mt-1" style={{ color: "var(--muted)" }}>Mentions du courrier</p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Field label="Mode d'envoi" hint="Imprimé en tête du courrier"><select className={sel} style={inputStyle} value={fields.envoi || ""} onChange={(e) => setField("envoi", e.target.value)}>
+              {MENTIONS_ENVOI.map((x) => <option key={x} value={x}>{x || "— Aucune mention —"}</option>)}</select></Field>
+            <Field label="Vos références (V/Réf.)" hint="Référence du courrier reçu, s'il y en a une"><input className={sel} style={inputStyle} value={fields.vref || ""} onChange={(e) => setField("vref", e.target.value)} placeholder="Ex. votre lettre du 12/11/2026" /></Field>
+            <Field label="Qualité du signataire"><input className={sel} style={inputStyle} list="kb-qualites" value={fields.signataireQualite || ""} onChange={(e) => setField("signataireQualite", e.target.value)} placeholder="Ex. La Gérante" />
+              <datalist id="kb-qualites">{QUALITES_SIGNATAIRE.map((q) => <option key={q} value={q} />)}</datalist></Field>
+            <Field label="Nom du signataire"><input className={sel} style={inputStyle} value={fields.signataireNom || ""} onChange={(e) => setField("signataireNom", e.target.value)} placeholder="Nom et prénoms" /></Field>
+            <Field label="Pièces jointes (P.J.)" hint="Une pièce par ligne"><textarea rows={2} className={sel} style={inputStyle} value={fields.pj || ""} onChange={(e) => setField("pj", e.target.value)} placeholder={"Copie du contrat de bail\nÉtat des lieux d'entrée"} /></Field>
+            <Field label="Copie à (ampliation)" hint="Une personne par ligne"><textarea rows={2} className={sel} style={inputStyle} value={fields.copie || ""} onChange={(e) => setField("copie", e.target.value)} placeholder="Monsieur le Propriétaire" /></Field>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -4287,17 +4852,24 @@ function DocSheet({ doc, property, owner, author, onBack }) {
     <div>
       <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
         <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour aux documents</button>
-        <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+        <div className="flex gap-2 flex-wrap"><BoutonEnvoyer doc={doc} /><button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button></div>
       </div>
 
-      <PrintPage className="bg-white rounded-xl border p-7 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
+      <PrintPage className="bg-white rounded-xl border p-7 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }} nom={nomDocument(doc)} marges={isLetter ? (doc.fields?.mise?.marges || "normales") : undefined}>
         {/* En-tête */}
         <PrintHead title={doc.ref} extra={
           <p className="text-[11px] mt-0.5" style={{ color: "var(--muted)" }}>Abidjan, le {fr(doc.date + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
         } />
 
         {/* Destinataire */}
-        <div className="flex justify-end py-4">
+        <div className={`flex ${isLetter ? "justify-between items-end gap-4" : "justify-end"} py-4`}>
+          {isLetter && (
+            <div className="text-xs space-y-0.5" style={styleCorps({ ...doc.fields?.mise, taille: 9.5, alignement: "left" })}>
+              <p><span style={{ color: "var(--muted)" }}>N/Réf. :</span> {doc.ref}</p>
+              {doc.fields?.vref && <p><span style={{ color: "var(--muted)" }}>V/Réf. :</span> {doc.fields.vref}</p>}
+              {doc.fields?.envoi && <p className="font-bold uppercase pt-1" style={{ letterSpacing: ".02em" }}>{doc.fields.envoi}</p>}
+            </div>
+          )}
           <div className="text-right" style={{ maxWidth: "62%" }}>
             <p className="text-[11px]" style={{ color: "var(--muted)" }}>À l'attention de</p>
             {lignesDestinataire(doc).map((l, i) => <p key={i} className={i === 0 ? "text-sm font-semibold" : "text-sm"}>{l}</p>)}
@@ -4306,14 +4878,18 @@ function DocSheet({ doc, property, owner, author, onBack }) {
           </div>
         </div>
 
-        {/* Titre */}
-        <div className="text-center py-3">
-          <h2 className="text-lg font-bold tracking-wide" style={{ color: pf ? "#5B21B6" : "var(--ink)" }}>{pf ? "FACTURE PROFORMA" : (cfg.title || (doc.docType === "courrier" ? "" : cfg.label))}</h2>
+        {/* Titre ; sur un courrier, l'objet se présente comme dans une lettre */}
+        {isLetter && (cfg.title ? <h2 className="text-lg font-bold tracking-wide text-center py-2">{cfg.title}</h2> : null)}
+        {isLetter && doc.object && <p className="mb-1 mt-1" style={styleCorps({ ...doc.fields?.mise, alignement: "left" })}><strong><u>Objet</u> : {doc.object}</strong></p>}
+        {isLetter && doc.fields?.periode && <p className="mb-1 text-xs" style={{ color: "var(--muted)" }}>Période : {doc.fields.periode}</p>}
+        {isLetter && <div className="mb-3" />}
+        {!isLetter && <div className="text-center py-3">
+          <h2 className="text-lg font-bold tracking-wide" style={{ color: pf ? "#5B21B6" : "var(--ink)" }}>{pf ? "FACTURE PROFORMA" : (cfg.title || cfg.label)}</h2>
           {pf && <p className="text-xs font-semibold mt-0.5" style={{ color: "#5B21B6" }}>{cfg.label} — estimation préalable</p>}
           {pf && <span className="inline-block mt-2 px-3 py-0.5 text-[10px] font-bold tracking-widest rounded border-2" style={{ color: "#5B21B6", borderColor: "#5B21B6" }}>PROFORMA — NE VAUT NI FACTURE NI QUITTANCE</span>}
           {doc.object && <p className="text-sm font-semibold mt-1 uppercase">{doc.object}</p>}
           {doc.fields?.periode && <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>Période : {doc.fields.periode}</p>}
-        </div>
+        </div>}
 
         {/* Références de la proforma */}
         {pf && (
@@ -4337,41 +4913,61 @@ function DocSheet({ doc, property, owner, author, onBack }) {
         {/* Corps de lettre */}
         {isLetter && body && (
           isHtml(body)
-            ? <div className="kb-body text-sm leading-relaxed mb-5" style={{ textAlign: "justify" }}
+            ? <div className="kb-body mb-5" style={styleCorps(doc.fields?.mise)}
                 dangerouslySetInnerHTML={{ __html: body }} />
-            : <p className="text-sm whitespace-pre-wrap leading-relaxed mb-5">{body}</p>
+            : <p className="whitespace-pre-wrap mb-5" style={styleCorps(doc.fields?.mise)}>{body}</p>
         )}
 
+        {/* Décompte d'entrée : loyer mensuel et nombre de mois, bien en vue */}
+        {decompteDetaille(doc) && (() => {
+          const ligne = (c) => doc.lines.find((l) => codeLigneDecompte(l) === c);
+          const nb = (c) => Number(ligne(c)?.qty) || 0;
+          const mois = (n) => `${qty(n)} mois`;
+          return (
+            <div className="grid grid-cols-3 gap-2 text-sm mb-3 p-3 rounded-lg" style={{ background: "#F3F8FD", border: "1px solid #BFDBFE", breakInside: "avoid" }}>
+              <p><span className="block text-[11px]" style={{ color: "var(--muted)" }}>Loyer mensuel</span><strong className="tabular-nums">{fcfa(doc.fields.loyerMensuel)}</strong></p>
+              <p><span className="block text-[11px]" style={{ color: "var(--muted)" }}>Caution (dépôt de garantie)</span><strong>{mois(nb("caution"))}</strong> <span className="tabular-nums">= {fcfa(nb("caution") * Number(doc.fields.loyerMensuel))}</span></p>
+              <p><span className="block text-[11px]" style={{ color: "var(--muted)" }}>Mois d'avance</span><strong>{mois(nb("avance"))}</strong> <span className="tabular-nums">= {fcfa(nb("avance") * Number(doc.fields.loyerMensuel))}</span></p>
+            </div>);
+        })()}
+
         {/* Tableau */}
-        {doc.lines?.length > 0 && (
+        {doc.lines?.length > 0 && (() => {
+          const ancienDecompte = doc.docType === "decompte_entree" && !decompteDetaille(doc);
+          const dec = decompteDetaille(doc);
+          return (
           <table className="w-full text-sm mb-4">
             <thead><tr style={{ background: "#F1F3F5" }}>
               <th className="text-left px-3 py-2 font-semibold">DÉSIGNATIONS</th>
-              {doc.docType !== "decompte_entree" && <th className="text-right px-2 py-2 font-semibold w-16">QTÉ</th>}
-              {doc.docType !== "decompte_entree" && <th className="text-left px-2 py-2 font-semibold w-16">UNITÉ</th>}
-              {doc.docType !== "decompte_entree" && <th className="text-right px-2 py-2 font-semibold w-28">P. UNITAIRE</th>}
+              {dec && <th className="text-right px-2 py-2 font-semibold w-24">NOMBRE</th>}
+              {dec && <th className="text-right px-2 py-2 font-semibold w-32">LOYER / PRIX</th>}
+              {!dec && !ancienDecompte && <th className="text-right px-2 py-2 font-semibold w-16">QTÉ</th>}
+              {!dec && !ancienDecompte && <th className="text-left px-2 py-2 font-semibold w-16">UNITÉ</th>}
+              {!dec && !ancienDecompte && <th className="text-right px-2 py-2 font-semibold w-28">P. UNITAIRE</th>}
               <th className="text-right px-3 py-2 font-semibold w-32">MONTANT</th>
             </tr></thead>
             <tbody>{doc.lines.filter((l) => (l.label || "").trim()).map((l, i) => (
               <tr key={i} className="border-b" style={{ borderColor: "var(--line)" }}>
                 <td className="px-3 py-2">{l.label}</td>
-                {doc.docType !== "decompte_entree" && <td className="px-2 py-2 text-right">{qty(l.qty)}</td>}
-                {doc.docType !== "decompte_entree" && <td className="px-2 py-2">{l.unit}</td>}
-                {doc.docType !== "decompte_entree" && <td className="px-2 py-2 text-right">{fcfa(l.price)}</td>}
+                {dec && <td className="px-2 py-2 text-right whitespace-nowrap">{qty(l.qty)} {l.unit === "u" ? "" : l.unit}</td>}
+                {dec && <td className="px-2 py-2 text-right tabular-nums whitespace-nowrap">{fcfa(l.price)}</td>}
+                {!dec && !ancienDecompte && <td className="px-2 py-2 text-right">{qty(l.qty)}</td>}
+                {!dec && !ancienDecompte && <td className="px-2 py-2">{l.unit}</td>}
+                {!dec && !ancienDecompte && <td className="px-2 py-2 text-right">{fcfa(l.price)}</td>}
                 <td className="px-3 py-2 text-right font-medium tabular-nums">{fcfa(lineTotal(l))}</td>
               </tr>
             ))}</tbody>
             <tfoot><tr style={{ background: "#F1F3F5" }}>
-              <td colSpan={doc.docType !== "decompte_entree" ? 4 : 1} className="px-3 py-2.5 font-bold">{pf ? "TOTAL ESTIMÉ" : doc.docType === "facture" && doc.fields?.paidOn ? "TOTAL RÉGLÉ" : "TOTAL À PAYER"}</td>
+              <td colSpan={dec ? 3 : !ancienDecompte ? 4 : 1} className="px-3 py-2.5 font-bold">{pf ? "TOTAL ESTIMÉ" : doc.docType === "facture" && doc.fields?.paidOn ? "TOTAL RÉGLÉ" : "TOTAL À PAYER"}</td>
               <td className="px-3 py-2.5 text-right text-base font-bold tabular-nums" style={{ color: cfg.color }}>{fcfa(doc.total)}</td>
             </tr></tfoot>
-          </table>
-        )}
+          </table>);
+        })()}
 
         {/* Arrêté en toutes lettres */}
         {doc.total > 0 && !isLetter && (
           <p className="text-sm italic mb-5">
-            Arrêtée la présente {nomDoc} à la somme de <strong>{amountInWords(doc.total)}</strong>.
+            {doc.docType === "decompte_entree" && !pf ? "Arrêté le présent décompte" : doc.docType === "prestation" && !pf ? "Arrêtée la présente fiche" : `Arrêtée la présente ${nomDoc}`} à la somme de <strong>{amountInWords(doc.total)}</strong>.
           </p>
         )}
 
@@ -4423,12 +5019,28 @@ function DocSheet({ doc, property, owner, author, onBack }) {
             <p className="text-[9px] pb-20" style={{ color: "var(--muted)" }}>{pf ? "Date, signature et mention manuscrite « Bon pour accord »" : "\u00a0"}</p>
             <div className="border-t" style={{ borderColor: "var(--ink)" }} />
           </div>}
+          {isLetter ? (
+            <div className="text-center" style={{ minWidth: 220, ...styleCorps({ ...doc.fields?.mise, alignement: "center" }) }}>
+              <p className="font-semibold">Pour Entreprise Kibegnon,</p>
+              {doc.fields?.signataireQualite && <p>{doc.fields.signataireQualite}</p>}
+              <div style={{ height: 88 }} aria-hidden="true" />
+              {doc.fields?.signataireNom ? <p className="font-semibold">{doc.fields.signataireNom}</p> : <div className="border-t mx-6" style={{ borderColor: "var(--ink)" }} />}
+            </div>
+          ) : (
           <div className="text-center" style={{ minWidth: 180 }}>
             <p className="text-xs font-semibold pb-24">Pour l'Agence</p>
             <div className="border-t" style={{ borderColor: "var(--ink)" }} />
             <p className="text-[10px] mt-1" style={{ color: "var(--muted)" }}>Entreprise Kibegnon</p>
-          </div>
+          </div>)}
         </div>
+
+        {/* Pièces jointes et copie */}
+        {isLetter && (doc.fields?.pj || doc.fields?.copie) && (
+          <div className="mt-4 text-xs space-y-1.5" style={{ breakInside: "avoid" }}>
+            {doc.fields?.pj && <div><p className="font-semibold">P.J. :</p>{String(doc.fields.pj).split("\n").filter((x) => x.trim()).map((x, i) => <p key={i}>– {x.trim()}</p>)}</div>}
+            {doc.fields?.copie && <div><p className="font-semibold">Copie à :</p>{String(doc.fields.copie).split("\n").filter((x) => x.trim()).map((x, i) => <p key={i}>– {x.trim()}</p>)}</div>}
+          </div>
+        )}
 
         <div className="flex items-center justify-between pt-4 mt-4 border-t" style={{ borderColor: "var(--line)" }}>
           <p className="text-[10px]" style={{ color: "var(--muted)" }}>Document établi par {author?.name || "—"}</p>
@@ -4820,7 +5432,7 @@ function QuoteSheet({ quote, lines, property, owner, unit, recorder, onBack }) {
         <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
       </div>
 
-      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
+      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }} nom={nomFichier(`Fiche de devis artisan ${quote.ref || ""}`, property?.name, unit?.label)}>
         <PrintHead title={quote.ref} subtitle="Fiche de devis artisan" extra={
           <p className="text-[11px]" style={{ color: "var(--muted)" }}>{fr(quote.date + "T00:00:00", { day: "numeric", month: "long", year: "numeric" })}</p>
         } />
@@ -5224,8 +5836,8 @@ function PropertyModal({ initial, owners, members, units, onSave, onSaveUnits, o
       </div>
       <div className="grid sm:grid-cols-4 gap-3">
         <Field label="Surface (m²)"><input type="number" min={0} className={inputCls} style={inputStyle} value={f.surface} onChange={(e) => set("surface", e.target.value)} /></Field>
-        <Field label={isMulti ? "Loyer type d'un lot" : "Loyer mensuel (FCFA)"}><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.rent} onChange={(e) => set("rent", e.target.value)} /></Field>
-        <Field label="Prix de vente (FCFA)"><input type="number" min={0} step={100000} className={inputCls} style={inputStyle} value={f.salePrice} onChange={(e) => set("salePrice", e.target.value)} /></Field>
+        <Field label={isMulti ? "Loyer type d'un lot" : "Loyer mensuel (F CFA)"}><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.rent} onChange={(e) => set("rent", e.target.value)} /></Field>
+        <Field label="Prix de vente (F CFA)"><input type="number" min={0} step={100000} className={inputCls} style={inputStyle} value={f.salePrice} onChange={(e) => set("salePrice", e.target.value)} /></Field>
         <Field label="Statut"><select className={inputCls} style={inputStyle} value={f.status} onChange={(e) => set("status", e.target.value)}>{Object.entries(PROPERTY_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></Field>
       </div>
       <div className="grid sm:grid-cols-2 gap-3">
@@ -5314,7 +5926,7 @@ function Register({ title, subtitle, columns, rows, onBack, footer }) {
         <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
         <button onClick={() => printSheet("landscape")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF (paysage)</button>
       </div>
-      <PrintPage className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
+      <PrintPage className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }} nom={nomFichier(title, subtitle)}>
         <PrintHead title={title} subtitle={subtitle} extra={
           <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
         } />
@@ -5754,7 +6366,7 @@ function ProductModal({ initial, onSave, onClose }) {
         <Field label="Unité"><input className={inputCls} style={inputStyle} value={f.unit} onChange={(e) => set("unit", e.target.value)} placeholder="bidon, pièce, carton…" /></Field>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Prix unitaire (FCFA)"><input type="number" min={0} step={100} className={inputCls} style={inputStyle} value={f.price} onChange={(e) => set("price", e.target.value)} /></Field>
+        <Field label="Prix unitaire (F CFA)"><input type="number" min={0} step={100} className={inputCls} style={inputStyle} value={f.price} onChange={(e) => set("price", e.target.value)} /></Field>
         <Field label="Seuil d'alerte" hint="Alerte quand le stock passe en dessous"><input type="number" min={0} className={inputCls} style={inputStyle} value={f.minQty} onChange={(e) => set("minQty", e.target.value)} /></Field>
       </div>
       <Field label="Fournisseur"><input className={inputCls} style={inputStyle} value={f.supplier} onChange={(e) => set("supplier", e.target.value)} /></Field>
@@ -6660,7 +7272,7 @@ function PeriodSheet({ period, property, owner, lines, charges, author, onBack }
         <button onClick={() => printSheet("landscape")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF (paysage)</button>
       </div>
 
-      <PrintPage className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }} note={`État établi par ${author?.name || "—"} · Taux de recouvrement du mois : ${(t.rateCollected * 100).toFixed(1)} %`}>
+      <PrintPage className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }} nom={nomFichier(sc.label, property?.name, periodLabel(period.period))} note={`État établi par ${author?.name || "—"} · Taux de recouvrement du mois : ${(t.rateCollected * 100).toFixed(1)} %`}>
         <PrintHead title={sc.label} subtitle={periodLabel(period.period)} extra={
           <>
             <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
@@ -6874,7 +7486,7 @@ function OwnerConsolidatedSheet({ owner, period, scope, blocs, author, onBack })
         <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
         <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
       </div>
-      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}
+      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }} nom={nomFichier("Relevé général du propriétaire", owner?.name, periodLabel(period))}
         note={`Relevé établi par ${author?.name || "—"} — ${sc.label}`}>
         <PrintHead title="RELEVÉ GÉNÉRAL DU PROPRIÉTAIRE" subtitle={periodLabel(period)} extra={
           <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
@@ -6948,7 +7560,7 @@ function ArrearsSheet({ period, property, owner, lines, author, onBack }) {
         <button onClick={() => printSheet("landscape")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF (paysage)</button>
       </div>
 
-      <PrintPage className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }} note={author ? `État établi par ${author.name}` : undefined}>
+      <PrintPage className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }} nom={nomFichier("État des arriérés", property?.name, periodLabel(period.period))} note={author ? `État établi par ${author.name}` : undefined}>
         <PrintHead title="ÉTAT DES ARRIÉRÉS" subtitle={periodLabel(period.period)} extra={
           <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
         } />
@@ -7083,7 +7695,8 @@ function Recouvrement({ store, me, userId }) {
     onClose={() => setRecu(null)} />;
   if (controle && !editor) {
     return <>
-      <ControleRecouvrement anomalies={anomalies} isAdminUser={isAdmin(me.role)} onBack={() => setControle(false)}
+      <ControleRecouvrement anomalies={anomalies} isAdminUser={isAdmin(me.role)} isSup={canSupervise(me.role)} store={store} onBack={() => setControle(false)}
+        onCorriger={actions.corrigerAnomalie} onToutCorriger={actions.corrigerToutAuto}
         onOpenPeriod={(pid) => { const p = rentPeriods.find((x) => x.id === pid); if (p) setEditor({ period: p, readOnly: !canEditPeriod(p) || p.locked }); }}
         onEtablir={(a) => {
           const l = rentLines.find((x) => x.id === a.lineId); const u = units.find((x) => x.id === (l?.unitId || a.unitId)) || null;
@@ -7312,11 +7925,67 @@ function Recouvrement({ store, me, userId }) {
 
 /* ══ Écran « Contrôle du recouvrement » ══ */
 const PORTEE_CONTROLE = { commercial: "Suivi commercial", comptable: "État comptable", quittances: "Quittances" };
-function ControleRecouvrement({ anomalies, isAdminUser, onBack, onOpenPeriod, onEtablir, onReporter, onRapprocher }) {
+/* Choix d'une correction quand il en existe plusieurs, ou qu'elle touche un tableau arrêté */
+function CorrectionModal({ a, options, isSup, onApply, onEtablir, onClose }) {
+  const [cle, setCle] = useState(options.find((o) => o.recommande)?.cle || options[0]?.cle || "");
+  const [date, setDate] = useState(isoDate(new Date()));
+  const [deverrou, setDeverrou] = useState(false);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const opt = options.find((o) => o.cle === cle);
+  const verrouille = opt && (opt.commercial ? a.commercialLocked : a.locked) && opt.tableau !== false;
+  const go = async () => {
+    if (opt?.ecran) { onEtablir(a); onClose(); return; }
+    setBusy(true); setErr("");
+    const r = await onApply(a, cle, opt?.demande === "date" ? date : undefined, { deverrouiller: deverrou });
+    setBusy(false);
+    if (r?.error) setErr(r.error); else onClose(r?.message || "Corrigé.");
+  };
+  return (
+    <Modal title="Corriger ce point de contrôle" onClose={() => onClose()}>
+      <p className="text-sm font-medium">{a.titre}</p>
+      <p className="text-xs mb-3" style={{ color: "var(--muted)" }}>{a.detail}</p>
+      <div className="space-y-2 mb-3">
+        {options.map((o) => (
+          <label key={o.cle} className="flex items-start gap-2 rounded-lg border p-2.5 cursor-pointer text-sm" style={{ borderColor: cle === o.cle ? "var(--ink)" : "var(--line)", background: cle === o.cle ? "#F8FAFC" : "#fff" }}>
+            <input type="radio" name="kb-correction" className="mt-1" checked={cle === o.cle} onChange={() => setCle(o.cle)} />
+            <span>{o.libelle}{o.recommande && <span className="ml-1 text-[10px] font-semibold rounded-full px-1.5 py-0.5" style={{ background: "#EAF6E3", color: "#2F6B1A" }}>conseillé</span>}</span>
+          </label>))}
+      </div>
+      {opt?.demande === "date" && <Field label="Date du paiement"><input type="date" max={isoDate(new Date())} className={inputCls} style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} /></Field>}
+      {verrouille && (isSup
+        ? <label className="flex items-start gap-2 text-xs rounded-lg p-2.5 mb-3 cursor-pointer" style={{ background: "#FFF8EC", color: "#8A6212" }}>
+            <input type="checkbox" className="mt-0.5" checked={deverrou} onChange={(e) => setDeverrou(e.target.checked)} />
+            <span>Ce tableau est arrêté pour virement. Je le déverrouille pour cette seule correction (motif tracé dans son historique) ; il est arrêté de nouveau aussitôt, à sa date d'origine.</span></label>
+        : <p className="text-xs rounded-lg p-2.5 mb-3" style={{ background: "#FFF8EC", color: "#8A6212" }}>Ce tableau est arrêté pour virement : seule la direction peut appliquer cette correction.</p>)}
+      {err && <p className="text-xs mb-2 flex items-center gap-1" style={{ color: "#B5171D" }}><AlertTriangle size={13} /> {err}</p>}
+      <div className="flex justify-end gap-2">
+        <button onClick={() => onClose()} className="kb-btn kb-btn-ghost">Annuler</button>
+        <button disabled={busy || !opt || (verrouille && (!isSup || !deverrou))} onClick={go} className="kb-btn kb-btn-primary disabled:opacity-40"><Wand2 size={15} /> {busy ? "Correction…" : opt?.ecran ? "Ouvrir" : "Corriger"}</button>
+      </div>
+    </Modal>
+  );
+}
+
+function ControleRecouvrement({ anomalies, isAdminUser, isSup, store, onBack, onOpenPeriod, onEtablir, onReporter, onRapprocher, onCorriger, onToutCorriger }) {
   const [niveau, setNiveau] = useState("tous");
   const [portee, setPortee] = useState("toutes");
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
+  const [choix, setChoix] = useState(null);
+  const [enCours, setEnCours] = useState("");
+  const [toast, setToast] = useState("");
+  const ctx = { rentLines: store?.rentLines || [], units: store?.units || [], documents: store?.documents || [] };
+  const optionsDe = (a) => optionsCorrection(a, ctx);
+  const autos = anomalies.filter((a) => { const o = optionsDe(a).find((x) => x.auto); return o && !((o.commercial ? a.commercialLocked : a.locked) && o.tableau !== false); });
+  const cleA = (a) => `${a.code}|${a.lineId || a.docId || a.unitId || ""}|${a.periodId || ""}`;
+  const corriger = async (a) => {
+    const opts = optionsDe(a);
+    const seule = opts.length === 1 && opts[0].auto && !opts[0].demande && !((opts[0].commercial ? a.commercialLocked : a.locked) && opts[0].tableau !== false);
+    if (!seule) { setChoix({ a, opts }); return; }
+    setEnCours(cleA(a));
+    const r = await onCorriger(a, opts[0].cle);
+    setEnCours(""); setToast(r?.error ? `Échec : ${r.error}` : `${r?.message || "Corrigé."} — ${a.titre}`);
+  };
   const liste = anomalies.filter((a) => (niveau === "tous" || a.niveau === niveau) && (portee === "toutes" || a.scope === portee)
     && (!q.trim() || `${a.bien} ${a.nom || ""} ${a.lot || ""} ${a.titre} ${a.ref || ""}`.toLowerCase().includes(q.trim().toLowerCase())));
   const compte = (n) => anomalies.filter((a) => a.niveau === n).length;
@@ -7330,7 +7999,15 @@ function ControleRecouvrement({ anomalies, isAdminUser, onBack, onOpenPeriod, on
           <RefreshCw size={14} /> {busy ? "Rapprochement en cours…" : "Rapprocher quittances et tableaux"}</button>}
       </div>
       <h1 className="text-xl font-bold">Contrôle du recouvrement</h1>
-      <p className="text-sm mb-4" style={{ color: "var(--muted)" }}>Chaque tableau est confronté aux quittances, à la fiche des lots (patrimoine) et au mois précédent. Rien n'est corrigé d'office : chaque ligne indique quoi vérifier.</p>
+      <p className="text-sm mb-3" style={{ color: "var(--muted)" }}>Chaque tableau est confronté aux quittances, à la fiche des lots (patrimoine) et au mois précédent. « Corriger » applique la correction ; lorsqu'il existe deux versions possibles, l'outil vous demande laquelle est juste. Un tableau arrêté pour virement n'est jamais modifié sans l'accord de la direction.</p>
+      {(isAdminUser || isSup) && autos.length > 0 && (
+        <div className="rounded-xl border p-3 mb-4 flex items-center justify-between gap-3 flex-wrap" style={{ borderColor: "#CDE7C0", background: "#F4FBF0" }}>
+          <p className="text-sm" style={{ color: "#2F6B1A" }}><Wand2 size={14} className="inline mb-0.5" /> <strong>{autos.length} point(s)</strong> peuvent être corrigés automatiquement : les quittances et les fiches des lots dictent la bonne valeur, sans choix à faire.</p>
+          <button disabled={busy} onClick={async () => { if (!window.confirm(`Corriger automatiquement ${autos.length} point(s) ?\n\nLes tableaux arrêtés pour virement ne sont pas touchés.`)) return; setBusy(true); const r = await onToutCorriger(autos); setBusy(false); setToast(r?.message || ""); }}
+            className="kb-btn kb-btn-primary text-sm disabled:opacity-40"><Wand2 size={14} /> {busy ? "Correction en cours…" : "Tout corriger automatiquement"}</button>
+        </div>)}
+      {toast && <div className="rounded-lg border px-3 py-2 text-sm mb-3 flex items-start justify-between gap-2" style={{ background: /^Échec/.test(toast) ? "#FDECEC" : "#EAF6E3", borderColor: /^Échec/.test(toast) ? "#F5C6C7" : "#CDE7C0", color: /^Échec/.test(toast) ? "#B5171D" : "#2F6B1A" }} role="status">
+        <span>{toast}</span><button onClick={() => setToast("")} aria-label="Fermer"><X size={14} /></button></div>}
       <div className="grid grid-cols-3 gap-3 mb-4">
         {Object.entries(NIVEAUX_CONTROLE).map(([k, v]) => (
           <button key={k} onClick={() => setNiveau(niveau === k ? "tous" : k)} className="rounded-xl border p-3 text-left" style={{ borderColor: niveau === k ? v.color : "var(--line)", background: niveau === k ? v.bg : "#fff" }}>
@@ -7360,14 +8037,17 @@ function ControleRecouvrement({ anomalies, isAdminUser, onBack, onOpenPeriod, on
                     <p className="text-sm font-medium">{a.titre}</p>
                     <p className="text-xs" style={{ color: "var(--muted)" }}>{[PORTEE_CONTROLE[a.scope], a.period ? periodLabel(a.period) : "", a.locked ? "tableau arrêté pour virement" : ""].filter(Boolean).join(" · ")} — {a.detail}</p>
                   </div>
-                  <div className="flex gap-1.5 shrink-0">
+                  <div className="flex gap-1.5 shrink-0 flex-wrap justify-end">
+                    {optionsDe(a).length > 0 && <button disabled={enCours === cleA(a)} onClick={() => corriger(a)} className="kb-btn text-xs disabled:opacity-40" style={{ background: "#1A1C20", color: "#fff" }}
+                      title={optionsDe(a).map((o) => o.libelle).join(" / ")}><Wand2 size={12} /> {enCours === cleA(a) ? "Correction…" : "Corriger"}</button>}
+                    {!optionsDe(a).length && CONSEIL_CORRECTION[a.code] && <span className="text-[11px] max-w-[16rem]" style={{ color: "var(--muted)" }}>{CONSEIL_CORRECTION[a.code]}</span>}
                     {a.periodId && <button onClick={() => onOpenPeriod(a.periodId)} className="kb-btn kb-btn-ghost text-xs">Ouvrir le tableau</button>}
-                    {a.code === "sans_quittance" && <button onClick={() => onEtablir(a)} className="kb-btn kb-btn-ghost text-xs">Établir la quittance</button>}
-                    {isAdminUser && ["quittance_non_reportee", "quittance_retiree"].includes(a.code) && <button onClick={async () => { const r = await onReporter(a); alert(r?.error || r?.warning || "Report mis à jour."); }} className="kb-btn kb-btn-ghost text-xs">{a.code === "quittance_retiree" ? "Retirer du tableau" : "Reporter"}</button>}
                   </div>
                 </div>); })}
           </div>
         </div>))}
+      {choix && <CorrectionModal a={choix.a} options={choix.opts} isSup={isSup} onApply={onCorriger} onEtablir={onEtablir}
+        onClose={(m) => { setChoix(null); if (m) setToast(`${m} — ${choix.a.titre}`); }} />}
     </div>
   );
 }
@@ -7464,7 +8144,7 @@ function RequestModal({ initial, properties, onSave, onClose }) {
       {isTransport ? (
         <>
           <div className="grid sm:grid-cols-2 gap-3">
-            <Field label="Montant demandé (FCFA)"><input type="number" min={0} step={500} className={inputCls} style={inputStyle} value={f.amount} autoFocus onChange={(e) => set("amount", e.target.value)} placeholder="Ex. 3000" /></Field>
+            <Field label="Montant demandé (F CFA)"><input type="number" min={0} step={500} className={inputCls} style={inputStyle} value={f.amount} autoFocus onChange={(e) => set("amount", e.target.value)} placeholder="Ex. 3000" /></Field>
             <Field label="Date du déplacement"><input type="date" className={inputCls} style={inputStyle} value={f.date} onChange={(e) => set("date", e.target.value)} /></Field>
           </div>
           <div className="grid sm:grid-cols-2 gap-3">
@@ -7536,7 +8216,7 @@ function RecapSheet({ period, requests, members, properties, onBack }) {
         <button onClick={() => printSheet("landscape")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF (paysage)</button>
       </div>
 
-      <PrintPage className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
+      <PrintPage className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }} nom={nomFichier("Frais de transport", trPeriodLabel(period))}>
         <PrintHead title="FRAIS DE TRANSPORT" subtitle={trPeriodLabel(period)} />
 
         <table className="w-full text-[11px] my-4">
@@ -8214,7 +8894,7 @@ function TaxModal({ initial, properties, units, owners, records = [], onSave, on
             onChange={(e) => { set("taxYear", e.target.value); recompute(e.target.value, f.taxedAmount); }} />
         </Field>
         <Field label="N° de l'avis"><input className={inputCls} style={inputStyle} value={f.noticeNumber} onChange={(e) => set("noticeNumber", e.target.value)} placeholder="AV-2026-004471" /></Field>
-        <Field label="Somme imposée (FCFA)">
+        <Field label="Somme imposée (F CFA)">
           <input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.taxedAmount}
             onChange={(e) => { set("taxedAmount", e.target.value); recompute(f.taxYear, e.target.value); }} />
         </Field>
@@ -8347,7 +9027,7 @@ function TaxModal({ initial, properties, units, owners, records = [], onSave, on
         </p>
         <div className="grid sm:grid-cols-2 gap-3">
           <Field label="Date de dépôt"><input type="date" className={inputCls} style={inputStyle} value={f.declarationDate || ""} onChange={(e) => set("declarationDate", e.target.value)} /></Field>
-          <Field label={`Nouvelle base imposable ${Number(f.taxYear) + 1} (FCFA)`}>
+          <Field label={`Nouvelle base imposable ${Number(f.taxYear) + 1} (F CFA)`}>
             <input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.nextBase ?? ""} onChange={(e) => set("nextBase", e.target.value)} />
           </Field>
         </div>
@@ -8881,7 +9561,7 @@ function TenantModal({ unit, property, onSave, onClose }) {
           Les arriérés nés dans l'outil se calculent tout seuls à partir des tableaux de recouvrement.
         </p>
         <div className="grid sm:grid-cols-2 gap-3">
-          <Field label="Montant repris (FCFA)"><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.arrearsAmount || 0} onChange={(e) => set("arrearsAmount", e.target.value)} /></Field>
+          <Field label="Montant repris (F CFA)"><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.arrearsAmount || 0} onChange={(e) => set("arrearsAmount", e.target.value)} /></Field>
           <Field label="Nombre de mois concernés"><input type="number" min={0} max={60} className={inputCls} style={inputStyle} value={f.arrearsMonths || 0} onChange={(e) => set("arrearsMonths", e.target.value)} /></Field>
         </div>
         <Field label="Origine / accord d'échelonnement"><input className={inputCls} style={inputStyle} value={f.arrearsNote || ""} onChange={(e) => set("arrearsNote", e.target.value)} placeholder="Ex. Impayés janvier à mars 2026, échelonnement convenu le 12/04" /></Field>
@@ -8972,7 +9652,7 @@ function ReceiptModal({ initial, unit, property, owner, isAdminUser, onSave, onC
             {PAY_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
         </Field>
-        <Field label="Solde restant dû (FCFA)"><input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.fields.balance ?? 0} onChange={(e) => setField("balance", e.target.value)} /></Field>
+        <Field label="Solde restant dû (F CFA)"><input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.fields.balance ?? 0} onChange={(e) => setField("balance", e.target.value)} /></Field>
       </div>
 
       {mois.length > 1 && (
@@ -9018,7 +9698,7 @@ function ReceiptSheet({ doc, unit, property, owner, author, validator, onBack })
     <div>
       <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
         <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
-        <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+        <div className="flex gap-2 flex-wrap"><BoutonEnvoyer doc={doc} /><button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button></div>
       </div>
 
       {doc.approval === "en_attente" && (
@@ -9037,7 +9717,7 @@ function ReceiptSheet({ doc, unit, property, owner, author, validator, onBack })
         </div>
       )}
 
-      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl mx-auto relative overflow-hidden" style={{ borderColor: "var(--line)" }} note="Cette quittance atteste du paiement des sommes ci-dessus pour la période indiquée. À conserver sans limitation de durée.">
+      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl mx-auto relative overflow-hidden" style={{ borderColor: "var(--line)" }} nom={nomDocument(doc)} note="Cette quittance atteste du paiement des sommes ci-dessus pour la période indiquée. À conserver sans limitation de durée.">
         <PrintHead title={doc.ref} subtitle="Reçu de paiement de loyer" extra={
           <p className="text-[11px] mt-0.5" style={{ color: "var(--muted)" }}>Abidjan, le {fr(doc.date + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
         } />
@@ -9067,7 +9747,7 @@ function ReceiptSheet({ doc, unit, property, owner, author, validator, onBack })
                 {unit.leaseEnd ? ` au ${fr(unit.leaseEnd + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" })}` : ""}
               </p>}
               {unit?.rent ? <p className="text-xs mt-1"><span style={{ color: "var(--muted)" }}>Loyer (dû le {unit.dueDay || 5} de chaque mois) :</span> <strong>{fcfa(unit.rent)}</strong></p> : null}
-              <p className="text-xs mt-1"><span style={{ color: "var(--muted)" }}>Agence :</span> Entreprise Kibegnon — {AGENCY.tel}</p>
+              <p className="text-xs mt-1"><span style={{ color: "var(--muted)" }}>Agence :</span> Entreprise Kibegnon — {AGENCY.telephones}</p>
             </div>
           </div>
         </div>
@@ -9227,8 +9907,8 @@ function SoldeModal({ initial, former, unit, property, owner, arrears, onSave, o
         <Field label="Départ effectif"><input type="date" className={inputCls} style={inputStyle} value={f.fields.departure || ""} onChange={(e) => setField("departure", e.target.value)} /></Field>
       </div>
       <div className="grid sm:grid-cols-2 gap-3">
-        <Field label="Loyer mensuel (FCFA)"><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.fields.rent} onChange={(e) => setField("rent", e.target.value)} /></Field>
-        <Field label="Caution versée (FCFA)"><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.fields.deposit} onChange={(e) => setField("deposit", e.target.value)} /></Field>
+        <Field label="Loyer mensuel (F CFA)"><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.fields.rent} onChange={(e) => setField("rent", e.target.value)} /></Field>
+        <Field label="Caution versée (F CFA)"><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.fields.deposit} onChange={(e) => setField("deposit", e.target.value)} /></Field>
       </div>
 
       <p className="text-xs font-semibold mb-2 mt-2" style={{ color: "var(--brass)" }}>SITUATION À LA SORTIE</p>
@@ -9237,10 +9917,10 @@ function SoldeModal({ initial, former, unit, property, owner, arrears, onSave, o
         <Field label="Date du dernier paiement"><input type="date" className={inputCls} style={inputStyle} value={f.fields.lastPaidDate || ""} onChange={(e) => setField("lastPaidDate", e.target.value)} /></Field>
       </div>
       <div className="grid sm:grid-cols-2 gap-3">
-        <Field label="Loyers restant dus (FCFA)" hint={arrears?.hasArrears ? `Arriérés relevés : ${fcfa(arrears.total)}` : undefined}>
+        <Field label="Loyers restant dus (F CFA)" hint={arrears?.hasArrears ? `Arriérés relevés : ${fcfa(arrears.total)}` : undefined}>
           <input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.fields.rentDue} onChange={(e) => setField("rentDue", e.target.value)} />
         </Field>
-        <Field label="Charges restant dues (FCFA)"><input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.fields.chargesDue} onChange={(e) => setField("chargesDue", e.target.value)} /></Field>
+        <Field label="Charges restant dues (F CFA)"><input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.fields.chargesDue} onChange={(e) => setField("chargesDue", e.target.value)} /></Field>
       </div>
 
       <div className="flex items-center justify-between mb-2 mt-2">
@@ -9288,7 +9968,7 @@ function SoldeModal({ initial, former, unit, property, owner, arrears, onSave, o
         </div>
       ))}
 
-      <Field label="Autres retenues justifiées (FCFA)">
+      <Field label="Autres retenues justifiées (F CFA)">
         <input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.fields.otherWithheld} onChange={(e) => setField("otherWithheld", e.target.value)} />
       </Field>
 
@@ -9349,10 +10029,10 @@ function SoldeSheet({ doc, property, owner, author, onBack }) {
     <div>
       <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
         <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
-        <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+        <div className="flex gap-2 flex-wrap"><BoutonEnvoyer doc={doc} /><button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button></div>
       </div>
 
-      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }} note="Document établi contradictoirement entre les parties, valant solde de tout compte.">
+      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }} nom={nomDocument(doc)} note="Document établi contradictoirement entre les parties, valant solde de tout compte.">
         <PrintHead title="SOLDE DE TOUT COMPTE" subtitle={doc.ref} extra={
           <p className="text-[11px]" style={{ color: "var(--muted)" }}>
             Établi le {fr(doc.date + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" })}
@@ -9558,7 +10238,7 @@ function AdvanceModal({ unit, property, owner, advances, canDelete, onSave, onDe
         <Field label="Premier mois couvert">
           <input type="month" className={inputCls} style={inputStyle} value={f.startPeriod} onChange={(e) => set("startPeriod", e.target.value)} />
         </Field>
-        <Field label="Montant total (FCFA)" hint={loyer ? `Soit ${fcfa(parMois)} par mois` : undefined}>
+        <Field label="Montant total (F CFA)" hint={loyer ? `Soit ${fcfa(parMois)} par mois` : undefined}>
           <input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.amount} onChange={(e) => set("amount", e.target.value)} />
         </Field>
       </div>
@@ -10065,7 +10745,7 @@ function ComplaintModal({ initial, properties, units, members, quotes, onSave, o
               ))}
             </select>
           </Field>
-          <Field label="Coût du règlement (FCFA)"><input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.cost} onChange={(e) => set("cost", e.target.value)} /></Field>
+          <Field label="Coût du règlement (F CFA)"><input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.cost} onChange={(e) => set("cost", e.target.value)} /></Field>
         </div>
         <Field label="Suite donnée / résolution">
           <textarea className={inputCls} style={inputStyle} rows={2} value={f.resolution} onChange={(e) => set("resolution", e.target.value)}
@@ -10109,7 +10789,7 @@ function ComplaintSheet({ complaint: c, property, unit, members, quote, onBack }
         <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
       </div>
 
-      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
+      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }} nom={nomFichier(`Fiche de plainte ${c.ref || ""}`, property?.name, unit?.label)}>
         <PrintHead title="FICHE DE PLAINTE" subtitle={c.ref} extra={
           <p className="text-[11px]" style={{ color: "var(--muted)" }}>
             Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}
@@ -10243,10 +10923,10 @@ function ArchiveTenantModal({ unit, property, arrears, onArchive, onClose }) {
       </div>
 
       <div className="grid sm:grid-cols-2 gap-3">
-        <Field label="Caution restituée (FCFA)" hint={`Caution versée : ${fcfa(unit?.deposit || 0)}`}>
+        <Field label="Caution restituée (F CFA)" hint={`Caution versée : ${fcfa(unit?.deposit || 0)}`}>
           <input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.depositRefund} onChange={(e) => set("depositRefund", e.target.value)} />
         </Field>
-        <Field label="Reste dû au départ (FCFA)" hint={arrears?.hasArrears ? `Arriérés constatés : ${fcfa(arrears.total)}` : "Aucun arriéré constaté"}>
+        <Field label="Reste dû au départ (F CFA)" hint={arrears?.hasArrears ? `Arriérés constatés : ${fcfa(arrears.total)}` : "Aucun arriéré constaté"}>
           <input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.balanceDue} onChange={(e) => set("balanceDue", e.target.value)} />
         </Field>
       </div>
@@ -10803,8 +11483,8 @@ function ProspectedModal({ initial, existing, members, userId, onSave, onClose, 
             {Object.entries(PP_OPERATION).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </Field>
-        {!isSale && <Field label="Loyer souhaité (FCFA)"><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.rent} onChange={(e) => set("rent", e.target.value)} /></Field>}
-        {(isSale || f.operation === "gestion") && <Field label="Prix de vente (FCFA)"><input type="number" min={0} step={100000} className={inputCls} style={inputStyle} value={f.salePrice} onChange={(e) => set("salePrice", e.target.value)} /></Field>}
+        {!isSale && <Field label="Loyer souhaité (F CFA)"><input type="number" min={0} step={5000} className={inputCls} style={inputStyle} value={f.rent} onChange={(e) => set("rent", e.target.value)} /></Field>}
+        {(isSale || f.operation === "gestion") && <Field label="Prix de vente (F CFA)"><input type="number" min={0} step={100000} className={inputCls} style={inputStyle} value={f.salePrice} onChange={(e) => set("salePrice", e.target.value)} /></Field>}
         <Field label="Prix négociable">
           <select className={inputCls} style={inputStyle} value={f.negotiable ? "1" : "0"} onChange={(e) => set("negotiable", e.target.value === "1")}>
             <option value="0">Non</option><option value="1">Oui</option>
@@ -11446,7 +12126,7 @@ function WeeklyReportSheet({ report, agent, store, onBack }) {
         « Télécharger PDF » ouvre l'impression : choisissez « Enregistrer au format PDF ». « Envoyer à la Directrice » prépare l'e-mail avec l'objet ; joignez le PDF enregistré (ou envoyez-le par WhatsApp).
       </p>
 
-      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
+      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }} nom={nomFichier("Rapport hebdomadaire de prospection", agent?.name, `semaine du ${String(report.weekStart || "").split("-").reverse().join("-")}`)}>
         <PrintHead title="RAPPORT HEBDOMADAIRE" subtitle="de prospection commerciale" extra={
           <p className="text-[11px]" style={{ color: "var(--muted)" }}>Édité le {fr(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
         } />
@@ -11554,7 +12234,7 @@ function TeamReportSheet({ monday, store, onBack }) {
         <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
         <button onClick={() => printSheet("landscape")} className="kb-btn kb-btn-primary"><Printer size={16} /> Télécharger PDF (paysage)</button>
       </div>
-      <PrintPage className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }}>
+      <PrintPage className="bg-white rounded-xl border p-6" style={{ borderColor: "var(--line)" }} nom={nomFichier("Rapport hebdomadaire de l'équipe commerciale", `semaine du ${String(monday || "").split("-").reverse().join("-")}`)}>
         <PrintHead title="RAPPORT HEBDOMADAIRE GLOBAL" subtitle="de l'équipe commerciale" extra={<p className="text-[11px]" style={{ color: "var(--muted)" }}>Semaine {wrWeekLabel(monday)}</p>} />
         <div className="grid grid-cols-5 gap-2 py-3">
           {[["Appels", tot("appels")], ["Prospects", tot("prospects")], ["Propriétaires", tot("proprietaires")], ["Visites", tot("visites")], ["Rendez-vous", tot("rdv")],
@@ -12316,7 +12996,7 @@ function VisitSheet({ visit: v, store, onBack, onInformed }) {
         </div>
       </div>
       {v.ownerInformedAt && <p className="text-[11px] mb-2 print:hidden" style={{ color: "#4F9E2A" }}>Propriétaire informé le {fr(v.ownerInformedAt, { day: "2-digit", month: "2-digit", year: "numeric" })}.</p>}
-      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }} note={`Visite ${v.ref} — ${VISIT_STATUS[v.status]?.label || ""}`}>
+      <PrintPage className="bg-white rounded-xl border p-6 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }} nom={nomFichier(`Compte rendu de visite ${v.ref || ""}`, c.propertyName, c.unitLabel)} note={`Visite ${v.ref} — ${VISIT_STATUS[v.status]?.label || ""}`}>
         <PrintHead title="COMPTE RENDU DE VISITE" subtitle={v.ref} extra={<p className="text-[11px]" style={{ color: "var(--muted)" }}>{VISIT_TYPES[v.visitType]}</p>} />
         <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1 py-3 text-xs">
           <p><span style={{ color: "var(--muted)" }}>Bien : </span><strong>{c.propertyName}{c.unitLabel ? ` — ${c.unitLabel}` : ""}</strong></p>
@@ -13028,7 +13708,7 @@ function Portefeuille({ store, me, userId }) {
 /* Tampon encreur reprenant celui de l'agence : PAYÉ · logo · téléphone · date */
 function PaidStamp({ date, angle = -8, scale = 1 }) {
   return (
-    <div style={{ height: 150 * scale, width: 250 * scale, position: "relative" }}>
+    <div style={{ height: 164 * scale, width: 250 * scale, position: "relative" }}>
       <div style={{ transform: `rotate(${angle}deg) scale(${scale})`, transformOrigin: "left top",
         display: "inline-block", position: "absolute", left: 8, top: 8 }}>
       <div style={{
@@ -13040,7 +13720,8 @@ function PaidStamp({ date, angle = -8, scale = 1 }) {
         <div style={{ borderTop: `1.5px solid ${STAMP_RED}`, margin: "4px 0 3px" }} />
         <img src={LOGO_STAMP} alt="" style={{ height: 22, width: "auto", display: "block", margin: "0 auto" }} />
         <div style={{ borderTop: `1.5px solid ${STAMP_RED}`, margin: "3px 0 3px" }} />
-        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.2 }}>Tél : 07 87 84 33 68 / 01 51 96 60 67</div>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.2 }}>Fixe : 27 22 25 24 12</div>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.2 }}>Cel. : 07 87 84 33 68 / 01 51 96 60 67</div>
         {date && <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1, marginTop: 3 }}>
           {fr(date + "T00:00:00", { day: "2-digit", month: "2-digit", year: "numeric" })}
         </div>}
@@ -13084,10 +13765,10 @@ function DechargeSheet({ doc, author, onBack }) {
     <div>
       <div className="flex items-center justify-between mb-3 print:hidden gap-2 flex-wrap">
         <button onClick={onBack} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour</button>
-        <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button>
+        <div className="flex gap-2 flex-wrap"><BoutonEnvoyer doc={doc} /><button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button></div>
       </div>
 
-      <PrintPage className="bg-white rounded-xl border p-7 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }} note={author ? `Établie par ${author.name}` : undefined}>
+      <PrintPage className="bg-white rounded-xl border p-7 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }} nom={nomDocument(doc)} note={author ? `Établie par ${author.name}` : undefined}>
         <PrintHead extra={
           <p className="text-[10px] leading-snug" style={{ color: "var(--muted)" }}>
             Par l'État suivant arrêté<br />ministériel n° AB 0005262<br />du 15 JAN. 2026
@@ -13316,6 +13997,8 @@ function Dossier({ store, me, userId, scope, unit, owner, former, property, onBa
         </SectionCard>
       )}
 
+      {scope === "locataire" && unit && <Suspense fallback={null}><BauxDuLot store={store} me={me} unit={unit} property={property} /></Suspense>}
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <StatCard icon={FileText} label="Documents émis" value={docs.length} sub="depuis l'outil" tint="var(--brass)" />
         <StatCard icon={Paperclip} label="Pièces importées" value={files.length} tint="#2E78A8" />
@@ -13455,7 +14138,7 @@ function CashModal({ initial, properties, owners, onSave, onClose }) {
       </Field>
 
       <div className="grid sm:grid-cols-2 gap-3">
-        <Field label="Montant (FCFA)"><input type="number" min={0} step={500} className={inputCls} style={inputStyle} value={f.amount} autoFocus onChange={(e) => set("amount", e.target.value)} /></Field>
+        <Field label="Montant (F CFA)"><input type="number" min={0} step={500} className={inputCls} style={inputStyle} value={f.amount} autoFocus onChange={(e) => set("amount", e.target.value)} /></Field>
         <Field label="Date"><input type="date" className={inputCls} style={inputStyle} value={f.date} onChange={(e) => set("date", e.target.value)} /></Field>
       </div>
 
@@ -13521,7 +14204,7 @@ function HandoverModal({ day, amount, members, userId, onSend, onClose }) {
           {members.filter((m) => m.active && m.id !== userId).map((m) => <option key={m.id} value={m.id}>{m.name} — {ROLES[m.role]}</option>)}
         </select>
       </Field>
-      <Field label="Précision (facultatif)"><input className={inputCls} style={inputStyle} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ex. dont 300 000 F en espèces, reste en chèques" /></Field>
+      <Field label="Précision (facultatif)"><input className={inputCls} style={inputStyle} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ex. dont 300 000 F CFA en espèces, reste en chèques" /></Field>
 
       <div className="rounded-lg p-3 mb-3 text-xs" style={{ background: "#EFF6FF", color: "#1F5C82" }}>
         Tant que le destinataire n'a pas certifié la réception, la remise reste « en attente ».
@@ -13874,9 +14557,27 @@ button{cursor:pointer}
 .kb-page{width:100%;border-collapse:collapse}
 .kb-page>tbody>tr>td.kb-page-body{padding:0;vertical-align:top}
 .kb-page>tfoot{display:none}
+/* Texte des courriers : mêmes règles à l'écran (rédaction, aperçu) et à l'impression */
+.kb-letter:empty:before{content:attr(data-placeholder);color:#9AA6B5}
+.kb-letter h1,.kb-body h1{font-size:1.35em;font-weight:700;margin:1em 0 .4em}
+.kb-letter h2,.kb-body h2{font-size:1.18em;font-weight:700;margin:.95em 0 .4em}
+.kb-letter h3,.kb-body h3{font-size:1.05em;font-weight:700;margin:.9em 0 .35em}
+.kb-letter blockquote,.kb-body blockquote{border-left:3px solid #D6DBE1;margin:.6em 0;padding:.2em .8em;color:#4B5563;font-style:italic}
+.kb-letter table,.kb-body table{border-collapse:collapse;width:100%;margin:.5em 0}
+.kb-letter td,.kb-letter th,.kb-body td,.kb-body th{border:1px solid #9AA6B5;padding:4px 8px;vertical-align:top}
+.kb-letter a,.kb-body a{color:#2E78A8;text-decoration:underline}
+.kb-letter hr,.kb-body hr{border:none;border-top:1px solid #9AA6B5;margin:.8em 0}
+.kb-letter p,.kb-body p,.kb-letter div:not(.kb-pagebreak),.kb-body div:not(.kb-pagebreak){margin:0 0 var(--kb-esp,.7em)}
+.kb-letter ul,.kb-body ul{list-style:disc;margin:.4em 0 .8em 1.4em}
+.kb-letter ol,.kb-body ol{list-style:decimal;margin:.4em 0 .8em 1.4em}
+.kb-letter li,.kb-body li{margin-bottom:.25em}
+.kb-letter .kb-pagebreak,.kb-body .kb-pagebreak{border-top:1px dashed #9AA6B5;margin:12px 0;text-align:center;font-size:10px;color:#9AA6B5}
 @media print{
   body{background:#fff}
-  header,nav,.print\:hidden{display:none!important}
+  /* « \\: » : la barre oblique doit survivre au gabarit JavaScript, sinon toute la règle est ignorée */
+  header,nav,aside,.print\\:hidden{display:none!important}
+  /* Fond blanc sous le document, même avec « Graphiques d'arrière-plan » cochés */
+  #root,#root>div,#root>div>div{background:#fff!important}
   main{padding:0!important;max-width:100%!important}
   #print-area{border:none!important;box-shadow:none!important;padding:0!important;max-width:100%!important;
     overflow:visible!important}
@@ -13888,28 +14589,7 @@ button{cursor:pointer}
   .kb-foot-space{display:block;height:var(--kb-foot-h,26mm)}
   /* Pied de page fixé au bas de chaque feuille imprimée */
   .kb-foot{position:fixed;bottom:0;left:0;right:0;margin:0!important;padding-top:6px;background:#fff}
-  .kb-letter:empty:before{content:attr(data-placeholder);color:#9AA6B5}
-  .kb-letter h1{font-size:1.35em;font-weight:700;margin:1em 0 .4em}
-  .kb-letter h2{font-size:1.18em;font-weight:700;margin:.95em 0 .4em}
-  .kb-letter h3{font-size:1.05em;font-weight:700;margin:.9em 0 .35em}
-  .kb-letter blockquote{border-left:3px solid #D6DBE1;margin:.6em 0;padding:.2em .8em;color:#4B5563;font-style:italic}
-  .kb-letter table{border-collapse:collapse;width:100%;margin:.5em 0}
-  .kb-letter td,.kb-letter th{border:1px solid #9AA6B5;padding:4px 8px;vertical-align:top}
-  .kb-letter a{color:#2E78A8;text-decoration:underline}
-  .kb-letter p{margin:0 0 .7em}
-  .kb-letter ul,.kb-letter ol{margin:.4em 0 .8em 1.4em}
-  .kb-letter li{margin-bottom:.25em}
-  .kb-body h1{font-size:1.35em;font-weight:700;margin:1em 0 .4em}
-  .kb-body h2{font-size:1.18em;font-weight:700;margin:.95em 0 .4em}
-  .kb-body h3{font-size:1.05em;font-weight:700;margin:.9em 0 .35em}
-  .kb-body blockquote{border-left:3px solid #D6DBE1;margin:.6em 0;padding:.2em .8em;color:#4B5563;font-style:italic}
-  .kb-body table{border-collapse:collapse;width:100%;margin:.5em 0}
-  .kb-body td,.kb-body th{border:1px solid #9AA6B5;padding:4px 8px;vertical-align:top}
-  .kb-body hr{border:none;border-top:1px solid #9AA6B5;margin:.8em 0}
   .kb-pagebreak{page-break-after:always;break-after:page;border:none!important;height:0;overflow:hidden;color:transparent!important}
-  .kb-body p{margin:0 0 .7em}
-  .kb-body ul,.kb-body ol{margin:.4em 0 .8em 1.4em}
-  .kb-body li{margin-bottom:.25em}
   .kb-sign{break-inside:avoid;page-break-inside:avoid}
   table{page-break-inside:auto}tr{page-break-inside:avoid}
   /* L'en-tête se répète en haut de chaque page, mais les totaux ne doivent
@@ -13920,6 +14600,14 @@ button{cursor:pointer}
 }
 `;
 function KbStyles() {
+  /* Impression lancée au clavier (Ctrl+P) : le fichier PDF porte aussi le nom du document */
+  useEffect(() => {
+    /* Ctrl+P : nom du fichier et marges du courrier, si l'impression n'a pas été préparée par le bouton */
+    const avant = () => { if (!document.getElementById("kb-page-orientation") && document.getElementById("print-area")?.getAttribute("data-marges")) formatPage("portrait"); titreImpression(true); };
+    const apres = () => titreImpression(false);
+    window.addEventListener("beforeprint", avant); window.addEventListener("afterprint", apres);
+    return () => { window.removeEventListener("beforeprint", avant); window.removeEventListener("afterprint", apres); };
+  }, []);
   useEffect(() => {
     if (document.getElementById("kb-styles")) return;
     const el = document.createElement("style");
@@ -14084,6 +14772,9 @@ function Workspace({ userId }) {
       ? visits.filter((v) => v.status === "cloturee").length
       : visits.filter((v) => v.agentId === userId && ((["programmee", "en_cours"].includes(v.status) && v.visitDate < auj) || v.status === "a_corriger")).length;
   }, [visits, me?.role, userId]);
+  /* Pastille du registre des baux : points urgents (échéances, locataires sans bail) */
+  const bauxUrgents = useMemo(() => (store.leasesError ? 0 : suiviBaux({ baux: store.leases || [], units: store.units || [], properties: store.properties || [] }).filter((a) => a.niveau === "rouge").length),
+    [store.leases, store.leasesError, store.units, store.properties]);
   const relancesBiens = useMemo(() => prospected.filter((b) => b.agentId === userId
     && PP_OPEN.includes(b.status) && b.nextContact && b.nextContact <= isoDate(new Date())).length, [prospected, userId]);
   const rapportsAttente = useMemo(() => canSupervise(me?.role)
@@ -14171,6 +14862,9 @@ function Workspace({ userId }) {
     { id: "solvabilite", label: "Solvabilité", icon: ShieldCheck },
     { id: "fiches", label: "Fiches de renseignements", icon: ClipboardList },
     { id: "courriels", label: "Courriels", icon: Mail },
+    { id: "whatsapp", label: "WhatsApp", icon: MessageCircle },
+    { id: "baux", label: "Baux", icon: FileSignature, badge: bauxUrgents },
+    { id: "visites-prospects", label: "Visites prospects", icon: Eye },
     { id: "recouvrement", label: "Recouvrement", icon: Wallet },
     ...(isAdmin(me.role) ? [{ id: "caisse", label: "Caisse", icon: Banknote, badge: pendingHandovers }] : []),
     ...(canSupervise(me.role) || me.role === "comptable" ? [{ id: "impots", label: "Impôt foncier", icon: Landmark }] : []),
@@ -14187,10 +14881,10 @@ function Workspace({ userId }) {
 
   /* Menu latéral regroupé par domaine */
   const NAV_GROUPS = [
-    ["Pilotage", ["dashboard", "board", "planner", "messages", "courriels", "notes", "time"]],
-    ["Gestion locative", ["patrimoine", "visites", "locataires", "plaintes", "devis", "mandats"]],
+    ["Pilotage", ["dashboard", "board", "planner", "messages", "courriels", "whatsapp", "notes", "time"]],
+    ["Gestion locative", ["patrimoine", "visites", "locataires", "baux", "plaintes", "devis", "mandats"]],
     ["Finances", ["recouvrement", "documents", "caisse", "impots"]],
-    ["Commercial", ["prospects", "solvabilite", "fiches", "nouveaux-biens", "rapport", "portefeuille"]],
+    ["Commercial", ["prospects", "visites-prospects", "solvabilite", "fiches", "nouveaux-biens", "rapport", "portefeuille"]],
     ["Logistique", ["transport", "produits"]],
     ["Ressources humaines", ["mon-dossier", "rh"]],
     ["Administration", ["team", "settings"]],
@@ -14297,6 +14991,7 @@ function Workspace({ userId }) {
         <div className="flex-1 min-w-0">
       {myTimer && <button onClick={actions.stopTimer} className="sm:hidden w-full flex items-center justify-center gap-2 py-2 text-white text-sm font-medium" style={{ background: "var(--live)" }}><span className="w-2 h-2 rounded-full bg-white animate-pulse" /> En cours · {fmtClock((now - myTimer.startedAt) / 1000)} — toucher pour arrêter</button>}
 
+      <KbContexte.Provider value={{ store, me }}>
       <main className="max-w-6xl mx-auto px-4 py-5">
         <NotifBanner />
         {view !== "notes" && <BanniereNotes notes={notesInternes} onVoir={() => setView("notes")} />}
@@ -14339,6 +15034,13 @@ function Workspace({ userId }) {
         {view === "time" && TimeView()}
         {view === "team" && canSupervise(me.role) && Team()}
         {view === "settings" && isAdmin(me.role) && SettingsView()}
+        {["baux", "visites-prospects", "whatsapp"].includes(view) && (
+          <Suspense fallback={<p className="text-sm py-10 text-center" style={{ color: "var(--muted)" }}>Chargement…</p>}>
+            {view === "baux" && <RegistreBaux store={store} me={me} />}
+            {view === "visites-prospects" && <BonsVisite store={store} me={me} />}
+            {view === "whatsapp" && <WhatsAppPage store={store} me={me} />}
+          </Suspense>
+        )}
         {["solvabilite", "fiches", "mandats", "courriels"].includes(view) && (
           <Suspense fallback={<p className="text-sm py-10 text-center" style={{ color: "var(--muted)" }}>Chargement…</p>}>
             {view === "solvabilite" && <Solvabilite store={store} me={me} prefill={outilPrefill?.type === "solvabilite" ? outilPrefill.data : null} onPrefillConsumed={() => setOutilPrefill(null)} />}
@@ -14353,6 +15055,7 @@ function Workspace({ userId }) {
           </Suspense>
         )}
       </main>
+      </KbContexte.Provider>
         </div>
       </div>
 
@@ -14611,7 +15314,8 @@ function Workspace({ userId }) {
 
 /* Composants partagés avec le module Ressources humaines (RH.jsx) */
 export { Modal, Field, Chip, StatCard, SectionCard, EmptyState, PrintPage, PrintHead, printSheet, fr, fcfa, isoDate, addDays, inputCls, inputStyle, MONTHS_FR,
-  AGENCY, amountInWords, LetterEditor, LOGO, LOGO_AGREMENT,
+  AGENCY, amountInWords, LetterEditor, LOGO, LOGO_AGREMENT, nomFichier, nomDocument, MARGES_COURRIER, periodLabel, lineDue, isVacantLine,
+  optionsCorrection, appliquerDecompte, decompteDetaille, KbContexte,
   /* outils du recouvrement et de l'impôt foncier (tests) */
   fetchAll, doublonsLignes, retirerDoublons, seedPeriod, refCadastrale,
   ventilerQuittance, poserQuittance, controleRecouvrement, arrearsOf, paymentHistory, quittanceActive };
