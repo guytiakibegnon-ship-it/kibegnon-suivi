@@ -38,6 +38,13 @@ export const finDuBail = (debut, mois) => (debut && Number(mois) > 0 ? ajouterJo
 
 export const bailActif = (b) => ["en_cours", "projet"].includes(b?.status);
 
+/* Lieu d'enregistrement du bail (pratique de l'agence) : aux impôts pour un bail
+   professionnel ou un bail d'habitation dont le loyer mensuel atteint
+   500 000 F CFA ; à la mairie pour les autres baux d'habitation. */
+export const SEUIL_IMPOTS = 500000;
+export const LIEUX_ENREGISTREMENT = { impots: "aux impôts", mairie: "à la mairie" };
+export const lieuEnregistrement = (b) => (b?.usage === "professionnel" || (Number(b?.rent) || 0) >= SEUIL_IMPOTS ? "impots" : "mairie");
+
 /* Ligne de base → forme de l'application */
 export const mBail = (r) => ({
   id: r.id, ref: r.ref || "", unitId: r.unit_id || "", propertyId: r.property_id || "", tenantName: r.tenant_name || "", tenantPhone: r.tenant_phone || "",
@@ -88,7 +95,13 @@ export function alertesBail(b, today = jourIso()) {
         `Le preneur qui veut le renouvellement doit le demander au plus tard trois mois avant l'échéance, soit avant le ${fmtDate(ajouterMois(b.endsOn, -3))} (Acte uniforme OHADA relatif au droit commercial général, art. 124).`);
   }
   if (!b.signedOn) push("non_signe", b.status === "projet" ? "info" : "orange", "Date de signature non renseignée", "Indiquez la date de signature du contrat.");
-  if (!b.registeredOn && b.status === "en_cours") push("non_enregistre", "orange", "Enregistrement du bail non renseigné", "Indiquez la date et la référence de l'enregistrement du contrat aux impôts.");
+  if (!b.registeredOn && b.status === "en_cours") {
+    const lieu = lieuEnregistrement(b);
+    push("non_enregistre", "orange", `Enregistrement ${LIEUX_ENREGISTREMENT[lieu]} non renseigné`,
+      lieu === "impots"
+        ? `${b.usage === "professionnel" ? "Bail professionnel" : `Bail d'habitation à ${SEUIL_IMPOTS.toLocaleString("fr-FR")} F CFA de loyer ou plus`} : indiquez la date et la référence de son enregistrement aux impôts.`
+        : `Bail d'habitation à moins de ${SEUIL_IMPOTS.toLocaleString("fr-FR")} F CFA de loyer : indiquez la date et la référence de son enregistrement à la mairie.`);
+  }
   /* Habitation : loyer révisable tous les trois ans, avec un préavis de trois mois (CCH, art. 423 et 424) */
   if (b.usage === "habitation" && b.startsOn) {
     const depuis = b.lastRevisionOn || b.startsOn;
