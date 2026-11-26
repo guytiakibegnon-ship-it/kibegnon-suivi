@@ -25,7 +25,7 @@ import {
 } from "./paie-engine.js";
 import {
   Modal, Field, Chip, StatCard, SectionCard, EmptyState, PrintPage, PrintHead, printSheet,
-  fcfa, inputCls, inputStyle, AGENCY, amountInWords, LetterEditor, LOGO, LOGO_AGREMENT,
+  fcfa, inputCls, inputStyle, AGENCY, amountInWords, LetterEditor, LOGO, LOGO_AGREMENT, nomFichier,
 } from "./App.jsx";
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -418,8 +418,8 @@ export function calculCommission(rule, assiette) {
   if (rule.mode === "paliers") {
     const p = [...(rule.paliers || [])].sort((x, y) => x.seuil - y.seuil).filter((x) => a >= Number(x.seuil)).pop();
     if (!p) return { montant: 0, taux: 0, detail: "seuil non atteint" };
-    if (Number(p.taux)) return { montant: Math.round(a * Number(p.taux) / 100), taux: Number(p.taux), detail: `palier dès ${Number(p.seuil).toLocaleString("fr-FR")} F` };
-    return { montant: Math.round(Number(p.montant) || 0), taux: 0, detail: `palier dès ${Number(p.seuil).toLocaleString("fr-FR")} F` };
+    if (Number(p.taux)) return { montant: Math.round(a * Number(p.taux) / 100), taux: Number(p.taux), detail: `palier dès ${Number(p.seuil).toLocaleString("fr-FR")} F CFA` };
+    return { montant: Math.round(Number(p.montant) || 0), taux: 0, detail: `palier dès ${Number(p.seuil).toLocaleString("fr-FR")} F CFA` };
   }
   return { montant: Math.round(a * (Number(rule.taux) || 0) / 100), taux: Number(rule.taux) || 0, detail: `${String(rule.taux).replace(".", ",")} %` };
 }
@@ -987,7 +987,7 @@ export function buildDocContext({ emp, det, contract, amendment, contracts = [],
   const g = emp?.sexe === "F" ? "F" : emp?.sexe === "M" ? "M" : "";
   set("entreprise.raison_sociale", agency?.name || ""); set("entreprise.forme", agency?.form || ""); set("entreprise.adresse", agency?.address || "");
   set("entreprise.adresse_postale", settings?.adressePostale || ""); set("entreprise.rccm", AGENCE_PROPRE(agency?.rc)); set("entreprise.cc", AGENCE_PROPRE(agency?.cc));
-  set("entreprise.cnps", settings?.cnpsEmployeur || ""); set("entreprise.telephone", agency?.tel || "");
+  set("entreprise.cnps", settings?.cnpsEmployeur || ""); set("entreprise.telephone", agency?.telephones || agency?.tel || "");
   set("signataire.nom", settings?.signataireNom || ""); set("signataire.qualite", settings?.signataireQualite || ""); set("signataire.e", settings?.signataireFeminin ? "e" : "");
   set("doc.ville", settings?.ville || ""); set("doc.date", dateLongue(today));
   set("entreprise.siege", settings?.siegeDetail || agency?.address || ""); set("signataire.nationalite", settings?.signataireNationalite || "");
@@ -1767,7 +1767,7 @@ export function contreCalcul(args, res) {
 }
 
 /* Paramètres de l'application comparés aux valeurs de référence du moteur */
-const lireF = (n) => (n === Infinity || n === null || n === undefined ? "sans plafond" : `${Number(n).toLocaleString("fr-FR")} F`);
+const lireF = (n) => (n === Infinity || n === null || n === undefined ? "sans plafond" : `${Number(n).toLocaleString("fr-FR")} F CFA`);
 const lireP = (x) => `${(Math.round(Number(x) * 100000) / 1000).toLocaleString("fr-FR")} %`;
 const lireBareme = (b) => b.map((t) => `${t.plafond === Infinity ? "au-delà" : `≤ ${Number(t.plafond).toLocaleString("fr-FR")}`} : ${lireP(t.taux)}`).join(" · ");
 const lireRicf = (r) => Object.entries(r).sort((a, b) => Number(a[0]) - Number(b[0])).map(([k, m]) => `${String(k).replace(".", ",")} p. ${Number(m).toLocaleString("fr-FR")}`).join(" · ");
@@ -2328,12 +2328,12 @@ function ContractModal({ initial, emp, params, scale, autres = [], onSave, onClo
           <option value="">— sans échelon —</option>{echelonsPossibles(scale, f.categorie, f.echelon).map((x) => <option key={x} value={x}>{x}</option>)}</select></Field>
         <Field label="Mode de paiement"><select className={inputCls} style={inputStyle} value={f.modePaiement} onChange={(e) => set("modePaiement", e.target.value)}>
           {Object.entries(MODES_PAIEMENT).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
-        {stage ? <Field label="Indemnité forfaitaire mensuelle (FCFA) *" hint="Le stagiaire n'est pas salarié (Code du travail, art. 13.17)">
+        {stage ? <Field label="Indemnité forfaitaire mensuelle (F CFA) *" hint="Le stagiaire n'est pas salarié (Code du travail, art. 13.17)">
             <input type="number" min="0" className={inputCls} style={inputStyle} value={f.salaireBase} onChange={(e) => set("salaireBase", e.target.value)} /></Field>
           : <>
-          <Field label="Salaire catégoriel — rubrique 100 (FCFA) *" hint={minCat !== null ? `Minimum de la catégorie : ${fcfa(minCat)}` : "Minimum de la catégorie inconnu"}>
+          <Field label="Salaire catégoriel — rubrique 100 (F CFA) *" hint={minCat !== null ? `Minimum de la catégorie : ${fcfa(minCat)}` : "Minimum de la catégorie inconnu"}>
             <input type="number" min="0" className={inputCls} style={inputStyle} value={f.salaireBase} onChange={(e) => set("salaireBase", e.target.value)} /></Field>
-          <Field label="Sursalaire — rubrique 200 (FCFA)" hint="Complément convenu, hors minimum de la catégorie">
+          <Field label="Sursalaire — rubrique 200 (F CFA)" hint="Complément convenu, hors minimum de la catégorie">
             <input type="number" min="0" className={inputCls} style={inputStyle} value={f.sursalaire} onChange={(e) => set("sursalaire", e.target.value)} /></Field>
           <Field label="Rémunération mensuelle convenue"><p className="px-3 py-2 rounded-lg text-sm font-semibold tabular-nums" style={{ background: "#F6F8FA" }}>{fcfa(total)}</p></Field>
           </>}
@@ -2543,7 +2543,7 @@ function ScaleModal({ initial, onSave, onClose }) {
           <option value="">— sans échelon —</option>{echelonsPossibles([], f.categorie, f.echelon).map((x) => <option key={x} value={x}>{x}</option>)}</select></Field>
         <Field label="Qualification"><select className={inputCls} style={inputStyle} value={f.qualification} onChange={(e) => set("qualification", e.target.value)}>
           {Object.entries(QUALIFICATIONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
-        <Field label="Salaire minimum mensuel (FCFA)" hint="Laisser vide si inconnu : la ligne sera signalée."><input type="number" min="0" className={inputCls} style={inputStyle} value={f.salaireMinimum} onChange={(e) => set("salaireMinimum", e.target.value)} /></Field>
+        <Field label="Salaire minimum mensuel (F CFA)" hint="Laisser vide si inconnu : la ligne sera signalée."><input type="number" min="0" className={inputCls} style={inputStyle} value={f.salaireMinimum} onChange={(e) => set("salaireMinimum", e.target.value)} /></Field>
         <Field label="Libellé"><input className={inputCls} style={inputStyle} value={f.libelle} onChange={(e) => set("libelle", e.target.value)} /></Field>
         <Field label="Secteur"><input className={inputCls} style={inputStyle} value={f.secteur} onChange={(e) => set("secteur", e.target.value)} /></Field>
         <Field label="Date d'effet *"><input type="date" className={inputCls} style={inputStyle} value={f.dateEffet} onChange={(e) => set("dateEffet", e.target.value)} /></Field>
@@ -3311,7 +3311,7 @@ function DocumentEditor({ tpl, emp, contract, amendment, objet, doc, hr, actions
           {edition
             ? <div className="rh-doc"><LetterEditor value={html} onChange={setHtml} placeholder="Texte du document" /></div>
             : (
-              <PrintPage className="bg-white rounded-xl border p-8 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
+              <PrintPage className="bg-white rounded-xl border p-8 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }} nom={nomFichier(tpl?.titre || "Document RH", emp ? nomComplet(emp) : "", saved?.reference || "")}>
                 <PrintHead extra={<p className="text-[11px]" style={{ color: "var(--muted)" }}>Réf. {saved?.reference || "attribuée à l'enregistrement"}</p>} />
                 <div className="rh-doc mt-5" lang="fr" dangerouslySetInnerHTML={{ __html: sanitizeHtml(texte) }} />
               </PrintPage>
@@ -3455,7 +3455,7 @@ function SettingsPanel({ hr, admin, actions, say }) {
           <Field label="Adresse postale"><input className={inputCls} style={inputStyle} value={f.adressePostale} onChange={(e) => set("adressePostale", e.target.value)} /></Field>
           <Field label="N° d'employeur CNPS"><input className={inputCls} style={inputStyle} value={f.cnpsEmployeur} onChange={(e) => set("cnpsEmployeur", e.target.value)} /></Field>
           <Field label="Nationalité du signataire"><input className={inputCls} style={inputStyle} value={f.signataireNationalite} onChange={(e) => set("signataireNationalite", e.target.value)} placeholder="Ex. : ivoirienne" /></Field>
-          <Field label="Prime de transport mensuelle (FCFA)"><input type="number" min="0" className={inputCls} style={inputStyle} value={f.primeTransport} onChange={(e) => set("primeTransport", e.target.value)} /></Field>
+          <Field label="Prime de transport mensuelle (F CFA)"><input type="number" min="0" className={inputCls} style={inputStyle} value={f.primeTransport} onChange={(e) => set("primeTransport", e.target.value)} /></Field>
           <Field label="Mode de paiement des salaires"><select className={inputCls} style={inputStyle} value={f.modePaiement} onChange={(e) => set("modePaiement", e.target.value)}>
             {["Virement", "Espèces", "Chèque", "Mobile Money"].map((m) => <option key={m} value={m}>{m}</option>)}</select></Field>
         </div>
@@ -3825,7 +3825,7 @@ export function calculerBulletin(hr, emp, period, variables, slipId) {
 export const identiteEmployeur = (settings) => ({
   raisonSociale: AGENCY.name, forme: AGENCY.form, adresse: AGENCY.address, adressePostale: settings?.adressePostale || "",
   rc: AGENCY.rc, cc: AGENCY.cc, regime: AGENCY.regime, centre: AGENCY.centre, agrement: AGENCY.agrement,
-  carte: "Agent immobilier agréé n° AG-0456 (Chambre des Affaires et de l'Immobilier)", cnps: settings?.cnpsEmployeur || "", tel: AGENCY.tel, email: AGENCY.email,
+  carte: "Agent immobilier agréé n° AG-0456 (Chambre des Affaires et de l'Immobilier)", cnps: settings?.cnpsEmployeur || "", tel: AGENCY.telephones, email: AGENCY.email,
 });
 /* En-tête des documents de paie : logos, identité de l'employeur, titre et références */
 export function EntetePaie({ employeur, titre, children }) {
@@ -4207,7 +4207,7 @@ function PayslipEditor({ slip, hr, actions, admin, period, onBack, say }) {
             </div>
           )}
         </aside>
-        <PrintPage className="bg-white rounded-xl border p-5 max-w-4xl" style={{ borderColor: "var(--line)" }}>
+        <PrintPage className="bg-white rounded-xl border p-5 max-w-4xl" style={{ borderColor: "var(--line)" }} nom={nomFichier("Bulletin de paie", affiche?.entete?.nom, libPeriode(period))}>
           <BulletinSheet slip={affiche} period={period} settings={hr.settings} />
         </PrintPage>
       </div>
@@ -4393,7 +4393,8 @@ function PaieTab({ hr, actions, admin, today, say, focus, on }) {
           <div className="flex gap-2">{!["bulletins", "stages"].includes(impression) && <button onClick={() => exporterCSV(period, slips, hr)} className="kb-btn kb-btn-ghost text-sm">Exporter (Excel, CSV)</button>}
             <button onClick={() => printSheet(["bulletins", "stages"].includes(impression) ? "portrait" : "landscape")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button></div>
         </div>
-        <PrintPage className="bg-white rounded-xl border p-5" style={{ borderColor: "var(--line)" }}>
+        <PrintPage className="bg-white rounded-xl border p-5" style={{ borderColor: "var(--line)" }}
+          nom={nomFichier({ bulletins: "Bulletins de paie", livre: "Livre de paie", etat: "Charges sociales et fiscales", stages: "État des indemnités de stage" }[impression] || "Paie", libPeriode(period))}>
           {impression === "bulletins" && liste.map((b, i) => <BulletinSheet key={b.id} slip={{ ...b, datePaiement: period.datePaiement, modePaiement: period.modePaiement }} period={period} settings={hr.settings} sautApres={i < liste.length - 1} />)}
           {impression === "livre" && <LivreDePaie period={period} slips={slips} hr={hr} />}
           {impression === "etat" && <EtatCharges period={period} slips={slips} hr={hr} />}
@@ -4954,7 +4955,7 @@ function TrainingModal({ initial, hr, actions, onClose }) {
         <Field label="Organisme"><input className={inputCls} style={inputStyle} value={f.organisme} onChange={(e) => set("organisme", e.target.value)} /></Field>
         <Field label="Début"><input type="date" className={inputCls} style={inputStyle} value={f.dateDebut} onChange={(e) => set("dateDebut", e.target.value)} /></Field>
         <Field label="Fin"><input type="date" className={inputCls} style={inputStyle} value={f.dateFin} onChange={(e) => set("dateFin", e.target.value)} /></Field>
-        <Field label="Coût (FCFA)"><input type="number" min="0" className={inputCls} style={inputStyle} value={f.cout} onChange={(e) => set("cout", e.target.value)} /></Field>
+        <Field label="Coût (F CFA)"><input type="number" min="0" className={inputCls} style={inputStyle} value={f.cout} onChange={(e) => set("cout", e.target.value)} /></Field>
         <Field label="Financement"><select className={inputCls} style={inputStyle} value={f.financement} onChange={(e) => set("financement", e.target.value)}><option value="entreprise">Entreprise</option><option value="fdfp">FDFP</option><option value="autre">Autre</option></select></Field>
       </div>
       <p className="text-xs font-medium mb-1.5" style={{ color: "var(--muted)" }}>Participants</p>
@@ -5330,7 +5331,7 @@ export function MonDossier({ me }) {
     <div>
       <div className="flex items-center justify-between mb-3 print:hidden"><button onClick={() => setBulletin("")} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour à mon dossier</button>
         <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button></div>
-      <PrintPage className="bg-white rounded-xl border p-5 max-w-4xl mx-auto" style={{ borderColor: "var(--line)" }}>
+      <PrintPage className="bg-white rounded-xl border p-5 max-w-4xl mx-auto" style={{ borderColor: "var(--line)" }} nom={nomFichier("Bulletin de paie", slip.entete?.nom, libPeriode(per))}>
         <BulletinSheet slip={{ ...slip, datePaiement: per.datePaiement, modePaiement: per.modePaiement }} period={per} settings={d.settings} />
       </PrintPage>
     </div>);
@@ -5340,7 +5341,7 @@ export function MonDossier({ me }) {
       <DocStyles />
       <div className="flex items-center justify-between mb-3 print:hidden"><button onClick={() => setDocVu("")} className="kb-btn kb-btn-ghost text-sm"><ArrowLeft size={15} /> Retour à mon dossier</button>
         <button onClick={() => printSheet("portrait")} className="kb-btn kb-btn-primary"><Printer size={16} /> Imprimer / PDF</button></div>
-      <PrintPage className="bg-white rounded-xl border p-8 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }}>
+      <PrintPage className="bg-white rounded-xl border p-8 max-w-3xl mx-auto" style={{ borderColor: "var(--line)" }} nom={nomFichier(doc.libelle || "Document RH", me?.name, doc.reference)}>
         <PrintHead extra={doc.reference ? <p className="text-[11px]" style={{ color: "var(--muted)" }}>Réf. {doc.reference}</p> : null} />
         <div className="rh-doc mt-5" lang="fr" dangerouslySetInnerHTML={{ __html: sanitizeHtml(doc.contenu) }} />
       </PrintPage>
@@ -5470,7 +5471,7 @@ function RuleModal({ initial, actions, onClose }) {
           {Object.entries(COMMISSION_MODES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
         {f.mode !== "forfait" && <Field label="Assiette" hint="Somme sur laquelle le taux s'applique"><input className={inputCls} style={inputStyle} value={f.assiette} onChange={(e) => set("assiette", e.target.value)} placeholder="Ex. honoraires d'agence encaissés" /></Field>}
         {f.mode === "pourcentage" && <Field label="Taux (%) *"><input type="number" step="0.01" min={0} max={100} className={inputCls} style={inputStyle} value={f.taux} onChange={(e) => set("taux", e.target.value)} /></Field>}
-        {f.mode === "forfait" && <Field label="Montant (FCFA) *"><input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.montant} onChange={(e) => set("montant", e.target.value)} /></Field>}
+        {f.mode === "forfait" && <Field label="Montant (F CFA) *"><input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.montant} onChange={(e) => set("montant", e.target.value)} /></Field>}
       </div>
       {f.mode === "paliers" && (
         <div className="mb-3">
@@ -5558,10 +5559,10 @@ function CommissionModal({ initial, hr, prospects, properties, actions, today, o
       )}
       <Field label="Référence de l'opération" hint="Bien, client, n° de bail ou de mandat"><input className={inputCls} style={inputStyle} value={f.reference} onChange={(e) => set("reference", e.target.value)} /></Field>
       <div className="grid sm:grid-cols-3 gap-x-3">
-        <Field label={regle?.mode === "forfait" ? "Assiette (facultative)" : `Assiette${regle?.assiette ? ` — ${regle.assiette}` : ""} (FCFA)`}>
+        <Field label={regle?.mode === "forfait" ? "Assiette (facultative)" : `Assiette${regle?.assiette ? ` — ${regle.assiette}` : ""} (F CFA)`}>
           <input type="number" min={0} step={1000} className={inputCls} style={inputStyle} value={f.assiette} onChange={(e) => changerAssiette(e.target.value)} /></Field>
         <Field label="Taux appliqué (%)"><input type="number" min={0} step="0.01" className={inputCls} style={inputStyle} value={f.taux} onChange={(e) => set("taux", e.target.value)} disabled={!!regle} /></Field>
-        <Field label="Montant (FCFA) *" hint={calc ? `Barème : ${fcfa(calc.montant)}${calc.detail ? ` (${calc.detail})` : ""}` : "Montant libre"}>
+        <Field label="Montant (F CFA) *" hint={calc ? `Barème : ${fcfa(calc.montant)}${calc.detail ? ` (${calc.detail})` : ""}` : "Montant libre"}>
           <input type="number" min={0} step={500} className={inputCls} style={{ ...inputStyle, borderColor: calc && Number(f.montant) !== calc.montant ? "#C58A1B" : undefined }} value={f.montant} onChange={(e) => set("montant", e.target.value)} /></Field>
       </div>
       {calc && Number(f.montant) !== calc.montant && Number(f.montant) > 0 && <WarnBox tone="orange">Le montant diffère du barème ({fcfa(calc.montant)}) : précisez le motif dans les observations.</WarnBox>}
