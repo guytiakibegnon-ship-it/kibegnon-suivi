@@ -11,7 +11,7 @@ import { useState, useMemo } from "react";
 import { AlertTriangle, Check, FileSignature, MessageCircle, Pencil, Plus, Printer, RefreshCw, Search, Trash2, Wand2, XCircle } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { Modal, Field, Chip, StatCard, SectionCard, EmptyState, PrintPage, PrintHead, printSheet, fcfa, inputCls, inputStyle, nomFichier } from "./App.jsx";
-import { USAGES, STATUTS_BAIL, NIVEAUX_BAIL, mBail, versBase, validerBail, alertesBail, suiviBaux, bailDepuisLot, bailRenouvele, finDuBail, bailActif, fmtDate, jourIso } from "./baux.js";
+import { USAGES, STATUTS_BAIL, NIVEAUX_BAIL, lieuEnregistrement, LIEUX_ENREGISTREMENT, mBail, versBase, validerBail, alertesBail, suiviBaux, bailDepuisLot, bailRenouvele, finDuBail, bailActif, fmtDate, jourIso } from "./baux.js";
 import { EnvoiMessage } from "./WhatsApp.jsx";
 
 const INSTALL = "Le registre des baux n'est pas encore installé : exécutez migration-v38.sql dans Supabase.";
@@ -94,7 +94,8 @@ export function BailModal({ initial, store, onClose, onSaved }) {
       </div>
       <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--muted)" }}>Enregistrement et état</p>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Field label="Enregistré aux impôts le"><input type="date" className={inputCls} style={inputStyle} value={f.registeredOn || ""} onChange={(e) => set("registeredOn", e.target.value)} /></Field>
+        <Field label={`Enregistré ${LIEUX_ENREGISTREMENT[lieuEnregistrement(f)]} le`} hint={lieuEnregistrement(f) === "impots" ? "Bail professionnel, ou habitation à 500 000 F CFA et plus" : "Habitation à moins de 500 000 F CFA"}>
+          <input type="date" className={inputCls} style={inputStyle} value={f.registeredOn || ""} onChange={(e) => set("registeredOn", e.target.value)} aria-label="Date d'enregistrement" /></Field>
         <Field label="Référence d'enregistrement"><input className={inputCls} style={inputStyle} value={f.registrationRef || ""} onChange={(e) => set("registrationRef", e.target.value)} placeholder="N° de quittance, folio…" /></Field>
         <Field label="État du bail"><select className={inputCls} style={inputStyle} value={f.status} onChange={(e) => set("status", e.target.value)}>
           {Object.entries(STATUTS_BAIL).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></Field>
@@ -193,7 +194,7 @@ export function RegistreBaux({ store, me, onOpenDossier }) {
               <td className="px-1.5 py-1 font-mono">{b.ref}</td><td className="px-1.5 py-1">{b.tenantName}</td><td className="px-1.5 py-1">{propName(b.propertyId)} — {lotLabel(b.unitId)}</td>
               <td className="px-1.5 py-1">{b.usage === "professionnel" ? "Pro." : "Hab."}</td><td className="px-1.5 py-1">{fmtDate(b.startsOn)}</td><td className="px-1.5 py-1">{fmtDate(b.endsOn)}</td>
               <td className="px-1.5 py-1 text-right tabular-nums">{fcfa(b.rent)}</td><td className="px-1.5 py-1">{b.depositMonths} / {b.advanceMonths} mois</td>
-              <td className="px-1.5 py-1">{b.registeredOn ? `${fmtDate(b.registeredOn)} ${b.registrationRef}` : "—"}</td><td className="px-1.5 py-1">{STATUTS_BAIL[b.status]?.label}</td></tr>))}</tbody></table>
+              <td className="px-1.5 py-1">{lieuEnregistrement(b) === "impots" ? "Impôts" : "Mairie"} : {b.registeredOn ? `${fmtDate(b.registeredOn)} ${b.registrationRef}` : "à faire"}</td><td className="px-1.5 py-1">{STATUTS_BAIL[b.status]?.label}</td></tr>))}</tbody></table>
       </PrintPage>
     </div>
   );
@@ -279,7 +280,7 @@ export function BauxDuLot({ store, me, unit, property }) {
             <div key={b.id} className="py-2 flex items-start justify-between gap-3 flex-wrap">
               <div className="min-w-0">
                 <p className="text-sm"><span className="font-mono font-semibold">{b.ref}</span> <Chip color={st.color}>{st.label}</Chip> <span className="text-xs" style={{ color: "var(--muted)" }}>{USAGES[b.usage]}</span></p>
-                <p className="text-xs" style={{ color: "var(--muted)" }}>Du {fmtDate(b.startsOn)} au {fmtDate(b.endsOn)} · loyer {fcfa(b.rent)} · caution {b.depositMonths} mois · avance {b.advanceMonths} mois{b.registeredOn ? ` · enregistré le ${fmtDate(b.registeredOn)}` : ""}</p>
+                <p className="text-xs" style={{ color: "var(--muted)" }}>Du {fmtDate(b.startsOn)} au {fmtDate(b.endsOn)} · loyer {fcfa(b.rent)} · caution {b.depositMonths} mois · avance {b.advanceMonths} mois{b.registeredOn ? ` · enregistré ${LIEUX_ENREGISTREMENT[lieuEnregistrement(b)]} le ${fmtDate(b.registeredOn)}` : ` · à enregistrer ${LIEUX_ENREGISTREMENT[lieuEnregistrement(b)]}`}</p>
                 <div className="mt-1">{al.map((a, i) => <PastilleAlerte key={i} a={a} />)}</div>
               </div>
               <div className="flex gap-1">
